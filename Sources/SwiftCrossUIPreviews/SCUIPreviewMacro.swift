@@ -4,10 +4,10 @@ import SwiftCrossUI
 ///
 /// Prefer ``Preview(_:body:)``, which is spelled the same way as SwiftUI's
 /// macro. **Xcode's canvas does not display previews written with
-/// `#SCUIPreview`.** The canvas finds previews by looking for the literal
-/// `#Preview` token in source rather than by enumerating the registrations a
-/// build produces, so this macro registers a preview that compiles correctly,
-/// carries the same metadata as any other, and is never shown.
+/// `#SCUIPreview`.** The canvas scans source for the literal `#Preview` token
+/// and looks up a registration whose mangled name encodes that spelling, so a
+/// preview registered under any other name compiles correctly, carries the
+/// same metadata as any other, and is never shown.
 ///
 /// What it's still for: previewing from inside SwiftCrossUIPreviews itself,
 /// where ``Preview(_:body:)`` can't be used. A same-module macro declaration
