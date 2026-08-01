@@ -6,15 +6,26 @@ import SwiftCrossUI
 /// apply to exactly one element. Identity is what distinguishes one request
 /// from another, so this is a reference type: the renderer gives the request
 /// to the topmost widget that saw it, which is the modified view itself.
+///
+/// A request nested inside another keeps a reference to the one it shadowed.
+/// The environment only ever holds the innermost request, so without that link
+/// a widget under `.htmlTag(.header)` whose sibling subtree overrode the tag
+/// would leave the outer request with no widget reporting it, and the header
+/// would be lost or scattered across the leaves that didn't override.
 public final class HTMLTagRequest: Sendable {
     /// The requested element.
     public let element: HTMLElement
+    /// The request this one shadowed, if it was applied inside another.
+    public let enclosing: HTMLTagRequest?
 
     /// Creates a request.
     ///
-    /// - Parameter element: The element to emit.
-    public init(element: HTMLElement) {
+    /// - Parameters:
+    ///   - element: The element to emit.
+    ///   - enclosing: The request already in scope, which this one shadows.
+    public init(element: HTMLElement, enclosing: HTMLTagRequest? = nil) {
         self.element = element
+        self.enclosing = enclosing
     }
 }
 
@@ -24,12 +35,17 @@ public final class HTMLTagRequest: Sendable {
 public final class HTMLAttributesRequest: Sendable {
     /// The requested attributes.
     public let attributes: [String: String]
+    /// The request this one shadowed, if it was applied inside another.
+    public let enclosing: HTMLAttributesRequest?
 
     /// Creates a request.
     ///
-    /// - Parameter attributes: The attributes to add.
-    public init(attributes: [String: String]) {
+    /// - Parameters:
+    ///   - attributes: The attributes to add.
+    ///   - enclosing: The request already in scope, which this one shadows.
+    public init(attributes: [String: String], enclosing: HTMLAttributesRequest? = nil) {
         self.attributes = attributes
+        self.enclosing = enclosing
     }
 }
 
@@ -56,7 +72,9 @@ extension View {
     /// - Parameter element: The element to emit the view as.
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ element: HTMLElement) -> some View {
-        environment(\.htmlTagRequest, HTMLTagRequest(element: element))
+        transformEnvironment(\.htmlTagRequest) { request in
+            request = HTMLTagRequest(element: element, enclosing: request)
+        }
     }
 
     /// Emits this view using an element named by a string.
@@ -68,7 +86,9 @@ extension View {
     /// - Parameter name: The element name, e.g. `"hgroup"`.
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ name: String) -> some View {
-        environment(\.htmlTagRequest, HTMLTagRequest(element: .custom(name)))
+        transformEnvironment(\.htmlTagRequest) { request in
+            request = HTMLTagRequest(element: .custom(name), enclosing: request)
+        }
     }
 
     /// Adds HTML attributes to this view's element.
@@ -81,6 +101,8 @@ extension View {
     /// - Parameter attributes: The attributes to add, keyed by name.
     /// - Returns: The view, carrying the requested attributes.
     public func htmlAttributes(_ attributes: [String: String]) -> some View {
-        environment(\.htmlAttributesRequest, HTMLAttributesRequest(attributes: attributes))
+        transformEnvironment(\.htmlAttributesRequest) { request in
+            request = HTMLAttributesRequest(attributes: attributes, enclosing: request)
+        }
     }
 }

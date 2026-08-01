@@ -163,6 +163,91 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A child overriding the tag doesn't push its parent's tag onto its siblings")
+    func containerTagSurvivesAnOverridingChild() {
+        let view = VStack {
+            Text("One")
+            Text("Two")
+            HStack {
+                Text("Link")
+            }
+            .htmlTag(.nav)
+        }
+        .htmlTag(.header)
+        let html = StaticHTMLRenderer.render(view, title: "Mixed").html
+
+        // The header belongs to the stack the author put it on, even though
+        // one child claimed a tag of its own.
+        #expect(html.components(separatedBy: "<header").count - 1 == 1)
+        #expect(html.components(separatedBy: "<nav").count - 1 == 1)
+        // The siblings that didn't override stay plain spans.
+        #expect(html.contains(">One</span>"))
+        #expect(html.contains(">Two</span>"))
+    }
+
+    @MainActor
+    @Test("A container's tag leaves its children's derived headings intact")
+    func containerTagDoesNotEatDerivedHeadings() {
+        let view = VStack {
+            Text("Name").font(.largeTitle)
+            Text("Subtitle")
+            HStack {
+                Text("Link")
+            }
+            .htmlTag(.nav)
+        }
+        .htmlTag(.header)
+        let html = StaticHTMLRenderer.render(view, title: "Headings").html
+
+        // The heading is derived on the leaf; the container's tag must not
+        // land on that leaf and displace it.
+        #expect(html.contains(">Name</h1>"))
+        #expect(html.components(separatedBy: "<header").count - 1 == 1)
+    }
+
+    @MainActor
+    @Test("Nested tagged containers each keep their own element")
+    func nestedTaggedContainersEachKeepTheirTag() {
+        let view = VStack {
+            Text("Experience").font(.title)
+
+            VStack {
+                Text("Role").font(.title3)
+                Text("Detail")
+            }
+            .htmlTag(.article)
+
+            VStack {
+                Text("Other role").font(.title3)
+                Text("Detail")
+            }
+            .htmlTag(.article)
+        }
+        .htmlTag(.section)
+        let html = StaticHTMLRenderer.render(view, title: "Nested").html
+
+        #expect(html.components(separatedBy: "<section").count - 1 == 1)
+        #expect(html.components(separatedBy: "<article").count - 1 == 2)
+        // The section's own heading keeps the level it derived.
+        #expect(html.contains(">Experience</h2>"))
+        #expect(html.contains(">Role</h4>"))
+    }
+
+    @MainActor
+    @Test("An attributes request on a container isn't copied onto every leaf")
+    func containerAttributesSurviveAnOverridingChild() {
+        let view = VStack {
+            Text("One")
+            Text("Two").htmlAttributes(["id": "inner"])
+        }
+        .htmlAttributes(["id": "outer"])
+        let html = StaticHTMLRenderer.render(view, title: "Attributes").html
+
+        #expect(html.components(separatedBy: "id=\"outer\"").count - 1 == 1)
+        #expect(html.components(separatedBy: "id=\"inner\"").count - 1 == 1)
+    }
+
+    @MainActor
     @Test("Raw string tags are validated, and junk is rejected")
     func rejectsInvalidRawStringTags() {
         let valid = StaticHTMLRenderer.render(

@@ -207,15 +207,21 @@ public enum StaticHTMLRenderer {
             )
         }
 
-        // A request only belongs to this widget if every populated child
-        // carries the very same one; otherwise it belongs further down.
-        let sharedTag = first.tag.flatMap { candidate in
-            populated.allSatisfy { $0.tag === candidate } ? candidate : nil
-        }
-        let sharedAttributes = first.attributes.flatMap { candidate in
-            populated.allSatisfy { $0.attributes === candidate } ? candidate : nil
-        }
+        // The request this widget owns is the innermost one that covers all of
+        // its children. A child that was given its own tag reports that one
+        // instead, but the request it shadowed is still in its chain, so the
+        // deepest request common to every chain is the one that belongs here.
+        let sharedTag = deepestCommonRequest(
+            populated.map(\.tag),
+            enclosing: \.enclosing
+        )
+        let sharedAttributes = deepestCommonRequest(
+            populated.map(\.attributes),
+            enclosing: \.enclosing
+        )
 
+        // Anything a child reports beyond the shared request is its own, so it
+        // is assigned to the child rather than hoisted any further.
         for coverage in populated {
             if let tag = coverage.tag, tag !== sharedTag {
                 assign(tag, to: coverage)
@@ -231,6 +237,45 @@ public enum StaticHTMLRenderer {
             attributes: sharedAttributes,
             isEmpty: false
         )
+    }
+
+    /// Finds the innermost request that every one of a widget's children is
+    /// covered by.
+    ///
+    /// Each child reports the innermost request in scope for it, which is its
+    /// own if the author gave it one. Because a request keeps a reference to
+    /// the one it shadowed, walking a child's chain enumerates every request
+    /// covering that child, outermost last. The request a parent owns is then
+    /// the first entry of any child's chain that appears in all of them.
+    ///
+    /// - Parameters:
+    ///   - requests: The innermost request reported by each child, in order.
+    ///   - enclosing: The key path from a request to the one it shadowed.
+    /// - Returns: The innermost request covering every child, if there is one.
+    private static func deepestCommonRequest<Request: AnyObject>(
+        _ requests: [Request?],
+        enclosing: KeyPath<Request, Request?>
+    ) -> Request? {
+        guard let first = requests.first, requests.allSatisfy({ $0 != nil }) else {
+            // A child covered by no request at all rules out every candidate:
+            // nothing can cover the whole set.
+            return nil
+        }
+
+        let chains = requests.map { request in
+            sequence(first: request, next: { $0?[keyPath: enclosing] })
+                .compactMap { $0 }
+        }
+        let others = chains.dropFirst().map { chain in
+            chain.map(ObjectIdentifier.init)
+        }
+
+        return sequence(first: first, next: { $0?[keyPath: enclosing] })
+            .compactMap { $0 }
+            .first { candidate in
+                let identity = ObjectIdentifier(candidate)
+                return others.allSatisfy { $0.contains(identity) }
+            }
     }
 
     /// Records a request as belonging to the widget a coverage came from.
