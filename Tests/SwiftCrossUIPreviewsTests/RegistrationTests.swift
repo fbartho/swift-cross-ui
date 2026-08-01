@@ -54,6 +54,52 @@
             }
         }
 
+        @Test("Both registries' previews can be made through the protocol")
+        @MainActor
+        func testRegistriesMakePreviewThroughProtocol() throws {
+            // The canvas reaches a registration through the protocol witness
+            // rather than the concrete type, so exercise that path for a
+            // SwiftCrossUI body and a SwiftUI one. Local registry types stand
+            // in for the generated ones, which can't be named in source.
+            struct CrossRegistry: DeveloperToolsSupport.PreviewRegistry {
+                static let fileID = "SCUIPreviewProbe/CanvasProbe.swift"
+                static let line = 60
+                static let column = 5
+
+                @MainActor static func makePreview() throws
+                    -> DeveloperToolsSupport.Preview
+                {
+                    DeveloperToolsSupport.Preview {
+                        SwiftCrossUIPreviews.SCUIPreview {
+                            CounterProbe()
+                        }
+                    }
+                }
+            }
+
+            struct SwiftUIRegistry: DeveloperToolsSupport.PreviewRegistry {
+                static let fileID = "SCUIPreviewProbe/CanvasProbe.swift"
+                static let line = 54
+                static let column = 5
+
+                @MainActor static func makePreview() throws
+                    -> DeveloperToolsSupport.Preview
+                {
+                    DeveloperToolsSupport.Preview {
+                        SwiftUI.Text("anchor")
+                    }
+                }
+            }
+
+            let registries: [any DeveloperToolsSupport.PreviewRegistry.Type] = [
+                SwiftUIRegistry.self,
+                CrossRegistry.self,
+            ]
+            for registry in registries {
+                _ = try registry.makePreview()
+            }
+        }
+
         @Test("A view reached through the registration's existential renders")
         @MainActor
         func testExistentialViewRenders() throws {
