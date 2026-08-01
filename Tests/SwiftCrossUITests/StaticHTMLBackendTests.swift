@@ -274,6 +274,18 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A Color leaf carries an explicit tag and author attributes")
+    func colorLeafCapturesHtmlIntent() {
+        let view = Color.red
+            .htmlTag(.nav)
+            .htmlAttributes(["aria-hidden": "true"])
+        let html = StaticHTMLRenderer.render(view, title: "Color intent").html
+
+        #expect(html.contains("<nav"))
+        #expect(html.contains("aria-hidden=\"true\""))
+    }
+
+    @MainActor
     @Test("Authors can't overwrite the attributes the backend owns")
     func ignoresReservedAuthorAttributes() {
         let view = Text("Styled").htmlAttributes([
