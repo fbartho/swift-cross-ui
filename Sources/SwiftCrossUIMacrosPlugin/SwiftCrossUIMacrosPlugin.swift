@@ -10,6 +10,5 @@ struct SwiftCrossUIMacrosPlugin: CompilerPlugin {
         HotReloadableExprMacro.self,
         EntryMacro.self,
         CastBackendMacro.self,
-        SCUIPreviewMacro.self,
     ]
 }
