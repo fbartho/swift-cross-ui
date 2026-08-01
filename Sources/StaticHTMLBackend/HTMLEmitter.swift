@@ -70,12 +70,19 @@ public struct HTMLEmitter {
     ///     decides where the element lands.
     ///   - placement: How the parent is positioning this widget.
     ///   - indentLevel: How far to indent the emitted markup.
+    ///   - inheritedFrame: A size an enclosing frame declared for this widget
+    ///     specifically, rather than for a wrapper around it. Only a void
+    ///     element (``HTMLElement/isVoid``) honors this: those elements size
+    ///     themselves from their replaced content, not from CSS layout, so a
+    ///     frame around one has nothing to apply itself to except the element
+    ///     directly. See ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:)``.
     /// - Returns: The widget's markup.
     public mutating func emit(
         _ widget: StaticHTMLBackend.Widget,
         at origin: SIMD2<Int>,
         placement: Placement = .flow,
-        indentLevel: Int = 0
+        indentLevel: Int = 0,
+        inheritedFrame: SIMD2<Int>? = nil
     ) -> String {
         let indent = String(repeating: "  ", count: indentLevel + 1)
 
@@ -180,6 +187,16 @@ public struct HTMLEmitter {
             element = explicit
         }
 
+        // A void element is replaced content: the browser sizes it from
+        // whatever it turns out to reference (an image file, for instance),
+        // not from CSS layout. A frame the author declared around one has no
+        // box to apply itself to except the element itself, since a wrapper
+        // div does nothing to stretch replaced content to fill it.
+        if element.isVoid, let inheritedFrame {
+            style.set("\(inheritedFrame.x)px", for: "width")
+            style.set("\(inheritedFrame.y)px", for: "height")
+        }
+
         var attributes: [String: String] = [:]
         // Author attributes are merged first so that backend-owned ones
         // overwrite them rather than the other way around.
@@ -260,11 +277,23 @@ public struct HTMLEmitter {
                             for: "padding"
                         )
                     }
+                    // The wrapper's own width/height (set above from
+                    // declaredWidth/declaredHeight) size a normal child fine,
+                    // but a void element ignores CSS layout entirely, so it
+                    // also gets offered the frame directly; see
+                    // ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:)``.
+                    let inheritedFrame =
+                        isFrame
+                        ? SIMD2(
+                            Int(container.declaredWidth ?? Double(container.size.x)),
+                            Int(container.declaredHeight ?? Double(container.size.y))
+                        ) : nil
                     return emitChildren(
                         container.children,
                         placement: .flow,
                         indent: indent,
-                        indentLevel: indentLevel
+                        indentLevel: indentLevel,
+                        inheritedFrame: inheritedFrame
                     )
                 }
             }
@@ -312,11 +341,19 @@ public struct HTMLEmitter {
     }
 
     /// Emits a list of children, each on its own line.
+    ///
+    /// - Parameter inheritedFrame: A size to offer each child directly, for
+    ///   the frame-around-a-void-element case; see
+    ///   ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:)``.
+    ///   Only meaningful when `children` holds exactly one widget — a frame
+    ///   always wraps a single child — so passing it alongside more than one
+    ///   would offer every sibling the same box, which is never correct.
     private mutating func emitChildren(
         _ children: [(widget: StaticHTMLBackend.Widget, position: SIMD2<Int>)],
         placement: Placement,
         indent: String,
-        indentLevel: Int
+        indentLevel: Int,
+        inheritedFrame: SIMD2<Int>? = nil
     ) -> String {
         guard !children.isEmpty else {
             return ""
@@ -327,7 +364,8 @@ public struct HTMLEmitter {
                 childWidget,
                 at: childPosition,
                 placement: placement,
-                indentLevel: indentLevel + 1
+                indentLevel: indentLevel + 1,
+                inheritedFrame: inheritedFrame
             )
             output += "\n"
         }
