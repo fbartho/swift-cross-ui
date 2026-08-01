@@ -462,6 +462,60 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("An infinite maxWidth emits stretch CSS instead of a max-width declaration")
+    func infiniteMaxWidthEmitsStretchNotMaxWidth() {
+        // .frame(maxWidth: .infinity) is the SwiftUI stretch idiom ("greedy,
+        // fill the container"), not "no opinion" — it must diverge from both
+        // a finite maxWidth (which becomes a CSS max-width ceiling) and from
+        // no frame at all (which emits nothing and content-sizes). See
+        // ``HTMLEmitter/applyInfiniteStretch(in:)``.
+        let finite = StaticHTMLRenderer.render(
+            Text("Panel").frame(maxWidth: 400),
+            title: "Finite maxWidth"
+        ).html
+        let infinite = StaticHTMLRenderer.render(
+            Text("Panel").frame(maxWidth: .infinity),
+            title: "Infinite maxWidth"
+        ).html
+        let unframed = StaticHTMLRenderer.render(
+            Text("Panel"),
+            title: "No frame"
+        ).html
+
+        let finiteRule = Self.internedRule(containing: "max-width:400px", in: finite)
+        #expect(finiteRule?.contains("max-width:400px") == true)
+        #expect(finiteRule?.contains("align-self:stretch") != true)
+
+        let infiniteRule = Self.internedRule(containing: "align-self:stretch", in: infinite)
+        #expect(infiniteRule?.contains("align-self:stretch") == true)
+        #expect(infiniteRule?.contains("flex-grow:1") == true)
+        #expect(infinite.contains("max-width:") == false)
+
+        #expect(!unframed.contains("align-self:stretch"))
+        #expect(!unframed.contains("flex-grow:"))
+    }
+
+    @MainActor
+    @Test("An infinite maxWidth child fills a wider VStack via align-self:stretch")
+    func infiniteMaxWidthStretchesAcrossVStackCrossAxis() {
+        // Width is the VStack's cross axis, where align-items defaults to
+        // flex-start (shrink-to-fit) — the exact case where an unstyled
+        // stretch child would silently content-size instead of filling the
+        // column, which is what this test guards against regressing.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                Text("Narrow")
+                Text("Wide").frame(maxWidth: .infinity)
+            },
+            title: "Stretch child"
+        ).html
+
+        #expect(html.contains("align-items:flex-start"))
+        let stretchRule = Self.internedRule(containing: "align-self:stretch", in: html)
+        #expect(stretchRule?.contains("align-self:stretch") == true)
+    }
+
+    @MainActor
     @Test("A tagged void leaf with no frame gets no size CSS")
     func voidLeafWithoutFrameStaysUnsized() {
         let view = Text("")

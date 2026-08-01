@@ -525,20 +525,37 @@ public struct HTMLEmitter {
             style.set("\(Int(height))px", for: "height")
         }
         // A flexible frame declares a range rather than a fixed size, which
-        // CSS min/max-width/height express directly. `.infinity` means "no
-        // ceiling", which is CSS's default absent the property, so it's
-        // skipped rather than emitted as an invalid length.
+        // CSS min/max-width/height express directly. A *finite* `.infinity`
+        // ceiling is CSS's default absent the property, so a finite value is
+        // the only one that needs a max-width/max-height declaration at all.
+        //
+        // `maxWidth: .infinity` (and the height analogue) is a different
+        // question from an absent constraint, though: in the SwiftUI dialect
+        // it's the "stretch, greedily fill the container" idiom, not "no
+        // opinion" — omitting it here would leave the exact author intent
+        // this frame exists to carry emitting no CSS at all, content-sizing
+        // inside this backend's flex containers (align-items defaults to
+        // flex-start/leading, never stretch) exactly like an unframed leaf.
+        // See ``HTMLEmitter/applyInfiniteStretch(in:)`` for the mapping.
         if let minWidth = container.declaredMinWidth, minWidth.isFinite {
             style.set("\(Int(minWidth))px", for: "min-width")
         }
-        if let maxWidth = container.declaredMaxWidth, maxWidth.isFinite {
-            style.set("\(Int(maxWidth))px", for: "max-width")
+        if let maxWidth = container.declaredMaxWidth {
+            if maxWidth.isFinite {
+                style.set("\(Int(maxWidth))px", for: "max-width")
+            } else if maxWidth == .infinity {
+                Self.applyInfiniteStretch(in: &style)
+            }
         }
         if let minHeight = container.declaredMinHeight, minHeight.isFinite {
             style.set("\(Int(minHeight))px", for: "min-height")
         }
-        if let maxHeight = container.declaredMaxHeight, maxHeight.isFinite {
-            style.set("\(Int(maxHeight))px", for: "max-height")
+        if let maxHeight = container.declaredMaxHeight {
+            if maxHeight.isFinite {
+                style.set("\(Int(maxHeight))px", for: "max-height")
+            } else if maxHeight == .infinity {
+                Self.applyInfiniteStretch(in: &style)
+            }
         }
 
         guard let stack = container.stackLayout else {
@@ -792,6 +809,45 @@ public struct HTMLEmitter {
         } else if !hasEnclosingFrame {
             style.set("\(size.y)px", for: "min-height")
         }
+    }
+
+    /// Maps a `.frame(maxWidth: .infinity)` / `.frame(maxHeight: .infinity)`
+    /// declaration to the CSS that reproduces its "stretch, greedily fill
+    /// the container" meaning.
+    ///
+    /// The frame doesn't know whether the parent stacked it on the row or
+    /// the column axis — that's decided several stack frames up, in
+    /// ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``
+    /// for a *different* container than this one — so rather than thread
+    /// orientation down just for this case, both possibilities are covered
+    /// unconditionally: `align-self:stretch` fills the constrained axis when
+    /// it turns out to be the parent stack's cross axis (mirrors the Divider
+    /// handling in
+    /// ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:)``),
+    /// and `flex-grow`/`flex-shrink`/`flex-basis` fills it when it turns out
+    /// to be the main axis instead — `flex-grow` always targets whichever
+    /// axis is the parent's main one, so the same declaration is correct
+    /// whether that axis happens to be width or height. The two forms don't
+    /// interfere with each other: `align-self` only ever affects the cross
+    /// axis and `flex-grow` only ever affects the main axis, so a widget
+    /// with both `maxWidth: .infinity` and `maxHeight: .infinity` can call
+    /// this twice without the second call's flex-grow overwriting anything
+    /// the first call meant to keep — both calls want the identical values.
+    /// A non-flex parent (plain block flow) already stretches a block-level
+    /// child to the container's width by default, so no declaration is
+    /// needed there — `align-self` and `flex-grow` are simply ignored
+    /// outside a flex container. There's no equivalent free win for height
+    /// under block flow (block height is content-driven, not
+    /// container-driven), so an infinite maxHeight outside any stack is a
+    /// known gap, consistent with this emitter's best-effort contract.
+    ///
+    /// - Parameter style: The declaring widget's own style, mutated in
+    ///   place.
+    nonisolated static func applyInfiniteStretch(in style: inout Style) {
+        style.set("stretch", for: "align-self")
+        style.set("1", for: "flex-grow")
+        style.set("1", for: "flex-shrink")
+        style.set("0%", for: "flex-basis")
     }
 
     /// Whether any two of a container's children share area.
