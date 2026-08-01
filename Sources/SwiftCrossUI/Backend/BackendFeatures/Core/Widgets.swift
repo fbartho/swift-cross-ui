@@ -94,6 +94,30 @@ extension BackendFeatures {
             spacing: Int
         )
 
+        /// Tells the backend the layout priority the stack layout system used
+        /// for each of a stack's children, in the same visual order as every
+        /// other per-child index (``setPosition(ofChildAt:in:to:)``,
+        /// ``swap(childAt:withChildAt:in:)``).
+        ///
+        /// The default implementation does nothing, as with
+        /// ``describeStackLayout(of:orientation:alignment:spacing:)``: a
+        /// backend that positions children itself already has layout
+        /// priority's *effect* baked into each child's committed size and
+        /// needs nothing further. A backend re-expressing the stack in a
+        /// system with its own space-distribution rules (a CSS flex
+        /// container, say) does need it — nothing in the committed
+        /// geometry alone says which children should give up space first
+        /// on a reflow the stack layout system never re-ran.
+        ///
+        /// Called during commit, alongside
+        /// ``describeStackLayout(of:orientation:alignment:spacing:)``.
+        ///
+        /// - Parameters:
+        ///   - widget: The container that was laid out as a stack.
+        ///   - priorities: Each child's layout priority, indexed the same
+        ///     way as the container's children.
+        func describeChildLayoutPriorities(of widget: Widget, priorities: [Double])
+
         /// Tells the backend that a container's size was fixed by the author.
         ///
         /// The default implementation does nothing. As with
@@ -160,6 +184,11 @@ extension BackendFeatures.Widgets {
         spacing: Int
     ) {
         // Backends that position children themselves learn nothing from this.
+    }
+
+    public func describeChildLayoutPriorities(of widget: Widget, priorities: [Double]) {
+        // As above: a backend that positions children itself already has
+        // priority's effect baked into each child's committed size.
     }
 
     public func describeFrame(of widget: Widget, width: Double?, height: Double?) {

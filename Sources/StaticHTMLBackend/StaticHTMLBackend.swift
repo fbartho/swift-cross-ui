@@ -162,6 +162,13 @@ public final class StaticHTMLBackend:
         /// a stack. `nil` means the positions are the only description there
         /// is, and the emitter has to place the children absolutely.
         public var stackLayout: StackLayout?
+        /// Each stack child's ``SwiftCrossUI/View/layoutPriority(_:)``,
+        /// indexed the same way as ``children``. `nil` for a container the
+        /// layout system never described as a stack at all — as opposed to
+        /// one that was, where every entry defaults to 0 (SwiftUI's
+        /// undeclared priority), which is a real, meaningful value the
+        /// emitter still needs to see.
+        public var childLayoutPriorities: [Double]?
         /// The width the author fixed with ``SwiftCrossUI/View/frame(width:height:alignment:)``.
         ///
         /// Kept apart from ``Widget/size`` because only a dimension the author
@@ -423,6 +430,10 @@ public final class StaticHTMLBackend:
             alignment: alignment,
             spacing: spacing
         )
+    }
+
+    public func describeChildLayoutPriorities(of widget: Widget, priorities: [Double]) {
+        (widget as? Container)?.childLayoutPriorities = priorities
     }
 
     public func describeFrame(of widget: Widget, width: Double?, height: Double?) {

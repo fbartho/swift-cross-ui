@@ -1109,6 +1109,77 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("layoutPriority gives the higher-priority child less flex-shrink under a squeeze")
+    func layoutPriorityWeightsFlexShrink() {
+        // Sweep finding G5: under a deliberately constrained frame, two Text
+        // children behaved identically regardless of layoutPriority — no
+        // flex-grow/flex-shrink anywhere in the emitter at all, because the
+        // value never reached the backend in the first place (see
+        // LayoutSystem.commitStackLayout's describeChildLayoutPriorities
+        // call). This reproduces that exact shape: two children whose
+        // natural widths add up to more than the 260px the HStack is
+        // squeezed into, one of them with a higher declared priority.
+        //
+        // No .htmlTag()/.htmlAttributes() here: layoutPriority wraps its
+        // view in its own PreferenceModifier container, which is what
+        // actually lands as the HStack's direct child (and so is what
+        // carries flex-shrink) — an explicit tag on the Text leaf would
+        // hoist onto a *different* element than the one under test. The
+        // priority-0 leading Text stays an unwrapped span, so the two
+        // classes are told apart by which element carries which, in
+        // document order: the plain <span> is the low-priority child, the
+        // wrapping <div data-scui="PreferenceModifier"> is the high-priority
+        // one.
+        let squeezed = StaticHTMLRenderer.render(
+            HStack {
+                Text("Long leading label text")
+                Text("Long trailing label text").layoutPriority(1)
+            }
+            .frame(width: 260),
+            title: "Squeezed priority"
+        ).html
+
+        let lowRule = Self.styleRule(forElementContaining: "<span", in: squeezed)
+        let highRule = Self.styleRule(
+            forElementContaining: "data-scui=\"PreferenceModifier\"",
+            in: squeezed
+        )
+        #expect(lowRule?.contains("flex-shrink:") == true)
+        #expect(highRule?.contains("flex-shrink:") == true)
+
+        // The higher-priority child must end up with a *smaller* shrink
+        // factor — it gives up less space, matching layoutPriority's
+        // documented "resists shrinking" contract — not just *some*
+        // flex-shrink value.
+        func shrinkValue(_ rule: String?) -> Double? {
+            guard let rule, let range = rule.range(of: "flex-shrink:") else {
+                return nil
+            }
+            let rest = rule[range.upperBound...]
+            let digits = rest.prefix { $0.isNumber || $0 == "." }
+            return Double(digits)
+        }
+        let lowShrink = shrinkValue(lowRule)
+        let highShrink = shrinkValue(highRule)
+        #expect(lowShrink != nil && highShrink != nil)
+        if let lowShrink, let highShrink {
+            #expect(highShrink < lowShrink)
+        }
+
+        // A stack whose children never diverge on layoutPriority is the
+        // common case, and must stay exactly as before: no flex-shrink at
+        // all, so an author who never touched the modifier sees no new CSS.
+        let uniform = StaticHTMLRenderer.render(
+            HStack {
+                Text("One")
+                Text("Two")
+            },
+            title: "Uniform priority"
+        ).html
+        #expect(!uniform.contains("flex-shrink"))
+    }
+
+    @MainActor
     @Test("Divider stretches via flex, not a pinned min-width that would overflow")
     func dividerStretchesWithoutOverflowing() {
         // Sweep finding G8: Divider's un-declared axis (Divider only

@@ -345,6 +345,19 @@ public enum LayoutSystem {
             spacing: spacing
         )
 
+        // priorityGroups is grouped and reordered by flexibility, not indexed
+        // by visual position, so it's unwound back into one priority per
+        // child here — the shape every other per-child backend call
+        // (setPosition, swap) already uses — rather than making backends
+        // redo that unwinding themselves.
+        var priorities = [Double](repeating: 0, count: children.count)
+        for group in cache.priorityGroups {
+            for index in group.children {
+                priorities[index] = group.priority
+            }
+        }
+        backend.describeChildLayoutPriorities(of: container, priorities: priorities)
+
         if cache.redistributeSpaceOnCommit {
             _ = computeLayouts(
                 of: children,
