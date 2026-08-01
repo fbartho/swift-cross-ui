@@ -286,6 +286,63 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A tagged void leaf inside a frame takes the frame's size directly")
+    func voidLeafInheritsDeclaredFrame() {
+        let view = Text("")
+            .frame(width: 400, height: 267)
+            .htmlTag(.custom("img"))
+            .htmlAttributes(["src": "/photo.jpg", "alt": "A photo"])
+        let html = StaticHTMLRenderer.render(view, title: "Image with frame").html
+
+        #expect(html.contains("<img"))
+        #expect(html.contains("src=\"/photo.jpg\""))
+        // The size lands on the img's own class, not just a wrapper's: a
+        // wrapper div sizing itself wouldn't stretch a void element, which is
+        // replaced content the browser sizes on its own.
+        let imgRule = Self.styleRule(forElementContaining: "<img", in: html)
+        #expect(imgRule?.contains("width:400px") == true)
+        #expect(imgRule?.contains("height:267px") == true)
+    }
+
+    @MainActor
+    @Test("A tagged void leaf with no frame gets no size CSS")
+    func voidLeafWithoutFrameStaysUnsized() {
+        let view = Text("")
+            .htmlTag(.custom("img"))
+            .htmlAttributes(["src": "/photo.jpg", "alt": "A photo"])
+        let html = StaticHTMLRenderer.render(view, title: "Image without frame").html
+
+        #expect(html.contains("<img"))
+        #expect(html.contains("src=\"/photo.jpg\""))
+        // No frame was declared, so the browser sizes the img from the
+        // fetched file rather than from a pinned box. Checking for "height:"
+        // as a bare substring would false-positive on "line-height:", which
+        // the TextView carrier still sets, so the declaration boundary
+        // (preceded by "{" or ";") has to be part of the match.
+        let imgRule = Self.styleRule(forElementContaining: "<img", in: html)
+        #expect(imgRule?.contains("{width:") != true && imgRule?.contains(";width:") != true)
+        #expect(imgRule?.contains("{height:") != true && imgRule?.contains(";height:") != true)
+    }
+
+    /// Finds the interned style rule for the element whose opening tag
+    /// contains `marker`, by reading its `class` attribute out of the body
+    /// and looking up the matching `.scui-N { … }` rule in the stylesheet.
+    private static func styleRule(forElementContaining marker: String, in html: String) -> String? {
+        guard
+            let elementLine = html.split(separator: "\n").first(where: { $0.contains(marker) }),
+            let classRange = elementLine.range(of: "class=\"")
+        else {
+            return nil
+        }
+        let afterClass = elementLine[classRange.upperBound...]
+        guard let closingQuote = afterClass.firstIndex(of: "\"") else {
+            return nil
+        }
+        let className = String(afterClass[..<closingQuote])
+        return html.split(separator: "\n").first { $0.contains(".\(className) {") }.map(String.init)
+    }
+
+    @MainActor
     @Test("Authors can't overwrite the attributes the backend owns")
     func ignoresReservedAuthorAttributes() {
         let view = Text("Styled").htmlAttributes([
