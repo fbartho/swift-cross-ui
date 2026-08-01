@@ -136,6 +136,12 @@ let package = Package(
             type: libraryType,
             targets: ["SwiftCrossUIPreviews"]
         ),
+        // TODO(fbartho): Temporary scaffolding for the canvas experiment.
+        .library(
+            name: "SCUIPreviewProbe",
+            type: libraryType,
+            targets: ["SCUIPreviewProbe"]
+        ),
         .library(name: "GtkBackend", type: libraryType, targets: ["GtkBackend"]),
         .library(name: "Gtk3Backend", type: libraryType, targets: ["Gtk3Backend"]),
         .library(name: "WinUIBackend", type: libraryType, targets: ["WinUIBackend"]),
@@ -246,6 +252,18 @@ let package = Package(
                 "SwiftCrossUI",
                 "SwiftCrossUIMacrosPlugin",
                 .target(name: "AppKitBackend", condition: .when(platforms: [.macOS])),
+            ]
+        ),
+        // TODO(fbartho): Temporary scaffolding for the canvas experiment. A
+        // library target, because Xcode can't preview an SPM executable
+        // without ENABLE_DEBUG_DYLIB, and a consumer of SwiftCrossUIPreviews
+        // rather than part of it, because the #Preview overload can't be used
+        // inside the module that declares it.
+        .target(
+            name: "SCUIPreviewProbe",
+            dependencies: [
+                "SwiftCrossUI",
+                .target(name: "SwiftCrossUIPreviews", condition: .when(platforms: [.macOS])),
             ]
         ),
         .executableTarget(
