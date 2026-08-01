@@ -28,12 +28,30 @@ import SwiftCrossUI
     // module that declared the macro -- so the overload's registrations are
     // indistinguishable from SwiftUI's to the canvas's lookup.
     //
+    // A first canvas run still reported "Missing Preview" for preview 2, but
+    // not because the identity failed to match. Xcode's log narrates three
+    // `XOJIT Link Error`s immediately before the preview agent disconnects,
+    // and the launch thunk has exactly three unresolved SwiftCrossUIPreviews
+    // symbols: SCUIPreview's nominal type descriptor, its initializer, and
+    // its SwiftUI.View conformance descriptor. Preview 1 needs nothing
+    // outside SwiftUI and DeveloperToolsSupport, so it links and renders;
+    // preview 2 needs symbols from a package target that builds as a static
+    // object, which the agent's JIT linker can't resolve.
+    //
+    // Building the products as dynamic libraries exports those three symbols,
+    // so set SCUI_LIBRARY_TYPE=dynamic in the scheme before drawing any
+    // conclusion about the registration itself.
+    //
     // TEST PROCEDURE
     //
     // 1. Open Package.swift in Xcode (File > Open, select the repo root).
     // 2. Choose the `SCUIPreviewProbe` scheme, destination `My Mac`.
-    // 3. Open this file (Sources/SCUIPreviewProbe/CanvasProbe.swift).
-    // 4. Show the canvas with option-command-return, and resume it if it
+    // 3. Edit the scheme: Run > Arguments > Environment Variables, and add
+    //    `SCUI_LIBRARY_TYPE` = `dynamic`. Without it the package builds
+    //    static objects and preview 2 can't link, however correct its
+    //    registration is.
+    // 4. Open this file (Sources/SCUIPreviewProbe/CanvasProbe.swift).
+    // 5. Show the canvas with option-command-return, and resume it if it
     //    isn't already running.
     //
     // Expected result, per numbered preview:
@@ -42,9 +60,9 @@ import SwiftCrossUI
     //   This is SwiftUI's own macro and is the control -- if it fails, the
     //   canvas itself isn't working and the other two prove nothing.
     // - "2 OVERLOAD (SwiftCrossUI view)": a tab that renders the SwiftCrossUI
-    //   counter, with a working Increment button. A tab showing "Missing
-    //   Preview" here means the identity match didn't carry through to the
-    //   canvas's runtime lookup.
+    //   counter, with a working Increment button. "Missing Preview" here,
+    //   with the dynamic build in place, would mean the linker theory is
+    //   wrong and the canvas rejects the registration for some other reason.
     // - "3 MACRO (SwiftCrossUI view)": no tab at all. `#SCUIPreview` still
     //   lacks the literal `#Preview` token that the canvas scans for, so
     //   direct emission doesn't change its visibility -- it registers
