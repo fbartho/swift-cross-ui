@@ -53,22 +53,31 @@ public macro SCUIPreview<Content: SwiftCrossUI.View>(
 ///
 /// ## Where previews appear
 ///
-/// Xcode renders previews by loading the built code into a separate agent
-/// process, which requires the `ENABLE_DEBUG_DYLIB` build setting. Where a
-/// preview is written decides whether that setting is available:
+/// Xcode runs a preview inside a host executable, chosen from the targets that
+/// both depend on the previewed one and belong to the active scheme. When no
+/// such executable exists it falls back to hosting the previewed module on its
+/// own.
 ///
-/// | Context | Previews render |
+/// That choice decides which symbols the preview can reach:
+///
+/// | Previewing from | Previews render |
 /// | --- | --- |
-/// | Xcode project, app target | Yes, by default |
-/// | Xcode project, command-line tool target | Yes, with `ENABLE_DEBUG_DYLIB` set to `YES` |
-/// | Swift package | Only for views the previewed file's own module builds |
+/// | An app target's scheme | Anything the app links, including package views |
+/// | A package's own scheme | Views the previewed module itself builds |
 ///
-/// A Swift package target has no way to set `ENABLE_DEBUG_DYLIB`, so the agent
-/// can only resolve what it already has loaded. Previews of views defined in the
-/// same module as the preview itself render; previews whose body reaches into
-/// another module of the package report "Missing Preview" instead. To preview
-/// components of a package, open the package from an Xcode project that depends
-/// on it.
+/// Previewing a package's views from the package alone works as long as the
+/// view and the preview are in one module. A body that reaches into another of
+/// the package's modules reports "Missing Preview" instead: the fallback host
+/// resolves only what the previewed module already links.
+///
+/// Both rows require a literal `#Preview`, which is what Xcode scans for. That
+/// makes them inapplicable inside SwiftCrossUIPreviews itself, where the only
+/// available spelling is ``SCUIPreview(_:body:)`` and nothing is displayed.
+///
+/// To preview across a package's modules, open it from an Xcode project whose
+/// app target depends directly on the product containing the previewed file,
+/// and make that app's scheme the active one. A transitive dependency isn't
+/// enough for the app to be chosen as the host.
 ///
 /// - Note: This overload can't be used inside SwiftCrossUIPreviews itself. A
 ///   same-module declaration outranks the imported SwiftUI one, so within this
