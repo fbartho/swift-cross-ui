@@ -38,7 +38,7 @@ struct SCUIPreviewMacroTests {
         #expect(expansion.contains("#endif"))
     }
 
-    @Test("Expansion registers the preview with SwiftUI")
+    @Test("Expansion registers the preview directly")
     func testExpansionRegistersPreview() throws {
         let expansion = try expand(
             """
@@ -48,16 +48,19 @@ struct SCUIPreviewMacroTests {
             """
         )
 
-        // Xcode discovers previews through SwiftUI's own registration, so the
-        // expansion has to bottom out in it, with the view wrapped in the
-        // type that bridges SwiftCrossUI to SwiftUI.
-        #expect(expansion.contains("#_SCUIPreviewRegistration"))
+        // Xcode discovers previews through `PreviewRegistry` conformances, and
+        // matches them by mangled name. Delegating to SwiftUI's `#Preview`
+        // would nest its expansion inside ours and mangle a frame deeper than
+        // the canvas expects, so the registry is emitted here instead, with
+        // the view wrapped in the type that bridges SwiftCrossUI to SwiftUI.
+        #expect(expansion.contains(": DeveloperToolsSupport.PreviewRegistry"))
+        #expect(expansion.contains("DeveloperToolsSupport.Preview"))
         #expect(expansion.contains("SwiftCrossUIPreviews.SCUIPreview"))
         #expect(expansion.contains("Text(\"Hello\")"))
     }
 
-    @Test("Expansion aliases SwiftUI so that the registration resolves")
-    func testExpansionAliasesSwiftUI() throws {
+    @Test("Registry reports the source position of the macro")
+    func testRegistryReportsSourcePosition() throws {
         let expansion = try expand(
             """
             #SCUIPreview {
@@ -66,14 +69,11 @@ struct SCUIPreviewMacroTests {
             """
         )
 
-        // SwiftUI's registration names `SwiftUI.View` and
-        // `SwiftUI.ViewBuilder` with the module spelled out, and an expansion
-        // can't introduce the import that would make those resolve.
-        #expect(
-            expansion.contains(
-                "typealias SwiftUI = SwiftCrossUIPreviews._SCUIPreviewSwiftUIShim"
-            )
-        )
+        // The canvas associates a registration with the call site it came
+        // from, so the registry has to carry all three position properties.
+        #expect(expansion.contains("static var fileID: String"))
+        #expect(expansion.contains("static var line: Int"))
+        #expect(expansion.contains("static var column: Int"))
     }
 
     @Test("Display name is passed through to the registration")
@@ -86,7 +86,7 @@ struct SCUIPreviewMacroTests {
             """
         )
 
-        #expect(expansion.contains("#_SCUIPreviewRegistration(\"Counter\")"))
+        #expect(expansion.contains("DeveloperToolsSupport.Preview(\"Counter\")"))
     }
 
     @Test("Omitted display name expands to an empty argument list")
@@ -99,7 +99,7 @@ struct SCUIPreviewMacroTests {
             """
         )
 
-        #expect(expansion.contains("#_SCUIPreviewRegistration()"))
+        #expect(expansion.contains("DeveloperToolsSupport.Preview()"))
     }
 
     @Test("Macro requires a trailing closure")
