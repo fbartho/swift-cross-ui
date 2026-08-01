@@ -247,6 +247,13 @@ let package = Package(
                 .target(name: "AppKitBackend", condition: .when(platforms: [.macOS])),
             ]
         ),
+        .executableTarget(
+            name: "SCUIPreviewSnapshotTool",
+            dependencies: [
+                .target(name: "SwiftCrossUIPreviews", condition: .when(platforms: [.macOS])),
+                "SwiftCrossUI",
+            ]
+        ),
         .testTarget(
             name: "SwiftCrossUIPreviewsTests",
             dependencies: [

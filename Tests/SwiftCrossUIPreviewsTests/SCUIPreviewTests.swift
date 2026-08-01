@@ -7,23 +7,6 @@
     import SwiftCrossUI
     @testable import SwiftCrossUIPreviews
 
-    /// A view exercising text styling, a button, and stack layout.
-    private struct SampleView: SwiftCrossUI.View {
-        @SwiftCrossUI.State var count = 0
-
-        var body: some SwiftCrossUI.View {
-            SwiftCrossUI.VStack {
-                SwiftCrossUI.Text("SwiftCrossUI in Xcode")
-                    .font(.title)
-                SwiftCrossUI.Text("Count: \(count)")
-                SwiftCrossUI.Button("Increment") {
-                    count += 1
-                }
-            }
-            .padding()
-        }
-    }
-
     @Suite("SCUIPreview hosting")
     struct SCUIPreviewTests {
         /// Drives the same entry points that SwiftUI drives when rendering a
@@ -31,7 +14,7 @@
         @Test("Hosting a view through the representable renders visible content")
         @MainActor
         func testRepresentableRendersContent() throws {
-            let representable = SCUIPreview<SampleView>.Representable(content: SampleView())
+            let representable = SCUIPreview<CounterSample>.Representable(content: CounterSample())
             let host = representable.makeCoordinator()
 
             // The canvas proposes a size before asking for the view, matching
@@ -149,6 +132,47 @@
                     minHeight: 50,
                     maxHeight: 50
                 )
+            }
+        }
+
+        /// The snapshot tool is only useful as regression evidence if the same
+        /// view renders to the same bytes every time.
+        @Test("Snapshots are reproducible across renders")
+        @MainActor
+        func testSnapshotsAreReproducible() throws {
+            let first = try SCUIPreviewSnapshot.png(of: CounterSample())
+            let second = try SCUIPreviewSnapshot.png(of: CounterSample())
+
+            #expect(first == second, "Rendering the same view twice produced different bytes")
+        }
+
+        /// Snapshots are rendered at 1x explicitly so that they don't differ
+        /// between Retina and non-Retina machines.
+        @Test("Snapshots render at one pixel per point")
+        @MainActor
+        func testSnapshotsRenderAtOnePixelPerPoint() throws {
+            let bitmap = try SCUIPreviewSnapshot.bitmap(
+                of: BannerSample(),
+                size: ProposedViewSize(400, nil)
+            )
+
+            #expect(
+                bitmap.pixelsWide == 400,
+                """
+                Snapshot was \(bitmap.pixelsWide)px wide for a 400pt proposal, so it \
+                picked up the display's scale factor
+                """
+            )
+        }
+
+        /// Every gallery entry has to render, since the demo previews and the
+        /// snapshot tool both depend on them.
+        @Test("Every gallery entry renders")
+        @MainActor
+        func testGalleryEntriesRender() throws {
+            for entry in SCUIPreviewGallery.entries {
+                let data = try entry.renderPNG()
+                #expect(!data.isEmpty, "Gallery entry '\(entry.name)' rendered no data")
             }
         }
 

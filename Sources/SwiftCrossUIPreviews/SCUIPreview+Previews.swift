@@ -3,30 +3,24 @@
 
     import SwiftCrossUI
 
-    /// A sample view demonstrating ``SCUIPreview``.
-    ///
-    /// Exercises text styling, a button, and stack layout so that the preview
-    /// shows a non-trivial layout rather than a single label.
-    private struct SampleView: SwiftCrossUI.View {
-        @SwiftCrossUI.State var count = 0
+    // Renders SwiftCrossUI views in Xcode's preview canvas. Open Package.swift
+    // in Xcode, open this file, and show the canvas (option-command-return).
+    //
+    // These render `SCUIPreviewGallery`'s views, which the snapshot tool renders
+    // too, so the canvas and the recorded snapshots stay in agreement.
 
-        var body: some SwiftCrossUI.View {
-            SwiftCrossUI.VStack {
-                SwiftCrossUI.Text("SwiftCrossUI in Xcode")
-                    .font(.title)
-                SwiftCrossUI.Text("Count: \(count)")
-                SwiftCrossUI.Button("Increment") {
-                    count += 1
-                }
-            }
-            .padding()
+    @available(macOS 14.0, *)
+    #Preview("Counter") {
+        SCUIPreview {
+            CounterSample()
         }
     }
 
     @available(macOS 14.0, *)
-    #Preview("SCUIPreview") {
+    #Preview("Text") {
         SCUIPreview {
-            SampleView()
+            SwiftCrossUI.Text("Hello, world!")
+                .font(.title)
         }
     }
 #endif

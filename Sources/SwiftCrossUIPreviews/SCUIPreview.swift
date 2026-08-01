@@ -172,12 +172,23 @@
             func sizeThatFits(_ proposal: SwiftUI.ProposedViewSize) -> CGSize {
                 // SwiftUI uses `nil` to mean "no proposal in this dimension",
                 // which SwiftCrossUI spells the same way.
-                proposedSize = SwiftCrossUI.ProposedViewSize(
-                    proposal.width.map(Double.init),
-                    proposal.height.map(Double.init)
+                let size = layout(
+                    proposing: SwiftCrossUI.ProposedViewSize(
+                        proposal.width.map(Double.init),
+                        proposal.height.map(Double.init)
+                    )
                 )
+                return CGSize(width: size.width, height: size.height)
+            }
+
+            /// Lays the previewed view out against a new proposal.
+            ///
+            /// - Parameter proposal: The size to propose to the view.
+            /// - Returns: The size the view wants to be.
+            func layout(proposing proposal: SwiftCrossUI.ProposedViewSize) -> ViewSize {
+                proposedSize = proposal
                 relayout()
-                return CGSize(width: contentSize.width, height: contentSize.height)
+                return contentSize
             }
 
             /// Updates the previewed view with a new value of the root view.
