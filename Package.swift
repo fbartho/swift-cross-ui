@@ -244,6 +244,7 @@ let package = Package(
             name: "SwiftCrossUIPreviews",
             dependencies: [
                 "SwiftCrossUI",
+                "SwiftCrossUIMacrosPlugin",
                 .target(name: "AppKitBackend", condition: .when(platforms: [.macOS])),
             ]
         ),
