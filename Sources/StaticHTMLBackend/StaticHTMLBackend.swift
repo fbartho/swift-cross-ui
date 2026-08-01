@@ -281,8 +281,33 @@ public final class StaticHTMLBackend:
     public func setCloseHandler(ofWindow window: Window, to action: @escaping () -> Void) {}
 
     public func runInMainThread(action: @escaping @MainActor () -> Void) {
-        MainActor.assumeIsolated {
-            action()
+        // `StaticHTMLRenderer.render` is itself `@MainActor`, so the common
+        // case really is already on the MainActor executor and
+        // `assumeIsolated` would be correct. But `observeAsUIUpdater`
+        // (used by every `@State`/`@Environment` property, not just
+        // `.task`/`.onChange`) registers its observer during
+        // `ViewGraphNode.init` by hopping to a background serial queue
+        // first, so this can also be reached off the true MainActor -
+        // `assumeIsolated` would then trap with "Incorrect actor executor
+        // assumption" instead of running the action.
+        //
+        // A one-shot render has no run loop spinning after `render`
+        // returns, so deferring with `DispatchQueue.main.async` (as
+        // `DummyBackend` does) would silently never run the action here.
+        // Running it synchronously, on whichever thread actually reaches
+        // this call, is what makes a one-shot render's state observation
+        // behave the same as every other path through the render: it just
+        // happens now, because for this backend there is no "later".
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                action()
+            }
+        } else {
+            DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    action()
+                }
+            }
         }
     }
 

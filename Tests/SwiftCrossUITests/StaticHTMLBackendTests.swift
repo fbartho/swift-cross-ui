@@ -47,6 +47,31 @@ struct StaticHTMLBackendTests {
         #expect(html.contains(">Title</h1>"))
     }
 
+    @MainActor
+    @Test("A view using .task doesn't crash the one-shot render")
+    func taskModifierDoesNotCrash() {
+        // .task routes through .onChange(of:initial:) internally
+        // (TaskModifier.body), which persists state via @State. Every
+        // @State property makes ViewGraphNode.init register an observer
+        // through Publisher.observeAsUIUpdater, which hops to a background
+        // queue before calling back into the backend - so this exercises
+        // the same MainActor executor assumption regardless of whether
+        // the task body itself ever runs.
+        let view = Text("Has an async task hook").task {}
+        let html = StaticHTMLRenderer.render(view, title: "Task").html
+
+        #expect(html.contains("Has an async task hook"))
+    }
+
+    @MainActor
+    @Test("A view using .onChange doesn't crash the one-shot render")
+    func onChangeModifierDoesNotCrash() {
+        let view = Text("Has an onChange hook").onChange(of: 1) {}
+        let html = StaticHTMLRenderer.render(view, title: "OnChange").html
+
+        #expect(html.contains("Has an onChange hook"))
+    }
+
     @Test("Escaping covers every character that could break out of markup")
     func escapesMarkupCharacters() {
         #expect(HTMLEmitter.escape("a & b") == "a &amp; b")
