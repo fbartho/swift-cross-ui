@@ -274,4 +274,99 @@ struct StaticHTMLBackendTests {
         #expect(html.contains("href=\"#\""))
         #expect(html.contains(">Press</a>"))
     }
+
+    @MainActor
+    @Test("Text that wraps is allocated every line it needs")
+    func allocatesHeightForWrappedText() {
+        // Long enough to need more than one line at this width. A finite height
+        // proposal would make Text truncate to what fits instead, and the
+        // browser would then wrap the full string outside the emitted box.
+        let long = String(repeating: "word ", count: 60)
+        let lineHeight = Int(
+            EnvironmentValues(backend: StaticHTMLBackend()).resolvedFont.lineHeight
+        )
+
+        let result = StaticHTMLRenderer.render(
+            Text(long),
+            title: "Wrapping",
+            size: SIMD2(400, 50)
+        )
+
+        #expect(result.size.y > lineHeight)
+    }
+
+    @MainActor
+    @Test("A document grows past its proposed height rather than truncating")
+    func documentHeightIsAnOutcomeNotAConstraint() {
+        let view = VStack {
+            ForEach(0..<20, id: \.self) { _ in
+                Text("A line of body text.")
+            }
+        }
+
+        let result = StaticHTMLRenderer.render(
+            view,
+            title: "Overflow",
+            size: SIMD2(400, 40)
+        )
+
+        #expect(result.size.y > 40)
+    }
+
+    @MainActor
+    @Test("Text clips to its box so estimate drift can't overlap what's below")
+    func clipsTextToItsAllocatedBox() {
+        let html = StaticHTMLRenderer.render(Text("Body"), title: "Clipping").html
+
+        #expect(html.contains("overflow:hidden"))
+    }
+
+    @MainActor
+    @Test("Stacked text is laid out without any two boxes overlapping")
+    func stackedTextBoxesDoNotOverlap() {
+        let view = VStack(alignment: .leading, spacing: 5) {
+            Text(String(repeating: "wrapping text ", count: 12))
+            Text(String(repeating: "more wrapping text ", count: 12))
+            Text("Short")
+        }
+
+        let backend = StaticHTMLBackend()
+        let window = backend.createWindow(withDefaultSize: SIMD2(300, 100), id: "test")
+        let environment = EnvironmentValues(backend: backend).with(\.window, window)
+        let node = ViewGraphNode(for: view, backend: backend, environment: environment)
+        _ = node.computeLayout(
+            proposedSize: ProposedViewSize(300, nil),
+            environment: environment
+        )
+        _ = node.commit()
+
+        // Walk the committed tree collecting absolute rectangles, then check
+        // that no two leaves share any area.
+        var rectangles: [(origin: SIMD2<Int>, size: SIMD2<Int>)] = []
+        func collect(_ widget: StaticHTMLBackend.Widget, at origin: SIMD2<Int>) {
+            if let container = widget as? StaticHTMLBackend.Container {
+                for (child, position) in container.children {
+                    collect(child, at: origin &+ position)
+                }
+            } else {
+                rectangles.append((origin, widget.size))
+            }
+        }
+        collect(node.widget, at: .zero)
+
+        #expect(rectangles.count == 3)
+        for first in rectangles.indices {
+            for second in rectangles.indices where second > first {
+                let a = rectangles[first]
+                let b = rectangles[second]
+                let verticalOverlap =
+                    min(a.origin.y + a.size.y, b.origin.y + b.size.y)
+                    - max(a.origin.y, b.origin.y)
+                let horizontalOverlap =
+                    min(a.origin.x + a.size.x, b.origin.x + b.size.x)
+                    - max(a.origin.x, b.origin.x)
+                #expect(verticalOverlap <= 0 || horizontalOverlap <= 0)
+            }
+        }
+    }
 }
