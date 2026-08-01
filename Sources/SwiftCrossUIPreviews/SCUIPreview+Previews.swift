@@ -1,10 +1,13 @@
 import SwiftCrossUI
 
-// Renders SwiftCrossUI views in Xcode's preview canvas. Open Package.swift in
-// Xcode, open this file, and show the canvas (option-command-return).
+// Previews of `SCUIPreviewGallery`'s views -- the same views the snapshot tool
+// renders, so the two stay in agreement.
 //
-// These render `SCUIPreviewGallery`'s views, which the snapshot tool renders
-// too, so the canvas and the recorded snapshots stay in agreement.
+// These use `#SCUIPreview` rather than `#Preview` because the overload can't
+// be used inside the module that declares it, and Xcode's canvas doesn't
+// display `#SCUIPreview` previews. They therefore exist as registrations
+// rather than as something you can look at; to see these views in the canvas,
+// preview them from a module that imports SwiftCrossUIPreviews.
 
 #SCUIPreview("Counter") {
     CounterSample()

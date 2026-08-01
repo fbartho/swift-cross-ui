@@ -1,11 +1,20 @@
 import SwiftCrossUI
 
-/// Registers a SwiftCrossUI view with Xcode's preview canvas.
+/// Registers a SwiftCrossUI view as a preview, under a name of our own.
+///
+/// Prefer ``Preview(_:body:)``, which is spelled the same way as SwiftUI's
+/// macro. **Xcode's canvas does not display previews written with
+/// `#SCUIPreview`.** The canvas finds previews by looking for the literal
+/// `#Preview` token in source rather than by enumerating the registrations a
+/// build produces, so this macro registers a preview that compiles correctly,
+/// carries the same metadata as any other, and is never shown.
+///
+/// What it's still for: previewing from inside SwiftCrossUIPreviews itself,
+/// where ``Preview(_:body:)`` can't be used. A same-module macro declaration
+/// outranks an imported one, so within this module `#Preview` always resolves
+/// to our overload, and previews of genuine SwiftUI views stop compiling.
 ///
 /// ```swift
-/// import SwiftCrossUI
-/// import SwiftCrossUIPreviews
-///
 /// #SCUIPreview("Greeting") {
 ///     VStack {
 ///         Text("Hello, world!")
@@ -14,21 +23,13 @@ import SwiftCrossUI
 /// }
 /// ```
 ///
-/// The macro is portable, and is the reason previews don't need a
-/// `#if canImport(SwiftUI)` guard around them: it expands to a preview
-/// registration on platforms that have a canvas, and to nothing at all
-/// elsewhere, so the same file builds unchanged on Linux and Windows.
-///
-/// This is spelled `#SCUIPreview` rather than overloading SwiftUI's
-/// `#Preview`. An overload is resolvable — the closure's return type picks
-/// between the two — but declaring one makes `#Preview` ambiguous for
-/// *SwiftUI* views in any file that can see this module, which would break
-/// previews of ordinary SwiftUI views. A distinct name keeps both spellings
-/// usable in the same file.
+/// Like ``Preview(_:body:)``, this needs no conditional compilation: the
+/// expansion is empty on platforms without a preview canvas, so the same file
+/// builds unchanged on Linux and Windows.
 ///
 /// - Parameters:
-///   - name: A display name for the preview, shown in Xcode's canvas. Defaults
-///     to no name, in which case Xcode labels the preview by source location.
+///   - name: A display name for the preview. Xcode won't show it, for the
+///     reason above.
 ///   - body: A closure returning the view to preview. It is evaluated once when
 ///     the preview is created.
 @freestanding(declaration)
