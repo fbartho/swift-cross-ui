@@ -68,6 +68,23 @@ extension View {
         }
     }
 
+    /// Modifies the environment of the View it's applied to, deriving the new
+    /// value from the one already in scope.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The key path to the environment value to update.
+    ///   - transform: A closure that transforms the environment at `keyPath`.
+    public func transformEnvironment<T>(
+        _ keyPath: WritableKeyPath<EnvironmentValues, T>,
+        transform: @escaping (inout T) -> Void
+    ) -> some View {
+        EnvironmentModifier(self) { environment in
+            var value = environment[keyPath: keyPath]
+            transform(&value)
+            return environment.with(keyPath, value)
+        }
+    }
+
     /// Adds an observable object to the environment of the enclosed View.
     /// You are responsible for ensuring that the object is being observed
     /// by a parent view, as this modifier does not perform any observation.
