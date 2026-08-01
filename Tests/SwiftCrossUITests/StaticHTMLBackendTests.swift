@@ -1,5 +1,7 @@
 import Testing
 
+import Foundation
+import ImageFormats
 import StaticHTMLBackend
 @_spi(Backends) import SwiftCrossUI
 
@@ -477,6 +479,105 @@ struct StaticHTMLBackendTests {
         let imgRule = Self.styleRule(forElementContaining: "<img", in: html)
         #expect(imgRule?.contains("{width:") != true && imgRule?.contains(";width:") != true)
         #expect(imgRule?.contains("{height:") != true && imgRule?.contains(";height:") != true)
+    }
+
+    @MainActor
+    @Test("An Image view emits a real img with its pixel data inlined as a PNG data URL")
+    func imageViewEmitsInlinedPNG() {
+        // Distinct from the escape-hatch tests above: those presume an
+        // author-written <img src> already exists via .htmlTag/.htmlAttributes.
+        // This exercises the actual Image(_:) view, which previously had no
+        // HTMLEmitter case at all and fell through to an empty div — see
+        // sweep finding G2.
+        let source = ImageFormats.Image<RGBA>(
+            width: 2,
+            height: 2,
+            pixels: [
+                RGBA(255, 0, 0, 255),
+                RGBA(0, 255, 0, 255),
+                RGBA(0, 0, 255, 255),
+                RGBA(255, 255, 255, 255),
+            ]
+        )
+        let html = StaticHTMLRenderer.render(
+            SwiftCrossUI.Image(source),
+            title: "Image view"
+        ).html
+
+        #expect(html.contains("<img"))
+        #expect(html.contains("src=\"data:image/png;base64,"))
+
+        // The data URL round-trips to the exact source bytes rather than a
+        // placeholder or a re-encoded approximation — decode it and check
+        // the magic bytes and declared dimensions rather than trusting the
+        // src attribute's mere presence.
+        guard
+            let srcRange = html.range(of: "src=\"data:image/png;base64,"),
+            let closingQuote = html[srcRange.upperBound...].firstIndex(of: "\"")
+        else {
+            Issue.record("No data URL found in emitted <img>")
+            return
+        }
+        let base64 = String(html[srcRange.upperBound..<closingQuote])
+        let pngBytes = try? Data(base64Encoded: base64).map { [UInt8]($0) }
+        #expect(pngBytes?.starts(with: [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) == true)
+
+        let decoded = pngBytes.flatMap { try? ImageFormats.Image<RGBA>.loadPNG(from: $0) }
+        #expect(decoded?.width == 2)
+        #expect(decoded?.height == 2)
+        #expect(decoded?.bytes == source.bytes)
+    }
+
+    @MainActor
+    @Test("An Image view without an author-supplied alt gets alt=\"\", not a missing attribute")
+    func imageViewDefaultsToEmptyAlt() {
+        let source = ImageFormats.Image<RGBA>(
+            width: 1,
+            height: 1,
+            pixels: [RGBA(0, 0, 0, 255)]
+        )
+        let html = StaticHTMLRenderer.render(SwiftCrossUI.Image(source), title: "No alt").html
+
+        // No accessibilityLabel modifier exists in SwiftCrossUI to source
+        // this from, so an explicit empty alt — marking the image
+        // decorative — is the honest default, not an omitted attribute a
+        // screen reader would fall back to reading the src URL for.
+        #expect(html.contains("alt=\"\""))
+    }
+
+    @MainActor
+    @Test("An author-supplied alt on an Image view reaches the emitted img")
+    func imageViewHonorsAuthorSuppliedAlt() {
+        let source = ImageFormats.Image<RGBA>(
+            width: 1,
+            height: 1,
+            pixels: [RGBA(0, 0, 0, 255)]
+        )
+        let html = StaticHTMLRenderer.render(
+            SwiftCrossUI.Image(source).htmlAttributes(["alt": "A black square"]),
+            title: "Explicit alt"
+        ).html
+
+        #expect(html.contains("alt=\"A black square\""))
+        #expect(!html.contains("alt=\"\""))
+    }
+
+    @MainActor
+    @Test("An Image view's committed layout size becomes its img width/height")
+    func imageViewSizesFromCommittedLayout() {
+        let source = ImageFormats.Image<RGBA>(
+            width: 400,
+            height: 300,
+            pixels: [RGBA](repeating: RGBA(128, 128, 128, 255), count: 400 * 300)
+        )
+        let html = StaticHTMLRenderer.render(
+            SwiftCrossUI.Image(source).resizable().frame(width: 200, height: 150),
+            title: "Resized image"
+        ).html
+
+        let imgRule = Self.styleRule(forElementContaining: "<img", in: html)
+        #expect(imgRule?.contains("width:200px") == true)
+        #expect(imgRule?.contains("height:150px") == true)
     }
 
     /// Finds the interned style rule for the element whose opening tag

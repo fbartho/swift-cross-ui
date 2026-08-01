@@ -244,7 +244,7 @@ let package = Package(
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
                 .target(name: "AppKitBackend", condition: .when(platforms: [.macOS])),
-            ]
+            ] + imageFormatsDependencies
         ),
         .target(name: "SwiftCrossUIMetadataSupport"),
         .target(
@@ -335,7 +335,10 @@ let package = Package(
             dependencies: []
         ),
         .target(name: "DummyBackend", dependencies: ["SwiftCrossUI"]),
-        .target(name: "StaticHTMLBackend", dependencies: ["SwiftCrossUI"]),
+        .target(
+            name: "StaticHTMLBackend",
+            dependencies: ["SwiftCrossUI"] + imageFormatsDependencies
+        ),
         .executableTarget(
             name: "StaticHTMLDemo",
             dependencies: ["StaticHTMLBackend", "SwiftCrossUI"]

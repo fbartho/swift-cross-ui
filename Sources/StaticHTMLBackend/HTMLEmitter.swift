@@ -1,4 +1,5 @@
 import Foundation
+import ImageFormats
 @_spi(Backends) import SwiftCrossUI
 
 /// Serializes a committed widget tree into HTML.
@@ -207,6 +208,52 @@ public struct HTMLEmitter {
                 // its committed size is the only thing standing between it and
                 // collapsing to nothing.
                 Self.pin(size: rectangle.size, in: &style, placement: placement)
+
+            case let image as StaticHTMLBackend.ImageView:
+                // <img> is a void element, so it's the one place a data URL
+                // can carry the picture itself rather than a path to it: the
+                // static tier has no server to host a separate file against.
+                // PNG round-trips the source's RGBA losslessly, which matters
+                // here since there's no author-chosen quality/format to defer
+                // to.
+                element = .custom("img")
+                if !image.rgbaData.isEmpty, image.pixelWidth > 0, image.pixelHeight > 0 {
+                    do {
+                        let png = try ImageFormats.Image<RGBA>(
+                            width: image.pixelWidth,
+                            height: image.pixelHeight,
+                            bytes: image.rgbaData
+                        ).encodeToPNG()
+                        controlAttributes["src"] =
+                            "data:image/png;base64,\(Data(png).base64EncodedString())"
+                    } catch {
+                        // Encoding a well-formed in-memory RGBA buffer to PNG
+                        // isn't expected to fail; if it does, a broken image
+                        // icon with no src is more honest than silently
+                        // dropping back to the empty div this replaces.
+                    }
+                }
+                // No accessibility seam reaches Image (no
+                // .accessibilityLabel modifier exists in SwiftCrossUI yet),
+                // so alt text is only ever author-supplied via
+                // .htmlAttributes(["alt": …]) — merged in below like any
+                // other author attribute. Absent that, an empty alt is
+                // still required: it's what marks the image decorative
+                // rather than leaving assistive tech to read the filename
+                // out of a missing attribute.
+                controlAttributes["alt"] = image.authorAttributes["alt"] ?? ""
+                // The size the layout system committed is the one the
+                // browser should honor directly, the same reasoning as the
+                // inheritedFrame branch below: a void element sizes itself
+                // from its replaced content, not from CSS layout, so there's
+                // nowhere else to put a declared size except the element
+                // itself.
+                if image.size.x > 0 {
+                    style.set("\(image.size.x)px", for: "width")
+                }
+                if image.size.y > 0 {
+                    style.set("\(image.size.y)px", for: "height")
+                }
 
             case let container as StaticHTMLBackend.Container:
                 inner = emitChildren(
