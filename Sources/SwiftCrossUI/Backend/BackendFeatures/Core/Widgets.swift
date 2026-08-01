@@ -93,6 +93,21 @@ extension BackendFeatures {
             alignment: StackAlignment,
             spacing: Int
         )
+
+        /// Tells the backend that a container's size was fixed by the author.
+        ///
+        /// The default implementation does nothing. As with
+        /// ``describeStackLayout(of:orientation:alignment:spacing:)``, this is
+        /// for backends that re-express a layout rather than placing widgets
+        /// themselves: a committed size doesn't distinguish a dimension the
+        /// author pinned from one that merely came out that way, and only the
+        /// pinned one should survive into a layout that otherwise reflows.
+        ///
+        /// - Parameters:
+        ///   - widget: The container whose size the author constrained.
+        ///   - width: The width the author fixed, if they fixed one.
+        ///   - height: The height the author fixed, if they fixed one.
+        func describeFrame(of widget: Widget, width: Double?, height: Double?)
     }
 }
 
@@ -117,5 +132,10 @@ extension BackendFeatures.Widgets {
         spacing: Int
     ) {
         // Backends that position children themselves learn nothing from this.
+    }
+
+    public func describeFrame(of widget: Widget, width: Double?, height: Double?) {
+        // As above: the committed size already says everything most backends
+        // need to know.
     }
 }

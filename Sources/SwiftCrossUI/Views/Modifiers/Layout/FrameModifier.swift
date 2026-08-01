@@ -182,6 +182,7 @@ struct StrictFrameView<Child: View>: TypeSafeView {
             in: frameSize.vector
         )
         backend.setSize(of: widget, to: frameSize.vector)
+        backend.describeFrame(of: widget, width: width, height: height)
         backend.setPosition(ofChildAt: 0, in: widget, to: childPosition)
     }
 }
