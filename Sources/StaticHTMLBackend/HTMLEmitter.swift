@@ -13,6 +13,27 @@ import Foundation
 ///
 /// Nothing outside those three layers gets to influence semantics. Geometry
 /// and styling never do.
+///
+/// ## Flow, not coordinates
+///
+/// The layout system produces an exact position and size for every widget, but
+/// emitting those directly would produce a document that only looks right at
+/// the width it was laid out against: text that the browser wraps differently
+/// than the build host estimated would overflow its pinned box, and nothing
+/// would reflow when the reader resizes the window or opens the page on a
+/// phone. This tier is what crawlers and readers without JavaScript get, so it
+/// reflows.
+///
+/// Containers the layout system describes as stacks (see
+/// ``StaticHTMLBackend/Container/stackLayout``) are therefore re-expressed as
+/// CSS flex containers — direction, `gap`, and alignment carry the arrangement
+/// — and their children take their natural size. The committed geometry is
+/// still used where CSS has nothing to derive a size from, and absolute
+/// positioning remains for containers that were never described as stacks,
+/// which is the only construct flow can't express.
+///
+/// The result is best-effort: it drifts from the native rendering, which is
+/// accepted. Overlapping or non-reflowing output is not.
 @MainActor
 public struct HTMLEmitter {
     /// The mapping from declared text styles to heading elements.
@@ -21,6 +42,17 @@ public struct HTMLEmitter {
     public var interner = StyleInterner()
     /// The palette that turns scheme-varying colors into custom properties.
     public var palette = ColorPalette()
+
+    /// How a parent is positioning one of its children.
+    public enum Placement: Hashable, Sendable {
+        /// The browser places the element, which is the usual case. The
+        /// element's size comes from its content and from whatever the parent's
+        /// flow rules impose.
+        case flow
+        /// The element is pinned to the coordinates the layout system committed
+        /// for it. Used only where flow can't express the arrangement.
+        case absolute
+    }
 
     /// Creates an emitter.
     ///
@@ -33,23 +65,28 @@ public struct HTMLEmitter {
     ///
     /// - Parameters:
     ///   - widget: The widget to emit.
-    ///   - origin: The widget's position relative to its parent, which the
-    ///     emitted CSS mirrors with `position: absolute`.
+    ///   - origin: The widget's position relative to its parent. Only consulted
+    ///     when `placement` is ``Placement/absolute``; under flow the browser
+    ///     decides where the element lands.
+    ///   - placement: How the parent is positioning this widget.
     ///   - indentLevel: How far to indent the emitted markup.
     /// - Returns: The widget's markup.
     public mutating func emit(
         _ widget: StaticHTMLBackend.Widget,
         at origin: SIMD2<Int>,
+        placement: Placement = .flow,
         indentLevel: Int = 0
     ) -> String {
         let indent = String(repeating: "  ", count: indentLevel + 1)
 
         var style = Style()
-        style.set("absolute", for: "position")
-        style.set("\(origin.x)px", for: "left")
-        style.set("\(origin.y)px", for: "top")
-        style.set("\(widget.size.x)px", for: "width")
-        style.set("\(widget.size.y)px", for: "height")
+        if placement == .absolute {
+            style.set("absolute", for: "position")
+            style.set("\(origin.x)px", for: "left")
+            style.set("\(origin.y)px", for: "top")
+            style.set("\(widget.size.x)px", for: "width")
+            style.set("\(widget.size.y)px", for: "height")
+        }
         if widget.cornerRadius > 0 {
             style.set("\(widget.cornerRadius)px", for: "border-radius")
         }
@@ -77,13 +114,6 @@ public struct HTMLEmitter {
                     style.set(palette.value(for: color), for: "color")
                 }
                 style.set("pre-wrap", for: "white-space")
-                // Measurement on the build host is an estimate, so the browser
-                // may want one more line than was allocated. Clipping keeps
-                // that drift inside the element's own box instead of letting it
-                // run over whatever the layout system placed below. This
-                // matches what ``Text`` does when it truncates on screen, and
-                // is the same failure mode a windowing backend would show.
-                style.set("hidden", for: "overflow")
                 inner = Self.escape(text.content)
                 // A declared text style is the author saying what this line is
                 // for, so it outranks the generic span.
@@ -96,7 +126,7 @@ public struct HTMLEmitter {
                 // emitted as a link and given the role it plays.
                 element = .custom("a")
                 role = "button"
-                style.set("flex", for: "display")
+                style.set("inline-flex", for: "display")
                 style.set("center", for: "align-items")
                 style.set("center", for: "justify-content")
                 style.set("none", for: "text-decoration")
@@ -107,10 +137,15 @@ public struct HTMLEmitter {
                 if let color = rectangle.color {
                     style.set(palette.value(for: color), for: "background-color")
                 }
+                // A rectangle has nothing inside it to derive a size from, so
+                // its committed size is the only thing standing between it and
+                // collapsing to nothing.
+                Self.pin(size: rectangle.size, in: &style, placement: placement)
 
             case let container as StaticHTMLBackend.Container:
                 inner = emitChildren(
-                    container.children,
+                    of: container,
+                    style: &style,
                     indent: indent,
                     indentLevel: indentLevel
                 )
@@ -118,8 +153,10 @@ public struct HTMLEmitter {
 
             case let scroll as StaticHTMLBackend.ScrollContainer:
                 style.set("auto", for: "overflow")
+                Self.pin(size: scroll.size, in: &style, placement: placement)
                 inner = emitChildren(
                     [(scroll.child, .zero)],
+                    placement: .flow,
                     indent: indent,
                     indentLevel: indentLevel
                 )
@@ -130,6 +167,7 @@ public struct HTMLEmitter {
                 if !children.isEmpty {
                     inner = emitChildren(
                         children.map { ($0, SIMD2<Int>.zero) },
+                        placement: .flow,
                         indent: indent,
                         indentLevel: indentLevel
                     )
@@ -177,9 +215,78 @@ public struct HTMLEmitter {
         return "\(indent)<\(element.name)\(renderedAttributes)>\(body)</\(element.name)>"
     }
 
-    /// Emits a widget's children, each on its own line.
+    /// Emits a container's children, styling the container to arrange them.
+    ///
+    /// A container the layout system described as a stack becomes a flex
+    /// container, so the browser redoes the arrangement at the reader's width.
+    /// One it didn't describe — an overlay, or anything positioning children by
+    /// hand — keeps the committed coordinates, since there's no flow rule that
+    /// would reproduce them.
+    private mutating func emitChildren(
+        of container: StaticHTMLBackend.Container,
+        style: inout Style,
+        indent: String,
+        indentLevel: Int
+    ) -> String {
+        guard let stack = container.stackLayout else {
+            // A single child inset from every edge is padding, which flow
+            // expresses directly. The insets are exactly recoverable: the
+            // child's offset gives the leading and top ones, and whatever of
+            // the container it doesn't fill gives the other two.
+            if container.children.count == 1 {
+                let (child, position) = container.children[0]
+                let trailing = container.size.x - child.size.x - position.x
+                let bottom = container.size.y - child.size.y - position.y
+                if position.x >= 0 && position.y >= 0 && trailing >= 0 && bottom >= 0 {
+                    if position != .zero || trailing != 0 || bottom != 0 {
+                        style.set(
+                            "\(position.y)px \(trailing)px \(bottom)px \(position.x)px",
+                            for: "padding"
+                        )
+                    }
+                    return emitChildren(
+                        container.children,
+                        placement: .flow,
+                        indent: indent,
+                        indentLevel: indentLevel
+                    )
+                }
+            }
+
+            // Anything else positions its children in a way flow has no rule
+            // for — an overlay, most likely — so the coordinates stand.
+            style.set("relative", for: "position")
+            style.set("\(container.size.x)px", for: "width")
+            style.set("\(container.size.y)px", for: "height")
+            return emitChildren(
+                container.children,
+                placement: .absolute,
+                indent: indent,
+                indentLevel: indentLevel
+            )
+        }
+
+        style.set("flex", for: "display")
+        style.set(stack.orientation == .horizontal ? "row" : "column", for: "flex-direction")
+        if stack.spacing != 0 && container.children.count > 1 {
+            style.set("\(stack.spacing)px", for: "gap")
+        }
+        // The stack's alignment is across its axis, which is exactly what
+        // align-items controls.
+        style.set(Self.cssAlignment(stack.alignment), for: "align-items")
+
+        return emitChildren(
+            container.children,
+            placement: .flow,
+            indent: indent,
+            indentLevel: indentLevel
+        )
+    }
+
+    /// Emits a list of children, each on its own line.
     private mutating func emitChildren(
         _ children: [(widget: StaticHTMLBackend.Widget, position: SIMD2<Int>)],
+        placement: Placement,
         indent: String,
         indentLevel: Int
     ) -> String {
@@ -188,10 +295,44 @@ public struct HTMLEmitter {
         }
         var output = "\n"
         for (childWidget, childPosition) in children {
-            output += emit(childWidget, at: childPosition, indentLevel: indentLevel + 1)
+            output += emit(
+                childWidget,
+                at: childPosition,
+                placement: placement,
+                indentLevel: indentLevel + 1
+            )
             output += "\n"
         }
         return output
+    }
+
+    /// Gives an element the size the layout system committed for it.
+    ///
+    /// Only for content the browser can't size on its own. Applying this to
+    /// text would be the pinning that keeps the document from reflowing.
+    /// Under flow the size is a floor rather than a fixed value, so content
+    /// that turns out larger in the browser grows the box instead of spilling
+    /// out of it.
+    nonisolated static func pin(
+        size: SIMD2<Int>,
+        in style: inout Style,
+        placement: Placement
+    ) {
+        guard placement == .flow else {
+            // The absolute branch has already set an exact width and height.
+            return
+        }
+        style.set("\(size.x)px", for: "min-width")
+        style.set("\(size.y)px", for: "min-height")
+    }
+
+    /// Maps a stack's cross-axis alignment to its CSS equivalent.
+    nonisolated static func cssAlignment(_ alignment: StackAlignment) -> String {
+        switch alignment {
+            case .leading: "flex-start"
+            case .center: "center"
+            case .trailing: "flex-end"
+        }
     }
 
     /// Attributes that the backend owns and authors may not overwrite.

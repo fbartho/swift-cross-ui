@@ -399,11 +399,88 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("Text clips to its box so estimate drift can't overlap what's below")
-    func clipsTextToItsAllocatedBox() {
-        let html = StaticHTMLRenderer.render(Text("Body"), title: "Clipping").html
+    @Test("Flowing text is neither clipped nor pinned to its measured box")
+    func doesNotClipOrPinFlowingText() {
+        let long = String(repeating: "word ", count: 60)
+        let html = StaticHTMLRenderer.render(
+            Text(long),
+            title: "Flow",
+            size: SIMD2(400, 200)
+        ).html
 
-        #expect(html.contains("overflow:hidden"))
+        // Build-host measurement is an estimate. Clipping it to the estimate
+        // would cut off prose the browser wrapped onto one more line, and a
+        // fixed width would stop it reflowing at all.
+        #expect(!html.contains("overflow:hidden"))
+        #expect(!html.contains("position:absolute"))
+        #expect(!html.contains("width:400px"))
+    }
+
+    @MainActor
+    @Test("The document reflows rather than fixing itself to the layout width")
+    func rootIsAMaximumWidthNotAFixedOne() {
+        let html = StaticHTMLRenderer.render(
+            Text("Body"),
+            title: "Reflow",
+            size: SIMD2(800, 600)
+        ).html
+
+        #expect(html.contains("#root { max-width: 800px; }"))
+        // A committed height would stop the content deciding how tall it is.
+        #expect(!html.contains("height: 600px"))
+    }
+
+    @MainActor
+    @Test("Stacks become flex containers carrying their spacing and alignment")
+    func emitsStacksAsFlexContainers() {
+        let vertical = StaticHTMLRenderer.render(
+            VStack(alignment: .leading, spacing: 12) {
+                Text("One")
+                Text("Two")
+            },
+            title: "VStack"
+        ).html
+
+        #expect(vertical.contains("flex-direction:column"))
+        #expect(vertical.contains("gap:12px"))
+        #expect(vertical.contains("align-items:flex-start"))
+
+        let horizontal = StaticHTMLRenderer.render(
+            HStack(spacing: 4) {
+                Text("One")
+                Text("Two")
+            },
+            title: "HStack"
+        ).html
+
+        #expect(horizontal.contains("flex-direction:row"))
+        #expect(horizontal.contains("gap:4px"))
+    }
+
+    @MainActor
+    @Test("Padding becomes CSS padding rather than an offset child")
+    func emitsPaddingAsCSSPadding() {
+        let html = StaticHTMLRenderer.render(
+            Text("Inset").padding(24),
+            title: "Padding"
+        ).html
+
+        #expect(html.contains("padding:24px 24px 24px 24px"))
+        #expect(!html.contains("position:absolute"))
+    }
+
+    @MainActor
+    @Test("Content with no intrinsic size keeps the size it was given")
+    func keepsExplicitSizeForContentWithoutIntrinsicSize() {
+        let html = StaticHTMLRenderer.render(
+            Color.blue.frame(width: 320, height: 4),
+            title: "Frame"
+        ).html
+
+        // A rectangle has nothing inside it to derive a height from, so
+        // dropping its committed size would collapse it entirely.
+        #expect(html.contains("min-width:320px"))
+        #expect(html.contains("min-height:4px"))
     }
 
     @MainActor

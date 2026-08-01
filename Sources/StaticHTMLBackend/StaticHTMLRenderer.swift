@@ -60,7 +60,7 @@ public enum StaticHTMLRenderer {
         resolveIntent(in: light.widget)
 
         var emitter = HTMLEmitter(headingMap: headingMap)
-        let body = emitter.emit(light.widget, at: .zero, indentLevel: 1)
+        let body = emitter.emit(light.widget, at: .zero, placement: .flow, indentLevel: 1)
 
         let palette = emitter.palette.stylesheet
         let html = """
@@ -73,16 +73,24 @@ public enum StaticHTMLRenderer {
             <style>
             :root { color-scheme: light dark; }
             body { margin: 0; font-family: -apple-system, system-ui, sans-serif; }
-            /* The layout system has already placed every element exactly, so
-               the user agent's own margins and font sizing would only fight
-               it. Headings in particular carry large default margins. */
+            /* Font sizing and weight come from the declared text styles the
+               layout system resolved, so the user agent's heading defaults
+               would only fight them. Margins likewise: spacing between
+               elements is the stacks' gap, not the browser's. */
             #root :where(h1, h2, h3, h4, h5, h6, p) {
               margin: 0;
               font-size: inherit;
               font-weight: inherit;
             }
             #root :where(a) { color: inherit; }
-            #root { position: relative; width: \(light.size.x)px; height: \(light.size.y)px; }
+            /* The width the document was laid out against becomes a maximum
+               rather than a fixed size: it's the measure the design was
+               composed for, but a narrower viewport gets to reflow into
+               whatever room it has. This is the requested width, not the
+               committed one — a view that shrank to its content still gets to
+               grow back to the measure the author had in mind. The height is
+               left to the content. */
+            #root { max-width: \(size.x)px; }
             \(palette.isEmpty ? "" : palette + "\n")\(emitter.interner.stylesheet)
             </style>
             </head>

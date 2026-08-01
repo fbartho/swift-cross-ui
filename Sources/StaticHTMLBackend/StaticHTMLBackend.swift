@@ -123,9 +123,28 @@ public final class StaticHTMLBackend:
         public var color: SchemePair?
     }
 
+    /// How a container's children were arranged by the layout system.
+    ///
+    /// Recorded so that the emitter can re-express the arrangement as CSS flow
+    /// instead of pinning each child to the coordinates it was given. The
+    /// committed geometry alone can't say this: a stack holding one child and
+    /// an overlay holding one child are positioned identically.
+    public struct StackLayout: Hashable, Sendable {
+        /// The axis the children were stacked along.
+        public var orientation: Orientation
+        /// How the children were aligned across that axis.
+        public var alignment: StackAlignment
+        /// The gap left between adjacent children.
+        public var spacing: Int
+    }
+
     /// A generic container holding positioned children.
     public class Container: Widget {
         public var children: [(widget: Widget, position: SIMD2<Int>)] = []
+        /// How the layout system arranged the children, if it arranged them as
+        /// a stack. `nil` means the positions are the only description there
+        /// is, and the emitter has to place the children absolutely.
+        public var stackLayout: StackLayout?
 
         public override func getChildren() -> [Widget] {
             children.map(\.widget)
@@ -320,6 +339,19 @@ public final class StaticHTMLBackend:
 
     public func setSize(of widget: Widget, to size: SIMD2<Int>) {
         widget.size = size
+    }
+
+    public func describeStackLayout(
+        of widget: Widget,
+        orientation: Orientation,
+        alignment: StackAlignment,
+        spacing: Int
+    ) {
+        (widget as? Container)?.stackLayout = StackLayout(
+            orientation: orientation,
+            alignment: alignment,
+            spacing: spacing
+        )
     }
 
     public func createScrollContainer(for child: Widget) -> Widget {
