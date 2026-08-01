@@ -943,6 +943,214 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("multilineTextAlignment reaches CSS text-align, keying the interner off alignment")
+    func multilineTextAlignmentEmitsTextAlign() {
+        // Sweep finding G4: text-align never appeared in the emitter at all,
+        // and — because Style is what the interner keys off — two
+        // differently-aligned Text views with otherwise identical styling
+        // collapsed onto the same class. Writing every case, including the
+        // default .leading, is what keeps that from happening again: a
+        // .center Text and a Text with no alignment declared must not share
+        // a class just because .leading happens to be the CSS default too.
+        let leading = StaticHTMLRenderer.render(Text("Leading"), title: "Leading").html
+        let centered = StaticHTMLRenderer.render(
+            Text("Centered").multilineTextAlignment(.center),
+            title: "Centered"
+        ).html
+        let trailing = StaticHTMLRenderer.render(
+            Text("Trailing").multilineTextAlignment(.trailing),
+            title: "Trailing"
+        ).html
+
+        #expect(leading.contains("text-align:left"))
+        #expect(centered.contains("text-align:center"))
+        #expect(trailing.contains("text-align:right"))
+
+        let leadingRule = Self.styleRule(forElementContaining: "<span", in: leading)
+        let centeredRule = Self.styleRule(forElementContaining: "<span", in: centered)
+        #expect(leadingRule != centeredRule)
+    }
+
+    @MainActor
+    @Test("textSelectionEnabled(true) emits nothing; the framework default is user-select:none")
+    func textSelectionDisabledEmitsUserSelectNone() {
+        // Sweep finding G10: both selectable and unselectable Text interned
+        // to the same class, because the modifier's value never reached
+        // style computation. EnvironmentValues.isTextSelectionEnabled
+        // defaults to false — every native backend maps it straight onto
+        // the widget's own selectable flag with no inversion (AppKit's
+        // NSTextField, UIKit's UILabel wrapper, Gtk's TextView all default
+        // to unselectable text), so Text is genuinely unselectable unless an
+        // author opts in with .textSelectionEnabled(true). Only that
+        // enabled case is asserted to emit anything — the disabled default
+        // is what needs the CSS override, not the enabled opt-in, so no
+        // rule for the default case is the correct absence, not a gap.
+        let unselectable = StaticHTMLRenderer.render(Text("Locked"), title: "Locked").html
+        let selectable = StaticHTMLRenderer.render(
+            Text("Selectable").textSelectionEnabled(true),
+            title: "Selectable"
+        ).html
+
+        #expect(unselectable.contains("user-select:none"))
+        #expect(!selectable.contains("user-select"))
+    }
+
+    @MainActor
+    @Test("lineLimit emits line-clamp, and reservesSpace reserves real height")
+    func lineLimitEmitsClampAndReservedSpace() {
+        // Sweep finding G6: lineLimit(1) and lineLimit(2, reservesSpace:
+        // true) were byte-identical in emitted output — no clamp, no
+        // overflow, no reserved height, and no way to tell the two cases
+        // apart. Font is required for the reservesSpace height computation
+        // (line-height × limit), so a headline font declaration exercises
+        // it deterministically.
+        let clampedOnly = StaticHTMLRenderer.render(
+            Text("Some text").lineLimit(2).font(.headline),
+            title: "Clamped"
+        ).html
+        let reserving = StaticHTMLRenderer.render(
+            Text("Some text").lineLimit(3, reservesSpace: true).font(.headline),
+            title: "Reserving"
+        ).html
+        let unlimited = StaticHTMLRenderer.render(
+            Text("Some text").font(.headline),
+            title: "Unlimited"
+        ).html
+
+        let clampedRule = Self.styleRule(forElementContaining: "<span", in: clampedOnly)
+        #expect(clampedRule?.contains("-webkit-line-clamp:2") == true)
+        #expect(clampedRule?.contains("overflow:hidden") == true)
+        #expect(clampedRule?.contains("min-height:") != true)
+
+        let reservingRule = Self.styleRule(forElementContaining: "<span", in: reserving)
+        #expect(reservingRule?.contains("-webkit-line-clamp:3") == true)
+        #expect(reservingRule?.contains("min-height:") == true)
+
+        #expect(!unlimited.contains("-webkit-line-clamp"))
+        #expect(!unlimited.contains("overflow:hidden"))
+    }
+
+    @MainActor
+    @Test("Spacer gets flex:1 1 0%, not the empty class it used to carry")
+    func spacerEmitsFlexGrow() {
+        // Sweep finding G7: Spacer's committed Container widget carried no
+        // class at all — no flex-grow, no flex-basis — so in a flex row it
+        // collapsed and its siblings sat adjacent instead of pushed apart.
+        // Spacer has no dedicated Widget subclass, so this is keyed off the
+        // view-type tag the core stamps on every widget (see
+        // ViewGraphNode.init), which is also what the real
+        // layoutPriority(-infinity) signal (never reaching the backend) is
+        // standing in for here.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Leading")
+                Spacer()
+                Text("Trailing")
+            },
+            title: "Spacer"
+        ).html
+
+        let spacerRule = Self.styleRule(forElementContaining: "data-scui=\"Spacer\"", in: html)
+        #expect(spacerRule?.contains("flex:1 1 0%") == true)
+    }
+
+    @MainActor
+    @Test("Divider stretches via flex, not a pinned min-width that would overflow")
+    func dividerStretchesWithoutOverflowing() {
+        // Sweep finding G8: Divider's un-declared axis (Divider only
+        // declares .frame(height: 1); width is intentionally left to the
+        // layout system) used to inherit a min-width pinned to whatever the
+        // layout system's stretch-to-fill happened to compute at this one
+        // render width — min-width:800px in the sweep's probe — which
+        // overflows any narrower viewport.
+        //
+        // The fix chains flex stretch from the Divider tag down to the leaf,
+        // three wrappers deep (Divider → StrictFrameView → Color), because
+        // flex's stretch only applies on the CROSS axis of whichever flex
+        // container is doing the stretching:
+        //   - Divider's own wrapper gets align-self:stretch against the
+        //     VStack's align-items:center (verified live: without this,
+        //     Divider shrink-wraps to zero width against a centered parent).
+        //   - StrictFrameView's wrapper (which has no stackLayout of its
+        //     own, so it doesn't naturally become flex at all) gets
+        //     display:flex + flex-direction:column *and* its own
+        //     align-self:stretch — column because Divider's undeclared axis
+        //     is width, and column is what puts width on the cross axis.
+        //   - The Color leaf itself needs no CSS of its own on that axis:
+        //     flex's default align-items is already stretch, so simply not
+        //     emitting a competing min-width lets it fill.
+        // An earlier version of this fix used width:100% on the leaf
+        // instead — that only works if every ancestor's own width has
+        // already resolved to something non-zero, which silently fails
+        // through however many wrapper levels shrink-wrap by default; this
+        // was caught by rendering the actual output in a browser and
+        // measuring computed widths, not just inspecting the CSS text.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Text("Above")
+                Divider()
+                Text("Below")
+            },
+            title: "Divider"
+        ).html
+
+        #expect(!html.contains("min-width:800px"))
+
+        let dividerRule = Self.styleRule(
+            forElementContaining: "data-scui=\"Divider\"",
+            in: html
+        )
+        #expect(dividerRule?.contains("align-self:stretch") == true)
+
+        let frameRule = Self.styleRule(
+            forElementContaining: "data-scui=\"StrictFrameView\"",
+            in: html
+        )
+        #expect(frameRule?.contains("align-self:stretch") == true)
+        #expect(frameRule?.contains("display:flex") == true)
+        #expect(frameRule?.contains("flex-direction:column") == true)
+
+        let colorRule = Self.styleRule(forElementContaining: "data-scui=\"Color\"", in: html)
+        #expect(colorRule?.contains("height:1px") == true)
+        // No width declaration at all on the leaf — flex's own default
+        // stretch is what fills it, not a percentage the leaf asserts
+        // about its own box.
+        #expect(colorRule?.contains("width:") != true)
+    }
+
+    @MainActor
+    @Test("aspectRatio's effect is real committed geometry, not a CSS aspect-ratio declaration")
+    func aspectRatioAffectsCommittedGeometryOnly() {
+        // Sweep finding G9 expected literal CSS aspect-ratio: output.
+        // Investigation showed aspectRatio() is a pure layout-proposal
+        // transform (AspectRatioModifier.computeLayout reshapes what's
+        // proposed to the child; commit() only forwards) — it has no
+        // widget of its own and nothing persists past the layout pass for
+        // a browser to re-derive at another width. The committed size it
+        // produces is therefore the correct and complete translation, the
+        // same "committed geometry is correct given an explicit frame"
+        // reasoning already established for GeometryReader/ScrollView. This
+        // test documents that as the intended behavior rather than a gap:
+        // 300x150 (2:1 at width:300) round-trips exactly. The leaf's own
+        // tag is "AspectRatioView", not "Color" — Color's widget class
+        // (Rectangle) is reused, but the view-type tag the core stamps on
+        // every widget reflects the outermost composing view, same
+        // mechanism the Divider test above relies on.
+        let html = StaticHTMLRenderer.render(
+            Color.blue.aspectRatio(2.0, contentMode: .fit).frame(width: 300),
+            title: "AspectRatio"
+        ).html
+
+        let leafRule = Self.styleRule(
+            forElementContaining: "data-scui=\"AspectRatioView\"",
+            in: html
+        )
+        #expect(leafRule?.contains("min-height:150px") == true)
+        #expect(leafRule?.contains("width:300px") == true)
+        #expect(!html.contains("aspect-ratio:"))
+    }
+
+    @MainActor
     @Test("Padding becomes CSS padding rather than an offset child")
     func emitsPaddingAsCSSPadding() {
         let html = StaticHTMLRenderer.render(
@@ -1007,9 +1215,16 @@ struct StaticHTMLBackendTests {
         ).html
 
         // A rectangle has nothing inside it to derive a height from, so
-        // dropping its committed size would collapse it entirely.
-        #expect(html.contains("min-width:320px"))
-        #expect(html.contains("min-height:4px"))
+        // dropping its committed size would collapse it entirely. Both axes
+        // are exact declarations here (.frame(width:height:), not a
+        // flexible range), so they're pinned exactly as `width`/`height`,
+        // not floored as `min-width`/`min-height` — see the Divider fix
+        // (task #22), which is what distinguishes an author-declared axis
+        // from one the layout system merely stretched to fill.
+        #expect(html.contains("width:320px"))
+        #expect(html.contains("height:4px"))
+        #expect(!html.contains("min-width"))
+        #expect(!html.contains("min-height"))
     }
 
     @MainActor

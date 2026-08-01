@@ -62,6 +62,23 @@ public struct HTMLEmitter {
         self.headingMap = headingMap
     }
 
+    /// A size an enclosing frame declared for a widget specifically, rather
+    /// than for a wrapper around it.
+    ///
+    /// Each axis is independently optional because a frame only ever
+    /// constrains the axes the author actually wrote down — see
+    /// ``StrictFrameView``, where an omitted `width`/`height` stays `nil` all
+    /// the way through. Collapsing both axes into one always-present size
+    /// (falling back to the committed, possibly-stretched size for whichever
+    /// axis wasn't declared) is exactly the bug this type exists to avoid:
+    /// see the min-width note on ``HTMLEmitter/pin(size:in:placement:)``.
+    public struct InheritedFrame: Hashable, Sendable {
+        /// The declared width, or `nil` if the frame left this axis alone.
+        public var width: Int?
+        /// The declared height, or `nil` if the frame left this axis alone.
+        public var height: Int?
+    }
+
     /// Emits a widget and its descendants.
     ///
     /// - Parameters:
@@ -71,19 +88,32 @@ public struct HTMLEmitter {
     ///     decides where the element lands.
     ///   - placement: How the parent is positioning this widget.
     ///   - indentLevel: How far to indent the emitted markup.
-    ///   - inheritedFrame: A size an enclosing frame declared for this widget
-    ///     specifically, rather than for a wrapper around it. Only a void
-    ///     element (``HTMLElement/isVoid``) honors this: those elements size
-    ///     themselves from their replaced content, not from CSS layout, so a
-    ///     frame around one has nothing to apply itself to except the element
-    ///     directly. See ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:)``.
+    ///   - inheritedFrame: The size an enclosing frame declared for this
+    ///     widget specifically, rather than for a wrapper around it. A void
+    ///     element (``HTMLElement/isVoid``) honors both axes unconditionally:
+    ///     those elements size themselves from their replaced content, not
+    ///     from CSS layout, so a frame around one has nothing to apply itself
+    ///     to except the element directly. A leaf with nothing inside it to
+    ///     derive a size from (``StaticHTMLBackend/Rectangle``) honors only
+    ///     the axes that were actually declared, falling back to its own
+    ///     committed size for the rest. See
+    ///     ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:)``.
+    ///   - stretchesUndeclaredAxis: Whether an ancestor's undeclared frame
+    ///     axis (Divider, specifically) should be filled by this widget's
+    ///     subtree rather than floored to committed size. Threaded down
+    ///     explicitly because the leaf that finally acts on it is several
+    ///     levels below whichever ancestor actually carried the "Divider"
+    ///     tag — see the widget.tag == "Divider" check at the top of this
+    ///     function, and the matching flex/align-self handling in
+    ///     ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
     /// - Returns: The widget's markup.
     public mutating func emit(
         _ widget: StaticHTMLBackend.Widget,
         at origin: SIMD2<Int>,
         placement: Placement = .flow,
         indentLevel: Int = 0,
-        inheritedFrame: SIMD2<Int>? = nil
+        inheritedFrame: InheritedFrame? = nil,
+        stretchesUndeclaredAxis: Bool = false
     ) -> String {
         let indent = String(repeating: "  ", count: indentLevel + 1)
 
@@ -97,6 +127,20 @@ public struct HTMLEmitter {
         }
         if widget.cornerRadius > 0 {
             style.set("\(widget.cornerRadius)px", for: "border-radius")
+        }
+        if widget.tag == "Divider" {
+            // Divider's documented behaviour is to expand along the minor
+            // axis of its containing stack, but the flex model this emitter
+            // otherwise relies on centers cross-axis children by default
+            // (see StaticHTMLRenderer's VStack test, which defaults to
+            // .center) — the same shrink-to-fit sizing every other stack
+            // child gets. align-self:stretch overrides that for this one
+            // element regardless of what alignment the parent stack
+            // declared, matching the one-off "always expands, whatever the
+            // container's alignment says" contract Divider actually
+            // documents. It's harmless when Divider isn't inside a flex
+            // container at all — align-self is simply ignored there.
+            style.set("stretch", for: "align-self")
         }
 
         var element = HTMLElement.div
@@ -127,6 +171,39 @@ public struct HTMLEmitter {
                     style.set(palette.value(for: color), for: "color")
                 }
                 style.set("pre-wrap", for: "white-space")
+                // Every declared alignment is written, including .leading —
+                // not just the non-default cases — because the style is what
+                // the interner keys off. Skipping the default would collapse
+                // a .leading Text into the same class as one with no
+                // alignment declared at all, but the two aren't the same
+                // question: the point is that .center and .trailing must
+                // reach the stylesheet, and the only way that's reliable is
+                // writing the whole enum through uniformly.
+                style.set(Self.cssTextAlign(text.textAlignment), for: "text-align")
+                if !text.isTextSelectionEnabled {
+                    // Only the disabled case is written: user-select's CSS
+                    // default is already selectable text, so a widget that
+                    // never touched the modifier stays unstyled instead of
+                    // interning a redundant "user-select:text" rule.
+                    style.set("none", for: "user-select")
+                }
+                if let lineLimit = text.lineLimit {
+                    style.set("hidden", for: "overflow")
+                    style.set("\(lineLimit.limit)", for: "-webkit-line-clamp")
+                    style.set("-webkit-box", for: "display")
+                    style.set("vertical", for: "-webkit-box-orient")
+                    if lineLimit.reservesSpace, let font = text.font {
+                        // reservesSpace holds the box open to the full
+                        // line-limit height even when the actual content is
+                        // shorter, so the reserved floor has to come from
+                        // the limit itself rather than from the committed
+                        // (possibly shorter) layout size.
+                        style.set(
+                            "\(Int(font.lineHeight) * lineLimit.limit)px",
+                            for: "min-height"
+                        )
+                    }
+                }
                 inner = Self.escape(text.content)
                 // A declared text style is the author saying what this line is
                 // for, so it outranks the generic span.
@@ -205,9 +282,35 @@ public struct HTMLEmitter {
                     style.set(palette.value(for: color), for: "background-color")
                 }
                 // A rectangle has nothing inside it to derive a size from, so
-                // its committed size is the only thing standing between it and
-                // collapsing to nothing.
-                Self.pin(size: rectangle.size, in: &style, placement: placement)
+                // its committed size is the floor for whichever axis nothing
+                // else pinned. An axis an enclosing frame actually declared
+                // (Divider's own height:1, for instance) is trusted over the
+                // committed one instead.
+                //
+                // The undeclared axis is where a fixed floor becomes wrong,
+                // but only when stretchesUndeclaredAxis says so (true only
+                // inside a Divider's subtree — see the isFrame branch in
+                // ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``,
+                // which switches the wrapper to display:flex specifically so
+                // its default stretch sizes this axis instead): Divider's
+                // committed width is however far the layout system happened
+                // to stretch it at this one render width, an arbitrary value
+                // with no relationship worth preserving, so this axis is left
+                // with no width declaration of its own and inherits the
+                // flex stretch entirely. A Rectangle reached through
+                // .aspectRatio(), by contrast, has a *meaningful* committed
+                // value on its undeclared axis — the proportional height
+                // the ratio computed — so it stays a floor like any other
+                // unframed leaf; treating it as a flex-stretch target would
+                // silently discard the ratio.
+                Self.pin(
+                    size: rectangle.size,
+                    in: &style,
+                    placement: placement,
+                    declaredWidth: inheritedFrame?.width,
+                    declaredHeight: inheritedFrame?.height,
+                    hasEnclosingFrame: stretchesUndeclaredAxis
+                )
 
             case let image as StaticHTMLBackend.ImageView:
                 // <img> is a void element, so it's the one place a data URL
@@ -255,12 +358,38 @@ public struct HTMLEmitter {
                     style.set("\(image.size.y)px", for: "height")
                 }
 
+            case let container as StaticHTMLBackend.Container where container.tag == "Spacer":
+                // Spacer has no dedicated Widget subclass of its own — it's a
+                // plain empty Container — so the view-type tag the core
+                // already stamps on every widget (see ViewGraphNode.init) is
+                // the only signal available to recognise it here. Its
+                // layoutPriority(-infinity) preference, which is what tells
+                // the layout system to shrink it first, is consumed entirely
+                // inside LayoutSystem and never reaches the backend, so
+                // there's no geometry-based way to infer "this is a spacer"
+                // after the fact. flex:1 1 0% reproduces the same
+                // greedy-but-shrinkable behaviour in the flex model: it grows
+                // to fill leftover space and yields before any sibling with a
+                // real minimum content size would be squeezed.
+                style.set("1 1 0%", for: "flex")
+
             case let container as StaticHTMLBackend.Container:
+                // The stretch signal outlives whichever ancestor actually
+                // carried the "Divider" tag: Divider composes as
+                // `Divider(Container) → StrictFrameView(Container) →
+                // Color(Rectangle)`, so a wrapper two levels down from the
+                // tag still needs to know it's inside a Divider when it
+                // constructs its own InheritedFrame for its single child.
+                // widget.tag == "Divider" starts the signal; the incoming
+                // stretchesUndeclaredAxis parameter (already threaded down
+                // by an ancestor's own emit call) keeps it alive past that
+                // point.
                 inner = emitChildren(
                     of: container,
                     style: &style,
                     indent: indent,
-                    indentLevel: indentLevel
+                    indentLevel: indentLevel,
+                    stretchesUndeclaredAxis: widget.tag == "Divider" || stretchesUndeclaredAxis
                 )
                 isRawInner = true
 
@@ -299,8 +428,17 @@ public struct HTMLEmitter {
         // box to apply itself to except the element itself, since a wrapper
         // div does nothing to stretch replaced content to fill it.
         if element.isVoid, let inheritedFrame {
-            style.set("\(inheritedFrame.x)px", for: "width")
-            style.set("\(inheritedFrame.y)px", for: "height")
+            // Only the axis the frame actually declared is forced: a void
+            // element left unconstrained on one axis should still be free to
+            // size that axis from its own replaced content (or, for
+            // Rectangle below, its committed size) rather than being pinned
+            // to whatever the frame's other axis happened to compute to.
+            if let width = inheritedFrame.width {
+                style.set("\(width)px", for: "width")
+            }
+            if let height = inheritedFrame.height {
+                style.set("\(height)px", for: "height")
+            }
         }
 
         var attributes: [String: String] = [:]
@@ -373,7 +511,8 @@ public struct HTMLEmitter {
         of container: StaticHTMLBackend.Container,
         style: inout Style,
         indent: String,
-        indentLevel: Int
+        indentLevel: Int,
+        stretchesUndeclaredAxis: Bool = false
     ) -> String {
         // A size the author asked for is kept whatever else the container
         // turns out to be. Nothing else about a container's geometry survives
@@ -434,18 +573,77 @@ public struct HTMLEmitter {
                     // but a void element ignores CSS layout entirely, so it
                     // also gets offered the frame directly; see
                     // ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:)``.
+                    // Only declaredWidth/declaredHeight carry through — nil
+                    // where the frame left that axis alone, never falling
+                    // back to the container's own (possibly stretched)
+                    // committed size, which is what used to pin an
+                    // undeclared axis to whatever room the layout system
+                    // happened to give it.
                     let inheritedFrame =
                         isFrame
-                            ? SIMD2(
-                                Int(container.declaredWidth ?? Double(container.size.x)),
-                                Int(container.declaredHeight ?? Double(container.size.y))
+                            ? InheritedFrame(
+                                width: container.declaredWidth.map { Int($0) },
+                                height: container.declaredHeight.map { Int($0) }
                             ) : nil
+                    // Whether the undeclared axis should stretch to fill
+                    // (Divider) rather than floor to committed size
+                    // (everything else, including AspectRatioView, whose
+                    // undeclared axis carries a meaningful computed value)
+                    // isn't decidable from this container alone — it has to
+                    // be threaded down from whichever ancestor actually
+                    // carried the "Divider" tag. Two separate things are
+                    // needed wherever it applies, because they solve
+                    // different halves of the problem:
+                    //
+                    // - align-self:stretch stops *this* wrapper shrink-
+                    //   wrapping against *its own* parent's align-items
+                    //   (Divider's own align-self:stretch, set at the top of
+                    //   ``emit``, only reaches the Divider-tagged widget
+                    //   itself — every wrapper below it needs the same
+                    //   override against its own immediate parent).
+                    // - display:flex, with no explicit align-items (flex's
+                    //   real default there is stretch — this backend only
+                    //   overrides it for an *explicit* declared
+                    //   stackLayout.alignment, which this wrapper doesn't
+                    //   have), makes *this* wrapper's own single child fill
+                    //   it in turn.
+                    //
+                    // Together they chain stretch all the way from the
+                    // Divider tag down to the leaf with no percentage
+                    // cascade to thread through however many wrapper levels
+                    // sit in between, and no risk of a shrink-to-fit
+                    // ancestor blocking it partway down.
+                    if stretchesUndeclaredAxis {
+                        style.set("stretch", for: "align-self")
+                        // Flexbox's stretch only ever applies on the CROSS
+                        // axis, so flex-direction has to put the undeclared
+                        // axis there: Divider's usual shape (height declared,
+                        // width left to stretch) needs flex-direction:column
+                        // so width becomes the cross axis; the perpendicular
+                        // case needs row. Leaving flex-direction at its
+                        // default (row) here — as an earlier version of this
+                        // fix did — stretched the wrong axis entirely: a
+                        // block-level child's *height* filled its
+                        // display:flex parent while its width, the axis
+                        // that actually needed filling, still shrank to
+                        // content.
+                        if isFrame, inheritedFrame?.width == nil, inheritedFrame?.height != nil {
+                            style.set("column", for: "flex-direction")
+                            style.set("flex", for: "display")
+                        } else if isFrame, inheritedFrame?.height == nil,
+                                  inheritedFrame?.width != nil
+                        {
+                            style.set("row", for: "flex-direction")
+                            style.set("flex", for: "display")
+                        }
+                    }
                     return emitChildren(
                         container.children,
                         placement: .flow,
                         indent: indent,
                         indentLevel: indentLevel,
-                        inheritedFrame: inheritedFrame
+                        inheritedFrame: inheritedFrame,
+                        stretchesUndeclaredAxis: stretchesUndeclaredAxis
                     )
                 }
             }
@@ -488,24 +686,33 @@ public struct HTMLEmitter {
             container.children,
             placement: .flow,
             indent: indent,
-            indentLevel: indentLevel
+            indentLevel: indentLevel,
+            stretchesUndeclaredAxis: stretchesUndeclaredAxis
         )
     }
 
     /// Emits a list of children, each on its own line.
     ///
-    /// - Parameter inheritedFrame: A size to offer each child directly, for
-    ///   the frame-around-a-void-element case; see
-    ///   ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:)``.
-    ///   Only meaningful when `children` holds exactly one widget — a frame
-    ///   always wraps a single child — so passing it alongside more than one
-    ///   would offer every sibling the same box, which is never correct.
+    /// - Parameters:
+    ///   - inheritedFrame: A size to offer each child directly, for
+    ///     the frame-around-a-void-element case; see
+    ///     ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:)``.
+    ///     Only meaningful when `children` holds exactly one widget — a
+    ///     frame always wraps a single child — so passing it alongside more
+    ///     than one would offer every sibling the same box, which is never
+    ///     correct.
+    ///   - stretchesUndeclaredAxis: Forwarded to each child's own ``emit``
+    ///     call unchanged — this function doesn't interpret it, it only
+    ///     relays it past however many non-frame wrapper levels (Divider's
+    ///     own stack-layout wrapper, for one) sit between the ancestor that
+    ///     set it and the descendant that finally acts on it.
     private mutating func emitChildren(
         _ children: [(widget: StaticHTMLBackend.Widget, position: SIMD2<Int>)],
         placement: Placement,
         indent: String,
         indentLevel: Int,
-        inheritedFrame: SIMD2<Int>? = nil
+        inheritedFrame: InheritedFrame? = nil,
+        stretchesUndeclaredAxis: Bool = false
     ) -> String {
         guard !children.isEmpty else {
             return ""
@@ -517,7 +724,8 @@ public struct HTMLEmitter {
                 at: childPosition,
                 placement: placement,
                 indentLevel: indentLevel + 1,
-                inheritedFrame: inheritedFrame
+                inheritedFrame: inheritedFrame,
+                stretchesUndeclaredAxis: stretchesUndeclaredAxis
             )
             output += "\n"
         }
@@ -531,17 +739,59 @@ public struct HTMLEmitter {
     /// Under flow the size is a floor rather than a fixed value, so content
     /// that turns out larger in the browser grows the box instead of spilling
     /// out of it.
+    ///
+    /// - Parameters:
+    ///   - size: The widget's committed size. Used as a fallback floor only
+    ///     when `hasEnclosingFrame` is `false` — a bare, unframed leaf has
+    ///     nothing else to size itself from.
+    ///   - declaredWidth: The width an enclosing frame actually declared for
+    ///     this widget, if any. Pinned exactly (`width`, not `min-width`)
+    ///     since the author fixed it on purpose.
+    ///   - declaredHeight: As `declaredWidth`, for the vertical axis.
+    ///   - hasEnclosingFrame: Whether the enclosing wrapper has switched to
+    ///     `display:flex` (with flex's own default stretch, no
+    ///     `align-items` override) specifically so its cross axis fills
+    ///     this widget in — see the `stretchesUndeclaredAxis` handling in
+    ///     ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
+    ///     Divider is the motivating case: `.frame(height: 1)` declares
+    ///     height but leaves width alone on purpose, wanting the browser to
+    ///     stretch it to fill — not to float free the way an entirely
+    ///     unframed leaf would. `size.x` on that undeclared axis is the
+    ///     layout system's stretch-to-fill outcome at this one render
+    ///     width, so pinning it (even as a `min-width` floor) would block
+    ///     the reflow this stylesheet otherwise promises; leaving the axis
+    ///     with no declaration at all lets the ancestor's flex stretch
+    ///     size it instead, at every width.
     nonisolated static func pin(
         size: SIMD2<Int>,
         in style: inout Style,
-        placement: Placement
+        placement: Placement,
+        declaredWidth: Int? = nil,
+        declaredHeight: Int? = nil,
+        hasEnclosingFrame: Bool = false
     ) {
         guard placement == .flow else {
             // The absolute branch has already set an exact width and height.
             return
         }
-        style.set("\(size.x)px", for: "min-width")
-        style.set("\(size.y)px", for: "min-height")
+        if let declaredWidth {
+            style.set("\(declaredWidth)px", for: "width")
+        } else if !hasEnclosingFrame {
+            style.set("\(size.x)px", for: "min-width")
+        }
+        // hasEnclosingFrame + no declaredWidth: the enclosing wrapper
+        // switched to display:flex specifically so its stretch default
+        // sizes this axis (see the isFrame branch in
+        // ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``);
+        // a min-width floor here would still force overflow at a narrower
+        // width even though a bare width never would, so this axis is
+        // left with no declaration of its own and inherits the flex
+        // stretch entirely.
+        if let declaredHeight {
+            style.set("\(declaredHeight)px", for: "height")
+        } else if !hasEnclosingFrame {
+            style.set("\(size.y)px", for: "min-height")
+        }
     }
 
     /// Whether any two of a container's children share area.
@@ -575,6 +825,15 @@ public struct HTMLEmitter {
             case .leading: "flex-start"
             case .center: "center"
             case .trailing: "flex-end"
+        }
+    }
+
+    /// Maps a declared multiline text alignment to its CSS equivalent.
+    nonisolated static func cssTextAlign(_ alignment: HorizontalAlignment) -> String {
+        switch alignment {
+            case .leading: "left"
+            case .center: "center"
+            case .trailing: "right"
         }
     }
 

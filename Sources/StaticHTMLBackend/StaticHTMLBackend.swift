@@ -102,6 +102,15 @@ public final class StaticHTMLBackend:
         /// text style and therefore the document's heading structure.
         public var declaredFont: Font?
         public var color: SchemePair?
+        /// The alignment of lines relative to each other, from
+        /// ``SwiftCrossUI/View/multilineTextAlignment(_:)``.
+        public var textAlignment: HorizontalAlignment = .leading
+        /// The line-height limit from ``SwiftCrossUI/View/lineLimit(_:reservesSpace:)``,
+        /// if the author set one.
+        public var lineLimit: LineLimit?
+        /// Whether the text should be selectable, from
+        /// ``SwiftCrossUI/View/textSelectionEnabled(_:)``.
+        public var isTextSelectionEnabled = false
     }
 
     /// A button, which in static output becomes a link.
@@ -508,6 +517,9 @@ public final class StaticHTMLBackend:
             forResolved: environment.suggestedForegroundColor.resolve(in: environment),
             existing: textView.color
         )
+        textView.textAlignment = environment.multilineTextAlignment
+        textView.lineLimit = environment.lineLimitSettings
+        textView.isTextSelectionEnabled = environment.isTextSelectionEnabled
         textView.captureIntent(from: environment)
     }
 
