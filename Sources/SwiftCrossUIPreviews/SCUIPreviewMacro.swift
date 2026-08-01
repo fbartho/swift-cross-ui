@@ -36,3 +36,33 @@ public macro SCUIPreview<Content: SwiftCrossUI.View>(
     _ name: String? = nil,
     @SwiftCrossUI.ViewBuilder body: @escaping () -> Content
 ) = #externalMacro(module: "SwiftCrossUIMacrosPlugin", type: "SCUIPreviewMacro")
+
+/// Registers a SwiftCrossUI view with Xcode's preview canvas, spelled the same
+/// way as SwiftUI's `#Preview`.
+///
+/// This overloads SwiftUI's macro rather than replacing it. The closure's
+/// return type selects between them, so a file can preview SwiftUI views and
+/// SwiftCrossUI views with the same spelling:
+///
+/// ```swift
+/// #Preview("Native") { SwiftUI.Text("hi") }        // SwiftUI's
+/// #Preview("Cross-platform") { CounterView() }     // this one
+/// ```
+///
+/// Like ``SCUIPreview(_:body:)`` it needs no conditional compilation: the
+/// expansion is empty on platforms without a preview canvas.
+///
+/// - Note: This overload can't be used inside SwiftCrossUIPreviews itself. A
+///   same-module declaration outranks the imported SwiftUI one, so within this
+///   module `#Preview` always resolves here, and previews of genuine SwiftUI
+///   views stop compiling. Consumers are unaffected, since for them neither
+///   declaration is same-module and the closure's type decides.
+///
+/// - Parameters:
+///   - name: A display name for the preview, shown in Xcode's canvas.
+///   - body: A closure returning the view to preview.
+@freestanding(declaration)
+public macro Preview<Content: SwiftCrossUI.View>(
+    _ name: String? = nil,
+    @SwiftCrossUI.ViewBuilder body: @escaping () -> Content
+) = #externalMacro(module: "SwiftCrossUIMacrosPlugin", type: "SCUIPreviewMacro")
