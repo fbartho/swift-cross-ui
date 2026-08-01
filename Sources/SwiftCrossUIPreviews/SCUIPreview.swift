@@ -34,7 +34,7 @@
     ///     import SwiftUI
     ///
     ///     @available(macOS 14.0, *)
-    ///     #Preview("Greeting") {
+    ///     #Preview("Greeting") { () -> any SwiftUI.View in
     ///         SCUIPreview {
     ///             Text("Hello, world!")
     ///         }
@@ -47,6 +47,12 @@
     /// `canImport(AppKit)` for platforms without them, `!targetEnvironment(...)`
     /// because Mac Catalyst has both but not the AppKit hosting this type uses,
     /// and `@available` because SwiftUI's `#Preview` requires macOS 14.
+    ///
+    /// The closure's return type has to be spelled out. Importing this module
+    /// brings ``Preview(_:body:)`` into scope alongside SwiftUI's macro, and
+    /// since ``SCUIPreview`` is a `SwiftUI.View` rather than a
+    /// `SwiftCrossUI.View`, an unannotated closure picks the overload and
+    /// fails to compile.
     ///
     /// The hosted view is laid out against the size that SwiftUI proposes for
     /// the preview canvas, and re-lays out whenever that proposal changes or the
