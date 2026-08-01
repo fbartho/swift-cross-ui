@@ -14,7 +14,12 @@ extension BackendFeatures {
         /// - Parameters:
         ///   - widget: The rectangle to set the color of.
         ///   - color: The new color.
-        func setColor(ofColorableRectangle widget: Widget, to color: Color.Resolved)
+        ///   - environment: The environment the rectangle was updated in.
+        func setColor(
+            ofColorableRectangle widget: Widget,
+            to color: Color.Resolved,
+            environment: EnvironmentValues
+        )
 
         /// Resolves the given adaptive color to a concrete color given the current environment.
         ///

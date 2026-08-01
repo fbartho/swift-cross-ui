@@ -429,7 +429,11 @@ public final class DummyBackend:
         Rectangle()
     }
 
-    public func setColor(ofColorableRectangle widget: Widget, to color: Color.Resolved) {
+    public func setColor(
+        ofColorableRectangle widget: Widget,
+        to color: Color.Resolved,
+        environment: EnvironmentValues
+    ) {
         (widget as! Rectangle).color = color
     }
 

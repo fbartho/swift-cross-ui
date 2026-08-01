@@ -327,9 +327,14 @@ public final class StaticHTMLBackend:
         Rectangle()
     }
 
-    public func setColor(ofColorableRectangle widget: Widget, to color: Color.Resolved) {
+    public func setColor(
+        ofColorableRectangle widget: Widget,
+        to color: Color.Resolved,
+        environment: EnvironmentValues
+    ) {
         let rectangle = widget as! Rectangle
         rectangle.color = pair(forResolved: color, existing: rectangle.color)
+        rectangle.captureIntent(from: environment)
     }
 
     public func createCornerRadiusContainer(wrapping child: Widget) -> Widget {

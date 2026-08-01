@@ -184,7 +184,11 @@ extension UIKitBackend {
         BaseViewWidget()
     }
 
-    public func setColor(ofColorableRectangle widget: Widget, to color: Color.Resolved) {
+    public func setColor(
+        ofColorableRectangle widget: Widget,
+        to color: Color.Resolved,
+        environment: EnvironmentValues
+    ) {
         widget.view.backgroundColor = color.uiColor
     }
 

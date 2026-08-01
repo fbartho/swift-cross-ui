@@ -535,7 +535,11 @@ public final class AppKitBackend: FullAppBackend {
         return widget
     }
 
-    public func setColor(ofColorableRectangle widget: Widget, to color: Color.Resolved) {
+    public func setColor(
+        ofColorableRectangle widget: Widget,
+        to color: Color.Resolved,
+        environment: EnvironmentValues
+    ) {
         widget.layer?.backgroundColor = color.nsColor.cgColor
     }
 
