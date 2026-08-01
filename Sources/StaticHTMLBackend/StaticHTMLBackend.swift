@@ -152,6 +152,23 @@ public final class StaticHTMLBackend:
         public var declaredWidth: Double?
         /// The height the author fixed, as ``declaredWidth`` is for width.
         public var declaredHeight: Double?
+        /// The width constraints the author declared with
+        /// ``SwiftCrossUI/View/frame(minWidth:idealWidth:maxWidth:minHeight:idealHeight:maxHeight:alignment:)``.
+        ///
+        /// Kept apart from ``declaredWidth`` because a range degrades to CSS
+        /// min/max rather than to a fixed dimension; `idealWidth` has no CSS
+        /// equivalent once the container is already laid out, so it isn't
+        /// carried into emission.
+        public var declaredMinWidth: Double?
+        /// The maximum width the author declared, as ``declaredMinWidth`` is
+        /// for the minimum.
+        public var declaredMaxWidth: Double?
+        /// The minimum height the author declared, as ``declaredMinWidth`` is
+        /// for width.
+        public var declaredMinHeight: Double?
+        /// The maximum height the author declared, as ``declaredMaxWidth`` is
+        /// for width.
+        public var declaredMaxHeight: Double?
 
         public override func getChildren() -> [Widget] {
             children.map(\.widget)
@@ -372,6 +389,24 @@ public final class StaticHTMLBackend:
         }
         container.declaredWidth = width
         container.declaredHeight = height
+    }
+
+    public func describeFlexibleFrame(
+        of widget: Widget,
+        minWidth: Double?,
+        idealWidth: Double?,
+        maxWidth: Double?,
+        minHeight: Double?,
+        idealHeight: Double?,
+        maxHeight: Double?
+    ) {
+        guard let container = widget as? Container else {
+            return
+        }
+        container.declaredMinWidth = minWidth
+        container.declaredMaxWidth = maxWidth
+        container.declaredMinHeight = minHeight
+        container.declaredMaxHeight = maxHeight
     }
 
     public func createScrollContainer(for child: Widget) -> Widget {

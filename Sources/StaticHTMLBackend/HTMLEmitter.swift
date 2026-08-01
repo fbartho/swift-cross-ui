@@ -255,6 +255,22 @@ public struct HTMLEmitter {
         if let height = container.declaredHeight {
             style.set("\(Int(height))px", for: "height")
         }
+        // A flexible frame declares a range rather than a fixed size, which
+        // CSS min/max-width/height express directly. `.infinity` means "no
+        // ceiling", which is CSS's default absent the property, so it's
+        // skipped rather than emitted as an invalid length.
+        if let minWidth = container.declaredMinWidth, minWidth.isFinite {
+            style.set("\(Int(minWidth))px", for: "min-width")
+        }
+        if let maxWidth = container.declaredMaxWidth, maxWidth.isFinite {
+            style.set("\(Int(maxWidth))px", for: "max-width")
+        }
+        if let minHeight = container.declaredMinHeight, minHeight.isFinite {
+            style.set("\(Int(minHeight))px", for: "min-height")
+        }
+        if let maxHeight = container.declaredMaxHeight, maxHeight.isFinite {
+            style.set("\(Int(maxHeight))px", for: "max-height")
+        }
 
         guard let stack = container.stackLayout else {
             // A single child inset from every edge is padding, which flow
@@ -268,9 +284,14 @@ public struct HTMLEmitter {
                 if position.x >= 0 && position.y >= 0 && trailing >= 0 && bottom >= 0 {
                     // A frame positions its child by alignment rather than by
                     // insetting it, so reading the leftover space as padding
-                    // would double the width the author asked for.
+                    // would double the width the author asked for. A flexible
+                    // frame does this exactly as a strict one does, even when
+                    // it only constrains a range rather than fixing a size.
                     let isFrame =
                         container.declaredWidth != nil || container.declaredHeight != nil
+                        || container.declaredMinWidth != nil || container.declaredMaxWidth != nil
+                        || container.declaredMinHeight != nil
+                        || container.declaredMaxHeight != nil
                     if !isFrame && (position != .zero || trailing != 0 || bottom != 0) {
                         style.set(
                             "\(position.y)px \(trailing)px \(bottom)px \(position.x)px",

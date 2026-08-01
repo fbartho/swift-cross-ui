@@ -108,6 +108,34 @@ extension BackendFeatures {
         ///   - width: The width the author fixed, if they fixed one.
         ///   - height: The height the author fixed, if they fixed one.
         func describeFrame(of widget: Widget, width: Double?, height: Double?)
+
+        /// Tells the backend that a container's size was constrained (rather
+        /// than fixed) by the author, as with
+        /// ``SwiftCrossUI/View/frame(minWidth:idealWidth:maxWidth:minHeight:idealHeight:maxHeight:alignment:)``.
+        ///
+        /// The default implementation does nothing. Kept separate from
+        /// ``describeFrame(of:width:height:)`` rather than folding into it:
+        /// an exact frame reports a size, a flexible one reports a range, and
+        /// a backend re-expressing the layout needs to tell the two apart —
+        /// a range degrades to CSS min/max, not to a fixed dimension.
+        ///
+        /// - Parameters:
+        ///   - widget: The container whose size the author constrained.
+        ///   - minWidth: The minimum width the author declared, if any.
+        ///   - idealWidth: The ideal width the author declared, if any.
+        ///   - maxWidth: The maximum width the author declared, if any.
+        ///   - minHeight: The minimum height the author declared, if any.
+        ///   - idealHeight: The ideal height the author declared, if any.
+        ///   - maxHeight: The maximum height the author declared, if any.
+        func describeFlexibleFrame(
+            of widget: Widget,
+            minWidth: Double?,
+            idealWidth: Double?,
+            maxWidth: Double?,
+            minHeight: Double?,
+            idealHeight: Double?,
+            maxHeight: Double?
+        )
     }
 }
 
@@ -135,6 +163,19 @@ extension BackendFeatures.Widgets {
     }
 
     public func describeFrame(of widget: Widget, width: Double?, height: Double?) {
+        // As above: the committed size already says everything most backends
+        // need to know.
+    }
+
+    public func describeFlexibleFrame(
+        of widget: Widget,
+        minWidth: Double?,
+        idealWidth: Double?,
+        maxWidth: Double?,
+        minHeight: Double?,
+        idealHeight: Double?,
+        maxHeight: Double?
+    ) {
         // As above: the committed size already says everything most backends
         // need to know.
     }

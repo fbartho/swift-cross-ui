@@ -347,6 +347,50 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A flexible frame's min/max constraints become CSS min/max, not a fixed size")
+    func flexibleFrameReportsMinMaxConstraints() {
+        // Only StrictFrameView (.frame(width:height:)) used to report through
+        // describeFrame; FlexibleFrameView (.frame(minWidth:...)) silently
+        // dropped its constraints in flow emission — the same
+        // declared-intent-inversion bug class StrictFrameView had before
+        // describeFrame existed.
+        //
+        // No .htmlTag() here: a frame wrapping a single child is exactly the
+        // shape that gets hoisted onto its child (see task #17), so an
+        // explicit tag would land on the Text leaf, not on the frame's own
+        // div — the interned stylesheet is checked directly instead, since
+        // the frame's declared class exists whichever element ends up
+        // wearing the tag.
+        let view = Text("Flexible")
+            .frame(minWidth: 100, maxWidth: 300, minHeight: 50, maxHeight: 200)
+        let html = StaticHTMLRenderer.render(view, title: "Flexible frame").html
+
+        let frameRule = Self.internedRule(containing: "min-width:100px", in: html)
+        #expect(frameRule?.contains("min-width:100px") == true)
+        #expect(frameRule?.contains("max-width:300px") == true)
+        #expect(frameRule?.contains("min-height:50px") == true)
+        #expect(frameRule?.contains("max-height:200px") == true)
+        // A range isn't a fixed size, so it must not also emit a plain
+        // width/height the way a strict frame would.
+        #expect(frameRule?.contains("{width:") != true && frameRule?.contains(";width:") != true)
+        #expect(frameRule?.contains("{height:") != true && frameRule?.contains(";height:") != true)
+    }
+
+    @MainActor
+    @Test("An unconstrained axis on a flexible frame emits no min/max for that axis")
+    func flexibleFrameOmitsUnconstrainedAxis() {
+        let view = Text("Flexible")
+            .frame(minWidth: 100)
+        let html = StaticHTMLRenderer.render(view, title: "Partially flexible frame").html
+
+        let frameRule = Self.internedRule(containing: "min-width:100px", in: html)
+        #expect(frameRule?.contains("min-width:100px") == true)
+        #expect(frameRule?.contains("max-width:") != true)
+        #expect(frameRule?.contains("min-height:") != true)
+        #expect(frameRule?.contains("max-height:") != true)
+    }
+
+    @MainActor
     @Test("A tagged void leaf with no frame gets no size CSS")
     func voidLeafWithoutFrameStaysUnsized() {
         let view = Text("")
@@ -382,6 +426,17 @@ struct StaticHTMLBackendTests {
         }
         let className = String(afterClass[..<closingQuote])
         return html.split(separator: "\n").first { $0.contains(".\(className) {") }.map(String.init)
+    }
+
+    /// Finds the interned style rule containing `marker`, without going
+    /// through an element's `class` attribute first.
+    ///
+    /// Useful when the element carrying the rule isn't the one under test —
+    /// hoisting (see task #17) can move an explicit tag off a wrapper and
+    /// onto its single child, leaving the wrapper's own class undiscoverable
+    /// from its tag alone.
+    private static func internedRule(containing marker: String, in html: String) -> String? {
+        html.split(separator: "\n").first { $0.contains(marker) }.map(String.init)
     }
 
     @MainActor

@@ -353,6 +353,15 @@ struct FlexibleFrameView<Child: View>: TypeSafeView {
             in: frameSize.vector
         )
         backend.setSize(of: widget, to: frameSize.vector)
+        backend.describeFlexibleFrame(
+            of: widget,
+            minWidth: minWidth,
+            idealWidth: idealWidth,
+            maxWidth: maxWidth,
+            minHeight: minHeight,
+            idealHeight: idealHeight,
+            maxHeight: maxHeight
+        )
         backend.setPosition(ofChildAt: 0, in: widget, to: childPosition)
     }
 }
