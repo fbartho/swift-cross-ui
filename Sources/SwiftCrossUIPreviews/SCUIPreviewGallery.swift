@@ -5,9 +5,8 @@
 
     /// The sample views used to demonstrate and verify ``SCUIPreview``.
     ///
-    /// The demo previews, the snapshot tool, and the tests all render these same
-    /// views, so what a preview shows and what a snapshot records can't drift
-    /// apart.
+    /// `SCUIPreviewSnapshotTool` and the hosting tests both render these same
+    /// views, so what a snapshot records can't drift from what the tests verify.
     public enum SCUIPreviewGallery {
         /// A view in the gallery, paired with the size to render it at.
         public struct Entry {
