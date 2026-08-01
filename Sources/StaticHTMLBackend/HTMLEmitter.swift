@@ -77,6 +77,13 @@ public struct HTMLEmitter {
                     style.set(palette.value(for: color), for: "color")
                 }
                 style.set("pre-wrap", for: "white-space")
+                // Measurement on the build host is an estimate, so the browser
+                // may want one more line than was allocated. Clipping keeps
+                // that drift inside the element's own box instead of letting it
+                // run over whatever the layout system placed below. This
+                // matches what ``Text`` does when it truncates on screen, and
+                // is the same failure mode a windowing backend would show.
+                style.set("hidden", for: "overflow")
                 inner = Self.escape(text.content)
                 // A declared text style is the author saying what this line is
                 // for, so it outranks the generic span.
