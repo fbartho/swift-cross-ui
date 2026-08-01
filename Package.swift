@@ -125,6 +125,19 @@ if env["SCUI_BENCHMARK_VIZ"] == "1" {
     layoutPerformanceSwiftSettings = []
 }
 
+// ImageFormats pulls in libpng, which needs setjmp/longjmp and so can't build
+// for wasm. The wasm spike swaps in a shim (WasmSpikeImageFormatsShim.swift)
+// instead, so the real product is only depended upon when not targeting wasm.
+// SCUI_WASM_SPIKE is set by the wasm build recipe.
+let imageFormatsDependencies: [Target.Dependency]
+if env["SCUI_WASM_SPIKE"] == "1" {
+    imageFormatsDependencies = []
+} else {
+    imageFormatsDependencies = [
+        .product(name: "ImageFormats", package: "swift-image-formats")
+    ]
+}
+
 let package = Package(
     name: "swift-cross-ui",
     platforms: [.macOS(.v10_15), .iOS(.v13), .tvOS(.v13), .macCatalyst(.v13), .visionOS(.v1)],
@@ -138,6 +151,7 @@ let package = Package(
         .library(name: "UIKitBackend", type: libraryType, targets: ["UIKitBackend"]),
         .library(name: "Gtk", type: libraryType, targets: ["Gtk"]),
         .library(name: "Gtk3", type: libraryType, targets: ["Gtk3"]),
+        .library(name: "StaticHTMLBackend", type: libraryType, targets: ["StaticHTMLBackend"]),
         .executable(name: "GtkExample", targets: ["GtkExample"]),
         // .library(name: "CursesBackend", type: libraryType, targets: ["CursesBackend"]),
         // .library(name: "QtBackend", type: libraryType, targets: ["QtBackend"]),
@@ -197,6 +211,7 @@ let package = Package(
                 "SwiftCrossUIMetadataSupport",
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Mutex", package: "swift-mutex"),
+            ] + imageFormatsDependencies + [
 
                 // This import is purely required to fix a linker issue and a plugin build
                 // error that occur on macOS when building for non-Android platforms now that
@@ -222,6 +237,7 @@ let package = Package(
             dependencies: [
                 "SwiftCrossUI",
                 "DummyBackend",
+                "StaticHTMLBackend",
                 "SwiftCrossUIMacrosPlugin",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
@@ -317,6 +333,11 @@ let package = Package(
             dependencies: []
         ),
         .target(name: "DummyBackend", dependencies: ["SwiftCrossUI"]),
+        .target(name: "StaticHTMLBackend", dependencies: ["SwiftCrossUI"]),
+        .executableTarget(
+            name: "StaticHTMLDemo",
+            dependencies: ["StaticHTMLBackend", "SwiftCrossUI"]
+        ),
 
         .executableTarget(
             name: "LayoutPerformanceBenchmark",
