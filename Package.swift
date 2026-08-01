@@ -87,13 +87,21 @@ let hotReloadingEnabled: Bool
 
 let testGtk3Backend = env["SCUI_TEST_GTK3BACKEND"] == "1"
 
-// ImageFormats pulls in libpng, which needs setjmp/longjmp and therefore can't
-// build for wasm. SwiftPM's platform conditions have no wasm case in this
-// tools-version, so the dependency is dropped via an environment variable
-// instead. Sources guard the import with `#if !canImport(WASILibc)`.
+// Two dependencies can't be built for wasm:
+//
+// - ImageFormats pulls in libpng, whose C sources need setjmp/longjmp.
+// - Mutex (swift-mutex) selects a lock primitive per platform and has no
+//   wasip1 case, so the module fails to compile. SwiftCrossUI uses a small
+//   in-tree replacement instead; see Sources/SwiftCrossUI/WasmMutexShim.swift.
+//
+// SwiftPM's platform conditions have no wasm case in this tools-version, so
+// both are dropped via an environment variable instead. The corresponding
+// imports are guarded with `#if !canImport(WASILibc)`.
 let wasmBuild = env["SCUI_WASM"] == "1"
 let imageFormatsDependencies: [Target.Dependency] =
     wasmBuild ? [] : [.product(name: "ImageFormats", package: "swift-image-formats")]
+let mutexDependencies: [Target.Dependency] =
+    wasmBuild ? [] : [.product(name: "Mutex", package: "swift-mutex")]
 
 var swiftSettings: [SwiftSetting] = []
 if hotReloadingEnabled {
@@ -204,8 +212,7 @@ let package = Package(
                 "SwiftCrossUIMacrosPlugin",
                 "SwiftCrossUIMetadataSupport",
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "Mutex", package: "swift-mutex"),
-            ] + imageFormatsDependencies + [
+            ] + mutexDependencies + imageFormatsDependencies + [
 
                 // This import is purely required to fix a linker issue and a plugin build
                 // error that occur on macOS when building for non-Android platforms now that
