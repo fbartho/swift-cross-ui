@@ -6,6 +6,8 @@
     import func WinSDK.memcmp
 #elseif canImport(Android)
     import func Android.memcmp
+#elseif canImport(WASILibc)
+    import func WASILibc.memcmp
 #endif
 
 /// A type similar to KeyPath, but that can be constructed at run time given

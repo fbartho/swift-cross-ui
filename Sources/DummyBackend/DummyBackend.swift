@@ -342,9 +342,16 @@ public final class DummyBackend:
     }
 
     public func runInMainThread(action: @escaping @MainActor () -> Void) {
-        DispatchQueue.main.async {
-            action()
-        }
+        #if canImport(WASILibc)
+            // Single-threaded WASI: already on the only thread there is.
+            MainActor.assumeIsolated {
+                action()
+            }
+        #else
+            DispatchQueue.main.async {
+                action()
+            }
+        #endif
     }
 
     public func computeRootEnvironment(defaultEnvironment: EnvironmentValues) -> EnvironmentValues {

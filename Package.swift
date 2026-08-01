@@ -195,7 +195,6 @@ let package = Package(
             dependencies: [
                 "SwiftCrossUIMacrosPlugin",
                 "SwiftCrossUIMetadataSupport",
-                .product(name: "ImageFormats", package: "swift-image-formats"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Mutex", package: "swift-mutex"),
 

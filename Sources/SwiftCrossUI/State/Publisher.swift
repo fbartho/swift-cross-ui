@@ -1,4 +1,6 @@
-import Dispatch
+#if !canImport(WASILibc)
+    import Dispatch
+#endif
 import Foundation
 
 /// A type that produces valueless observations.
@@ -22,10 +24,12 @@ public class Publisher {
 
     private let updateStatistics = UpdateStatistics()
 
-    private let serialUpdateHandlingQueue = DispatchQueue(
-        label: "serial update handling"
-    )
-    private let semaphore = DispatchSemaphore(value: 1)
+    #if !canImport(WASILibc)
+        private let serialUpdateHandlingQueue = DispatchQueue(
+            label: "serial update handling"
+        )
+        private let semaphore = DispatchSemaphore(value: 1)
+    #endif
 
     /// Creates a new independent publisher.
     public init() {}
@@ -98,6 +102,17 @@ public class Publisher {
         backend: Backend,
         action: @escaping @MainActor @Sendable () -> Void
     ) -> Cancellable {
+        #if canImport(WASILibc)
+            // Single-threaded WASI: there is no background queue to hand work to
+            // and no preemptible main thread to starve, so the semaphore/sleep
+            // throttling of the multi-threaded path would only ever deadlock.
+            // Hand the update straight to the backend instead.
+            return observe {
+                backend.runInMainThread {
+                    action()
+                }
+            }
+        #else
         let semaphore = self.semaphore
         let serialUpdateHandlingQueue = self.serialUpdateHandlingQueue
         let updateStatistics = self.updateStatistics
@@ -156,5 +171,6 @@ public class Publisher {
                 }
             }
         }
+        #endif
     }
 }

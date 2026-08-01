@@ -1,5 +1,7 @@
 import Foundation
-import ImageFormats
+#if !canImport(WASILibc)
+    import ImageFormats
+#endif
 
 /// A view that displays an image.
 public struct Image: Sendable {
