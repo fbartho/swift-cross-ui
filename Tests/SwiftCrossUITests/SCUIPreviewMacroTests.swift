@@ -7,10 +7,10 @@ import SwiftSyntaxMacrosGenericTestSupport
 import Testing
 
 fileprivate let testMacros: [String: MacroSpec] = [
-    "SCUIPreview": MacroSpec(type: SCUIPreviewMacro.self)
+    "Preview": MacroSpec(type: SCUIPreviewMacro.self)
 ]
 
-@Suite("Testing #SCUIPreview Macro")
+@Suite("Testing #Preview Macro")
 struct SCUIPreviewMacroTests {
     // The registry type is named with `makeUniqueName`, which mangles in the
     // module and file being compiled, so these tests pin the parts of the
@@ -20,7 +20,7 @@ struct SCUIPreviewMacroTests {
     func testExpansionIsGated() throws {
         let expansion = try expand(
             """
-            #SCUIPreview {
+            #Preview {
                 Text("Hello")
             }
             """
@@ -42,7 +42,7 @@ struct SCUIPreviewMacroTests {
     func testExpansionRegistersPreview() throws {
         let expansion = try expand(
             """
-            #SCUIPreview {
+            #Preview {
                 Text("Hello")
             }
             """
@@ -60,7 +60,7 @@ struct SCUIPreviewMacroTests {
     func testRegistryReportsSourcePosition() throws {
         let expansion = try expand(
             """
-            #SCUIPreview {
+            #Preview {
                 Text("Hello")
             }
             """
@@ -77,7 +77,7 @@ struct SCUIPreviewMacroTests {
     func testDisplayNameIsPassedThrough() throws {
         let expansion = try expand(
             """
-            #SCUIPreview("Counter") {
+            #Preview("Counter") {
                 CounterSample()
             }
             """
@@ -90,7 +90,7 @@ struct SCUIPreviewMacroTests {
     func testOmittedDisplayName() throws {
         let expansion = try expand(
             """
-            #SCUIPreview {
+            #Preview {
                 CounterSample()
             }
             """
@@ -102,7 +102,7 @@ struct SCUIPreviewMacroTests {
     @Test("Macro requires a trailing closure")
     func testRequiresTrailingClosure() throws {
         let declaration = try #require(
-            DeclSyntax("#SCUIPreview(\"Counter\")").as(MacroExpansionDeclSyntax.self)
+            DeclSyntax("#Preview(\"Counter\")").as(MacroExpansionDeclSyntax.self)
         )
 
         #expect(throws: (any Error).self) {
@@ -113,8 +113,7 @@ struct SCUIPreviewMacroTests {
         }
     }
 
-    /// Expands a single `#SCUIPreview` declaration and returns the expanded
-    /// code.
+    /// Expands a single `#Preview` declaration and returns the expanded code.
     private func expand(_ source: SyntaxNodeString) throws -> String {
         let declaration = try #require(
             DeclSyntax("\(source)").as(MacroExpansionDeclSyntax.self)

@@ -1,38 +1,5 @@
 import SwiftCrossUI
 
-/// Registers a SwiftCrossUI view as a preview, under a name Xcode's canvas
-/// doesn't recognise.
-///
-/// Prefer ``Preview(_:body:)``, which is spelled the same way as SwiftUI's
-/// macro. **Xcode's canvas does not display previews written with
-/// `#SCUIPreview`.** The canvas scans source for the literal `#Preview` token
-/// and looks up a registration whose mangled name encodes that spelling, so a
-/// preview registered under any other name compiles correctly, carries the same
-/// metadata as any other, and is never shown.
-///
-/// It remains useful for previewing from inside SwiftCrossUIPreviews itself,
-/// where ``Preview(_:body:)`` can't be used.
-///
-/// ```swift
-/// #SCUIPreview("Greeting") {
-///     VStack {
-///         Text("Hello, world!")
-///         Button("Press me") {}
-///     }
-/// }
-/// ```
-///
-/// - Parameters:
-///   - name: A display name for the preview. Xcode won't show it, for the
-///     reason above.
-///   - body: A closure returning the view to preview. It is evaluated once when
-///     the preview is created.
-@freestanding(declaration)
-public macro SCUIPreview<Content: SwiftCrossUI.View>(
-    _ name: String? = nil,
-    @SwiftCrossUI.ViewBuilder body: @escaping () -> Content
-) = #externalMacro(module: "SwiftCrossUIMacrosPlugin", type: "SCUIPreviewMacro")
-
 /// Previews a SwiftCrossUI view in Xcode's canvas, spelled the same way as
 /// SwiftUI's `#Preview`.
 ///
@@ -45,11 +12,10 @@ public macro SCUIPreview<Content: SwiftCrossUI.View>(
 /// #Preview("Cross-platform") { CounterView() }     // this one
 /// ```
 ///
-/// Unlike wrapping a view in ``SCUIPreview`` by hand, this needs no conditional
-/// compilation and no availability annotation. The expansion is empty on
-/// platforms that have no preview canvas, so a file using it builds unchanged on
-/// Linux and Windows, and the availability the registration needs is part of the
-/// expansion.
+/// It needs no conditional compilation and no availability annotation. The
+/// expansion is empty on platforms that have no preview canvas, so a file
+/// using it builds unchanged on Linux and Windows, and the availability the
+/// registration needs is part of the expansion.
 ///
 /// ## Where previews appear
 ///
@@ -71,8 +37,8 @@ public macro SCUIPreview<Content: SwiftCrossUI.View>(
 /// resolves only what the previewed module already links.
 ///
 /// Both rows require a literal `#Preview`, which is what Xcode scans for. That
-/// makes them inapplicable inside SwiftCrossUIPreviews itself, where the only
-/// available spelling is ``SCUIPreview(_:body:)`` and nothing is displayed.
+/// makes them inapplicable inside SwiftCrossUIPreviews itself, where this
+/// overload can't be written at all (see the note below).
 ///
 /// To preview across a package's modules, open it from an Xcode project whose
 /// app target depends directly on the product containing the previewed file,

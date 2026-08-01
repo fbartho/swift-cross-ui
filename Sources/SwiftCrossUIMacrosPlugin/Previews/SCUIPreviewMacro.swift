@@ -2,11 +2,12 @@ import MacroToolkit
 import SwiftSyntax
 import SwiftSyntaxMacros
 
-/// Expands `#SCUIPreview` into a preview registration on the platforms that
-/// have a preview canvas, and into nothing everywhere else.
+/// Expands SwiftCrossUIPreviews' `#Preview(_:body:)` overload into a preview
+/// registration on the platforms that have a preview canvas, and into nothing
+/// everywhere else.
 ///
-/// Expanding to nothing off-Apple is what lets consumers write `#SCUIPreview`
-/// in ordinary source files, with no conditional compilation of their own, and
+/// Expanding to nothing off-Apple is what lets consumers write `#Preview` in
+/// ordinary source files, with no conditional compilation of their own, and
 /// still have those files build on Linux and Windows.
 ///
 /// Three details of the expansion are forced rather than chosen:
@@ -29,7 +30,7 @@ public struct SCUIPreviewMacro: DeclarationMacro {
         in context: some MacroExpansionContext
     ) throws -> [DeclSyntax] {
         guard let body = node.trailingClosure else {
-            throw MacroError("#SCUIPreview expects a trailing closure containing a view")
+            throw MacroError("#Preview expects a trailing closure containing a view")
         }
 
         // SwiftUI's `#Preview` takes an optional display name as its first
