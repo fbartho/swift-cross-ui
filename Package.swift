@@ -87,6 +87,22 @@ let hotReloadingEnabled: Bool
 
 let testGtk3Backend = env["SCUI_TEST_GTK3BACKEND"] == "1"
 
+// Two dependencies can't be built for wasm:
+//
+// - ImageFormats pulls in libpng, whose C sources need setjmp/longjmp.
+// - Mutex (swift-mutex) selects a lock primitive per platform and has no
+//   wasip1 case, so the module fails to compile. SwiftCrossUI uses a small
+//   in-tree replacement instead; see Sources/SwiftCrossUI/WasmMutexShim.swift.
+//
+// SwiftPM's platform conditions have no wasm case in this tools-version, so
+// both are dropped via an environment variable instead. The corresponding
+// imports are guarded with `#if !canImport(WASILibc)`.
+let wasmBuild = env["SCUI_WASM"] == "1"
+let imageFormatsDependencies: [Target.Dependency] =
+    wasmBuild ? [] : [.product(name: "ImageFormats", package: "swift-image-formats")]
+let mutexDependencies: [Target.Dependency] =
+    wasmBuild ? [] : [.product(name: "Mutex", package: "swift-mutex")]
+
 var swiftSettings: [SwiftSetting] = []
 if hotReloadingEnabled {
     swiftSettings += [
@@ -123,19 +139,6 @@ if env["SCUI_BENCHMARK_VIZ"] == "1" {
 } else {
     additionalLayoutPerformanceBenchmarkDependencies = []
     layoutPerformanceSwiftSettings = []
-}
-
-// ImageFormats pulls in libpng, which needs setjmp/longjmp and so can't build
-// for wasm. The wasm spike swaps in a shim (WasmSpikeImageFormatsShim.swift)
-// instead, so the real product is only depended upon when not targeting wasm.
-// SCUI_WASM_SPIKE is set by the wasm build recipe.
-let imageFormatsDependencies: [Target.Dependency]
-if env["SCUI_WASM_SPIKE"] == "1" {
-    imageFormatsDependencies = []
-} else {
-    imageFormatsDependencies = [
-        .product(name: "ImageFormats", package: "swift-image-formats")
-    ]
 }
 
 let package = Package(
@@ -210,8 +213,7 @@ let package = Package(
                 "SwiftCrossUIMacrosPlugin",
                 "SwiftCrossUIMetadataSupport",
                 .product(name: "Logging", package: "swift-log"),
-                .product(name: "Mutex", package: "swift-mutex"),
-            ] + imageFormatsDependencies + [
+            ] + mutexDependencies + imageFormatsDependencies + [
 
                 // This import is purely required to fix a linker issue and a plugin build
                 // error that occur on macOS when building for non-Android platforms now that
@@ -337,6 +339,17 @@ let package = Package(
         .executableTarget(
             name: "StaticHTMLDemo",
             dependencies: ["StaticHTMLBackend", "SwiftCrossUI"]
+        ),
+
+        // Runtime smoke test for the experimental wasm port. Builds everywhere
+        // so it can't silently rot, but it only earns its keep when run under a
+        // wasm runtime (see Scripts/wasm-smoke-test.sh).
+        .executableTarget(
+            name: "WasmSmokeTest",
+            dependencies: [
+                "SwiftCrossUI",
+                "DummyBackend",
+            ]
         ),
 
         .executableTarget(

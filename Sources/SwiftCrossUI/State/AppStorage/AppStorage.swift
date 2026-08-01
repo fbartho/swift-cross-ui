@@ -1,5 +1,9 @@
 import Foundation
-import Mutex
+// On wasm, Mutex comes from WasmMutexShim.swift instead of the swift-mutex
+// package, which has no wasip1 implementation.
+#if !canImport(WASILibc)
+    import Mutex
+#endif
 
 let appStorageCache: Mutex<[String: any Codable & Sendable]> = Mutex([:])
 private let appStoragePublisherCache: Mutex<[String: Publisher]> = Mutex([:])
