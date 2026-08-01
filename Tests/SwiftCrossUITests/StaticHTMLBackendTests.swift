@@ -6,6 +6,26 @@ import StaticHTMLBackend
 @Suite("Testing for the static HTML backend")
 struct StaticHTMLBackendTests {
     @MainActor
+    @Test("A heading's interned font size survives the #root reset")
+    func headingFontSizeOutranksRootReset() {
+        // #root is an id selector — (1,0,0) specificity — which would
+        // outrank a heading's interned class (0,1,0) if the reset block
+        // weren't wrapped in :where() to zero its own contribution. Without
+        // that wrapper, every heading would compute to the browser's default
+        // h1 size instead of the declared text style.
+        let view = Text("Big Heading").font(.largeTitle)
+        let html = StaticHTMLRenderer.render(view, title: "Specificity").html
+
+        // The reset selector carries zero specificity of its own, so it
+        // never wins a cascade tie against a heading's interned class.
+        #expect(html.contains(":where(#root h1, #root h2"))
+        #expect(!html.contains("#root :where(h1"))
+
+        let headingRule = Self.styleRule(forElementContaining: "<h1", in: html)
+        #expect(headingRule?.contains("font-size:26px") == true)
+    }
+
+    @MainActor
     @Test("A .background() Color sibling doesn't displace an ancestor's tag")
     func backgroundColorSiblingDoesNotDisplaceAncestorTag() {
         // Before a Color leaf could carry pendingTagRequest, it reported no

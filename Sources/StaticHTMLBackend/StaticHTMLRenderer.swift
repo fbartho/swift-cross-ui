@@ -76,13 +76,19 @@ public enum StaticHTMLRenderer {
             /* Font sizing and weight come from the declared text styles the
                layout system resolved, so the user agent's heading defaults
                would only fight them. Margins likewise: spacing between
-               elements is the stacks' gap, not the browser's. */
-            #root :where(h1, h2, h3, h4, h5, h6, p) {
+               elements is the stacks' gap, not the browser's.
+
+               The whole selector is wrapped in :where(), not just the tag
+               list, so the block carries zero specificity. #root on its own
+               is an id selector — (1,0,0) — which would otherwise outrank
+               every interned class (0,1,0) and make a heading's declared
+               font-size lose to this reset instead of the other way around. */
+            :where(#root h1, #root h2, #root h3, #root h4, #root h5, #root h6, #root p) {
               margin: 0;
               font-size: inherit;
               font-weight: inherit;
             }
-            #root :where(a) { color: inherit; }
+            :where(#root a) { color: inherit; }
             /* The width the document was laid out against becomes a maximum
                rather than a fixed size: it's the measure the design was
                composed for, but a narrower viewport gets to reflow into
