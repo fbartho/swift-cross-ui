@@ -40,8 +40,8 @@ public enum StaticHTMLRenderer {
     /// - Parameters:
     ///   - view: The view to render.
     ///   - title: The document's title.
-    ///   - size: The size to lay the view out against, analogous to a window
-    ///     size.
+    ///   - size: The size to lay the view out against. Only the width is a
+    ///     constraint; see the note on height in ``layOut(_:size:colorScheme:)``.
     ///   - headingMap: The mapping used to derive headings from declared text
     ///     styles.
     /// - Returns: The rendered document along with anything notable observed
@@ -98,6 +98,18 @@ public enum StaticHTMLRenderer {
     }
 
     /// Lays out a view in a single color scheme.
+    ///
+    /// The height is proposed as unspecified rather than as `size.y`. A
+    /// document isn't a window: it scrolls, so its height is an outcome of
+    /// layout rather than a constraint on it. Proposing a finite height instead
+    /// makes ``Text`` truncate to fit — that's its documented behaviour, and it
+    /// is the right one on screen — but here the browser would still wrap the
+    /// full string inside an element sized for the truncated one, so every text
+    /// that needed a second line would spill over whatever was placed beneath
+    /// it. Leaving the height unspecified is the ideal-height context that
+    /// ``Text`` asks for.
+    ///
+    /// The width stays a real constraint: that's what text wraps against.
     private static func layOut(
         _ view: some View,
         size: SIMD2<Int>,
@@ -111,7 +123,7 @@ public enum StaticHTMLRenderer {
 
         let node = ViewGraphNode(for: view, backend: backend, environment: environment)
         let layout = node.computeLayout(
-            proposedSize: ProposedViewSize(Double(size.x), Double(size.y)),
+            proposedSize: ProposedViewSize(Double(size.x), nil),
             environment: environment
         )
         _ = node.commit()
