@@ -31,6 +31,15 @@
     /// - Note: This type is intended for previews and development only. It hosts
     ///   a single view rather than a whole ``Scene``, so scene-level features
     ///   such as window sizing, menu bars and `onOpenURL` aren't available.
+    ///
+    /// - Warning: Files defining the SwiftCrossUI views you want to preview
+    ///   should not import SwiftUI. With both frameworks imported, ambiguous
+    ///   names like `Text` and `Button` silently resolve to SwiftUI's types
+    ///   inside a `#Preview` block, so you'd be previewing SwiftUI's
+    ///   rendering while believing it's SwiftCrossUI's. ``SCUIPreview``
+    ///   exists so that component files never need a SwiftUI import; only
+    ///   the file containing the `#Preview` block should import SwiftUI, and
+    ///   it should stay gated the same way this type is.
     public struct SCUIPreview<Content: SwiftCrossUI.View>: SwiftUI.View {
         /// The SwiftCrossUI view to render.
         private let content: Content
