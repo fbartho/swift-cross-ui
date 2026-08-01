@@ -102,6 +102,11 @@ public struct HTMLEmitter {
         var role: String?
         var inner = ""
         var isRawInner = false
+        // Attributes a control case needs beyond what every widget already
+        // gets (role, data-scui, class, ...) — checked/value/min/max/etc.
+        // Kept separate from `attributes` below so author attributes are
+        // still merged first and can't be clobbered by a backend-owned one.
+        var controlAttributes: [String: String] = [:]
 
         switch widget {
             case let text as StaticHTMLBackend.TextView:
@@ -139,6 +144,60 @@ public struct HTMLEmitter {
                 style.set("none", for: "text-decoration")
                 style.set("border-box", for: "box-sizing")
                 inner = Self.escape(button.label)
+
+            case let checkbox as StaticHTMLBackend.Checkbox:
+                element = .custom("input")
+                controlAttributes["type"] = "checkbox"
+                controlAttributes["aria-checked"] = checkbox.state ? "true" : "false"
+                if checkbox.state {
+                    controlAttributes["checked"] = "checked"
+                }
+                style.set("14px", for: "width")
+                style.set("14px", for: "height")
+
+            case let toggleSwitch as StaticHTMLBackend.Switch:
+                // HTML has no native switch input, so the standard
+                // accessible pattern is a `role="switch"` on a focusable
+                // element carrying `aria-checked`. `<button>` is the
+                // natively-focusable choice; there is no click handler to
+                // wire up, but the still image at least identifies as a
+                // switch and reports its state to a screen reader.
+                element = .custom("button")
+                role = "switch"
+                controlAttributes["type"] = "button"
+                controlAttributes["aria-checked"] = toggleSwitch.state ? "true" : "false"
+                style.set("28px", for: "width")
+                style.set("16px", for: "height")
+
+            case let toggleButton as StaticHTMLBackend.ToggleButton:
+                element = .custom("button")
+                controlAttributes["type"] = "button"
+                controlAttributes["aria-pressed"] = toggleButton.state ? "true" : "false"
+                if let font = toggleButton.font {
+                    style.set("\(Int(font.pointSize))px", for: "font-size")
+                    style.set("\(Int(font.lineHeight))px", for: "line-height")
+                }
+                inner = Self.escape(toggleButton.label)
+
+            case let slider as StaticHTMLBackend.Slider:
+                element = .custom("input")
+                controlAttributes["type"] = "range"
+                controlAttributes["min"] = Self.formatNumber(slider.minimumValue)
+                controlAttributes["max"] = Self.formatNumber(slider.maximumValue)
+                controlAttributes["value"] = Self.formatNumber(slider.value)
+                style.set("100%", for: "width")
+
+            case let textField as StaticHTMLBackend.TextField:
+                element = .custom("input")
+                controlAttributes["type"] = textField.isSecure ? "password" : "text"
+                controlAttributes["value"] = textField.value
+                if !textField.placeholder.isEmpty {
+                    controlAttributes["placeholder"] = textField.placeholder
+                }
+                style.set("border-box", for: "box-sizing")
+                if let font = textField.font {
+                    style.set("\(Int(font.pointSize))px", for: "font-size")
+                }
 
             case let rectangle as StaticHTMLBackend.Rectangle:
                 if let color = rectangle.color {
@@ -205,11 +264,35 @@ public struct HTMLEmitter {
         {
             attributes[name] = value
         }
+        for (name, value) in controlAttributes {
+            attributes[name] = value
+        }
         if let role, attributes["role"] == nil {
             attributes["role"] = role
         }
         if element.name == "a" {
-            attributes["href"] = attributes["href"] ?? "#"
+            // A disabled control's still image must not keep an activatable
+            // target: an `href` makes it look reachable to a keyboard,
+            // crawler, or assistive technology exactly like an enabled one
+            // would, which is worse than the div this used to fall back to
+            // when nothing was wired up at all.
+            if widget.isEnabled {
+                attributes["href"] = attributes["href"] ?? "#"
+            } else {
+                attributes["href"] = nil
+            }
+        }
+        if !widget.isEnabled {
+            // `disabled` is only defined for form-associated elements
+            // (button/input); `<a>` communicates the same state by omitting
+            // `href` instead, handled above. `aria-disabled` and `tabindex`
+            // aren't element-specific, so every disabled control gets them
+            // regardless of which of those two paths applies.
+            if Self.disablableElementNames.contains(element.name) {
+                attributes["disabled"] = "disabled"
+            }
+            attributes["aria-disabled"] = "true"
+            attributes["tabindex"] = "-1"
         }
         if let tag = widget.tag {
             attributes["data-scui"] = tag
@@ -454,6 +537,23 @@ public struct HTMLEmitter {
     /// through interned classes), so letting an author set it would reintroduce
     /// exactly the inline styling this backend avoids.
     nonisolated static let reservedAttributes: Set<String> = ["style", "class", "data-scui"]
+
+    /// Element names that support the native `disabled` attribute.
+    ///
+    /// `<a>` doesn't — its disabled semantics come from omitting `href`
+    /// instead, handled separately above — so it's excluded here to avoid
+    /// emitting an attribute the HTML spec doesn't define for it.
+    nonisolated static let disablableElementNames: Set<String> = ["button", "input"]
+
+    /// Formats a `Double` the way a numeric HTML attribute expects: no
+    /// trailing `.0` for whole numbers, since `min`/`max`/`value` on
+    /// `<input type=range>` are otherwise indistinguishable from an author
+    /// having actually asked for a fractional bound.
+    nonisolated static func formatNumber(_ value: Double) -> String {
+        value == value.rounded() && value.isFinite
+            ? String(Int(value))
+            : String(value)
+    }
 
     /// Maps a resolved font weight to its CSS numeric equivalent.
     nonisolated static func cssWeight(_ weight: Font.Weight) -> String {

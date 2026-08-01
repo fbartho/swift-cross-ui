@@ -68,6 +68,13 @@ public final class StaticHTMLBackend:
         /// The attributes request that was in scope when this widget was
         /// updated.
         var pendingAttributesRequest: HTMLAttributesRequest?
+        /// Whether ``View/disabled(_:)`` was in scope when this widget was
+        /// updated.
+        ///
+        /// A static render has no interaction to actually disable, but the
+        /// still image has to say so: leaving a disabled control looking
+        /// live is actively misleading rather than merely incomplete.
+        public var isEnabled = true
 
         public var naturalSize: SIMD2<Int> {
             .zero
@@ -83,6 +90,7 @@ public final class StaticHTMLBackend:
         func captureIntent(from environment: EnvironmentValues) {
             pendingTagRequest = environment.htmlTagRequest
             pendingAttributesRequest = environment.htmlAttributesRequest
+            isEnabled = environment.isEnabled
         }
     }
 

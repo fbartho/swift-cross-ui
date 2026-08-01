@@ -508,6 +508,19 @@ struct StaticHTMLBackendTests {
         html.split(separator: "\n").first { $0.contains(marker) }.map(String.init)
     }
 
+    /// Mutable storage backing a ``box(_:)`` binding.
+    private final class Box<Value>: @unchecked Sendable {
+        var value: Value
+        init(_ value: Value) { self.value = value }
+    }
+
+    /// A binding backed by a mutable box, so controls that require one can be
+    /// constructed for a one-shot render without an owning `@State`.
+    private static func box<Value>(_ initial: Value) -> Binding<Value> {
+        let storage = Box(initial)
+        return Binding(get: { storage.value }, set: { storage.value = $0 })
+    }
+
     @MainActor
     @Test("Authors can't overwrite the attributes the backend owns")
     func ignoresReservedAuthorAttributes() {
@@ -593,6 +606,107 @@ struct StaticHTMLBackendTests {
         #expect(html.contains("role=\"button\""))
         #expect(html.contains("href=\"#\""))
         #expect(html.contains(">Press</a>"))
+    }
+
+    @MainActor
+    @Test("A disabled button carries disabled semantics and no activatable href")
+    func disabledButtonCarriesDisabledSemantics() {
+        // Before this fix, mod-disabled was a complete no-op: the emitted
+        // `<a href="#" role="button">` was indistinguishable from an enabled
+        // button, which is actively misleading rather than merely
+        // incomplete (sweep G3).
+        let html = StaticHTMLRenderer.render(
+            Button("Disabled action") {}.disabled(true),
+            title: "Disabled button"
+        ).html
+
+        #expect(html.contains("aria-disabled=\"true\""))
+        #expect(html.contains("tabindex=\"-1\""))
+        #expect(!html.contains("href="))
+    }
+
+    @MainActor
+    @Test("A checkbox-styled toggle emits a real input carrying its checked state")
+    func emitsCheckboxAsInput() {
+        // Checkbox itself is an internal type, only reachable through
+        // Toggle's .checkbox style.
+        let html = StaticHTMLRenderer.render(
+            Toggle("Subscribe", isOn: Self.box(true)).toggleStyle(.checkbox),
+            title: "Checkbox"
+        ).html
+
+        #expect(html.contains("<input"))
+        #expect(html.contains("type=\"checkbox\""))
+        #expect(html.contains("checked=\"checked\""))
+        #expect(html.contains("aria-checked=\"true\""))
+    }
+
+    @MainActor
+    @Test("A toggle preserves its label and reports its state via aria-pressed")
+    func emitsToggleLabelAndState() {
+        // Toggle's default style is ToggleButton; the sweep confirmed the
+        // label string "Enable notifications" was source-passed but 100%
+        // absent from the emitted markup (G1).
+        let html = StaticHTMLRenderer.render(
+            Toggle("Enable notifications", isOn: Self.box(true)),
+            title: "Toggle"
+        ).html
+
+        #expect(html.contains("Enable notifications"))
+        #expect(html.contains("aria-pressed=\"true\""))
+    }
+
+    @MainActor
+    @Test("A slider emits a range input carrying its value and bounds")
+    func emitsSliderAsRangeInput() {
+        let html = StaticHTMLRenderer.render(
+            Slider(value: Self.box(0.4), in: 0.0...1.0),
+            title: "Slider"
+        ).html
+
+        #expect(html.contains("<input"))
+        #expect(html.contains("type=\"range\""))
+        #expect(html.contains("min=\"0\""))
+        #expect(html.contains("max=\"1\""))
+        #expect(html.contains("value=\"0.4\""))
+    }
+
+    @MainActor
+    @Test("A text field preserves its value and placeholder text")
+    func emitsTextFieldWithValueAndPlaceholder() {
+        let html = StaticHTMLRenderer.render(
+            TextField("Your name", text: Self.box("Ada Lovelace")),
+            title: "TextField"
+        ).html
+
+        #expect(html.contains("<input"))
+        #expect(html.contains("type=\"text\""))
+        #expect(html.contains("value=\"Ada Lovelace\""))
+        #expect(html.contains("placeholder=\"Your name\""))
+    }
+
+    @MainActor
+    @Test("A secure field renders as a password input, not a plain text one")
+    func emitsSecureFieldAsPasswordInput() {
+        let html = StaticHTMLRenderer.render(
+            SecureField("Password", text: Self.box("hunter2")),
+            title: "SecureField"
+        ).html
+
+        #expect(html.contains("type=\"password\""))
+        #expect(html.contains("value=\"hunter2\""))
+    }
+
+    @MainActor
+    @Test("A disabled text field carries disabled semantics")
+    func disabledTextFieldCarriesDisabledSemantics() {
+        let html = StaticHTMLRenderer.render(
+            TextField("Disabled field", text: Self.box("read only")).disabled(true),
+            title: "Disabled text field"
+        ).html
+
+        #expect(html.contains("disabled=\"disabled\""))
+        #expect(html.contains("aria-disabled=\"true\""))
     }
 
     @MainActor
