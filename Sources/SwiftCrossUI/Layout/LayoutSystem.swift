@@ -338,6 +338,13 @@ public enum LayoutSystem {
         let orientation = environment.layoutOrientation
         let perpendicularOrientation = orientation.perpendicular
 
+        backend.describeStackLayout(
+            of: container,
+            orientation: orientation,
+            alignment: alignment,
+            spacing: spacing
+        )
+
         if cache.redistributeSpaceOnCommit {
             _ = computeLayouts(
                 of: children,

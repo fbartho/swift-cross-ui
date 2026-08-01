@@ -1,5 +1,5 @@
 /// Alignment of items layed out along either a horizontal or vertical axis.
-public enum StackAlignment: Sendable {
+public enum StackAlignment: Hashable, Sendable {
     /// Leading alignment (left/top for left-to-right locales).
     case leading
     /// Center alignment.

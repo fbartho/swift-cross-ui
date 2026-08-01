@@ -69,6 +69,30 @@ extension BackendFeatures {
         ///   - widget: The widget to set the size of.
         ///   - size: The new size.
         func setSize(of widget: Widget, to size: SIMD2<Int>)
+
+        /// Tells the backend that a container was laid out as a stack, and how.
+        ///
+        /// The default implementation does nothing. Backends position children
+        /// explicitly and so don't need this; it exists for backends that
+        /// re-express a layout in a system with its own flow rules, such as
+        /// StaticHTMLBackend emitting CSS flex containers. Those backends can't
+        /// recover the distinction from the committed geometry alone — a
+        /// single-child stack and an overlay look identical once positioned.
+        ///
+        /// Called during commit, before the container's children are
+        /// positioned.
+        ///
+        /// - Parameters:
+        ///   - widget: The container that was laid out as a stack.
+        ///   - orientation: The axis the children were stacked along.
+        ///   - alignment: How the children were aligned across that axis.
+        ///   - spacing: The gap left between adjacent children.
+        func describeStackLayout(
+            of widget: Widget,
+            orientation: Orientation,
+            alignment: StackAlignment,
+            spacing: Int
+        )
     }
 }
 
@@ -84,5 +108,14 @@ extension BackendFeatures.Widgets {
     public func tag(widget: Widget, as tag: String) {
         // This is only really to assist contributors when debugging backends,
         // so it's safe enough to have a no-op default implementation.
+    }
+
+    public func describeStackLayout(
+        of widget: Widget,
+        orientation: Orientation,
+        alignment: StackAlignment,
+        spacing: Int
+    ) {
+        // Backends that position children themselves learn nothing from this.
     }
 }
