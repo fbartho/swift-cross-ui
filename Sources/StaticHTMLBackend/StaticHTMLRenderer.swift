@@ -89,14 +89,6 @@ public enum StaticHTMLRenderer {
               font-weight: inherit;
             }
             :where(#root a) { color: inherit; }
-            /* The width the document was laid out against becomes a maximum
-               rather than a fixed size: it's the measure the design was
-               composed for, but a narrower viewport gets to reflow into
-               whatever room it has. This is the requested width, not the
-               committed one — a view that shrank to its content still gets to
-               grow back to the measure the author had in mind. The height is
-               left to the content. */
-            #root { max-width: \(size.x)px; }
             \(palette.isEmpty ? "" : palette + "\n")\(emitter.interner.stylesheet)
             </style>
             </head>

@@ -766,15 +766,22 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("The document reflows rather than fixing itself to the layout width")
-    func rootIsAMaximumWidthNotAFixedOne() {
+    @Test("The root carries no width or height constraint of its own")
+    func rootIsCompletelyFreeFlowing() {
+        // The layout width is only a proposal for the SwiftCrossUI layout
+        // pass (how Text wraps, how flexible frames resolve); it must not
+        // reappear as a CSS constraint on #root. A measure is something the
+        // author opts into with a nested .frame(maxWidth:), never something
+        // the renderer imposes — see flexibleFrameReportsMinMaxConstraints
+        // for the opt-in path.
         let html = StaticHTMLRenderer.render(
             Text("Body"),
             title: "Reflow",
             size: SIMD2(800, 600)
         ).html
 
-        #expect(html.contains("#root { max-width: 800px; }"))
+        #expect(!html.contains("#root {"))
+        #expect(!html.contains("max-width: 800px"))
         // A committed height would stop the content deciding how tall it is.
         #expect(!html.contains("height: 600px"))
     }
@@ -804,6 +811,34 @@ struct StaticHTMLBackendTests {
 
         #expect(horizontal.contains("flex-direction:row"))
         #expect(horizontal.contains("gap:4px"))
+    }
+
+    @MainActor
+    @Test("A maxWidth panel centers itself inside a centered stack")
+    func maxWidthPanelCentersInAFlexStack() {
+        // The centering primitive is the stack's own align-items, not
+        // anything the panel or the root contributes: a flex item on the
+        // cross axis shrinks to its max-width and align-items:center
+        // positions it, the same way a flow document centers a measured
+        // column. No margin-inline:auto or root-level rule is needed.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .center) {
+                Text("Header")
+                Text("Panel").frame(maxWidth: 400)
+            },
+            title: "Centered panel",
+            size: SIMD2(1400, 900)
+        ).html
+
+        let stackRule = Self.internedRule(containing: "flex-direction:column", in: html)
+        #expect(stackRule?.contains("align-items:center") == true)
+
+        let panelRule = Self.internedRule(containing: "max-width:400px", in: html)
+        #expect(panelRule?.contains("max-width:400px") == true)
+        // The panel itself carries no width/margin — centering comes purely
+        // from the ancestor stack's align-items, not from anything emitted
+        // on the panel's own rule.
+        #expect(panelRule?.contains("margin") != true)
     }
 
     @MainActor
