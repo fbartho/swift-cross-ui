@@ -5,6 +5,28 @@ import StaticHTMLBackend
 
 @Suite("Testing for the static HTML backend")
 struct StaticHTMLBackendTests {
+    @MainActor
+    @Test("A .background() Color sibling doesn't displace an ancestor's tag")
+    func backgroundColorSiblingDoesNotDisplaceAncestorTag() {
+        // Before a Color leaf could carry pendingTagRequest, it reported no
+        // request at all, which reads as "not covered by anything" — and one
+        // uncovered child is enough to rule out every candidate tag for the
+        // whole subtree (see deepestCommonRequest). A .background(Color(...))
+        // introduces exactly one such sibling, so it used to knock the tag
+        // off the container it was applied to and take any derived headings
+        // down with it.
+        let view = VStack {
+            Text("Title").font(.largeTitle)
+            Text("Code block").background(Color.gray)
+        }
+        .htmlTag(.article)
+        let html = StaticHTMLRenderer.render(view, title: "Background sibling").html
+
+        #expect(html.contains("<article"))
+        #expect(html.contains("<h1"))
+        #expect(html.contains(">Title</h1>"))
+    }
+
     @Test("Escaping covers every character that could break out of markup")
     func escapesMarkupCharacters() {
         #expect(HTMLEmitter.escape("a & b") == "a &amp; b")
