@@ -289,9 +289,10 @@ public struct HTMLEmitter {
                     // it only constrains a range rather than fixing a size.
                     let isFrame =
                         container.declaredWidth != nil || container.declaredHeight != nil
-                        || container.declaredMinWidth != nil || container.declaredMaxWidth != nil
-                        || container.declaredMinHeight != nil
-                        || container.declaredMaxHeight != nil
+                            || container.declaredMinWidth != nil || container
+                            .declaredMaxWidth != nil
+                            || container.declaredMinHeight != nil
+                            || container.declaredMaxHeight != nil
                     if !isFrame && (position != .zero || trailing != 0 || bottom != 0) {
                         style.set(
                             "\(position.y)px \(trailing)px \(bottom)px \(position.x)px",
@@ -305,10 +306,10 @@ public struct HTMLEmitter {
                     // ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:)``.
                     let inheritedFrame =
                         isFrame
-                        ? SIMD2(
-                            Int(container.declaredWidth ?? Double(container.size.x)),
-                            Int(container.declaredHeight ?? Double(container.size.y))
-                        ) : nil
+                            ? SIMD2(
+                                Int(container.declaredWidth ?? Double(container.size.x)),
+                                Int(container.declaredHeight ?? Double(container.size.y))
+                            ) : nil
                     return emitChildren(
                         container.children,
                         placement: .flow,
@@ -426,10 +427,10 @@ public struct HTMLEmitter {
                 let b = children[second]
                 let horizontal =
                     min(a.position.x + a.widget.size.x, b.position.x + b.widget.size.x)
-                    - max(a.position.x, b.position.x)
+                        - max(a.position.x, b.position.x)
                 let vertical =
                     min(a.position.y + a.widget.size.y, b.position.y + b.widget.size.y)
-                    - max(a.position.y, b.position.y)
+                        - max(a.position.y, b.position.y)
                 if horizontal > 0 && vertical > 0 {
                     return true
                 }

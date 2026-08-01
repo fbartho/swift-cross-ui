@@ -113,64 +113,67 @@ public class Publisher {
                 }
             }
         #else
-        let semaphore = self.semaphore
-        let serialUpdateHandlingQueue = self.serialUpdateHandlingQueue
-        let updateStatistics = self.updateStatistics
-        return observe {
-            // Only allow one update to wait at a time.
-            guard semaphore.wait(timeout: .now()) == .success else {
-                // It's a bit of a hack but we just reuse the serial update handling queue
-                // for synchronisation since updating this variable isn't super time sensitive
-                // as long as it happens within the next update or two.
-                let mergeTime = ProcessInfo.processInfo.systemUptime
+            let semaphore = self.semaphore
+            let serialUpdateHandlingQueue = self.serialUpdateHandlingQueue
+            let updateStatistics = self.updateStatistics
+            return observe {
+                // Only allow one update to wait at a time.
+                guard semaphore.wait(timeout: .now()) == .success else {
+                    // It's a bit of a hack but we just reuse the serial update handling queue
+                    // for synchronisation since updating this variable isn't super time sensitive
+                    // as long as it happens within the next update or two.
+                    let mergeTime = ProcessInfo.processInfo.systemUptime
+                    serialUpdateHandlingQueue.async {
+                        updateStatistics.lastUpdateMergeTime = mergeTime
+                    }
+                    return
+                }
+
+                // Add update to queue. We use our own serial update handling queue since some
+                // backends don't have the concept of a main thread, leading to the possibility
+                // that two updates can run at once which would be inefficient and lead to
+                // incorrect results anyway.
                 serialUpdateHandlingQueue.async {
-                    updateStatistics.lastUpdateMergeTime = mergeTime
-                }
-                return
-            }
+                    backend.runInMainThread {
+                        // Now that we're about to start, let another update queue up. If we
+                        // instead waited until we're finished the update, we'd introduce the
+                        // possibility of dropping updates that would've affected views that
+                        // we've already processed, leading to stale view contents.
+                        semaphore.signal()
 
-            // Add update to queue. We use our own serial update handling queue since some
-            // backends don't have the concept of a main thread, leading to the possibility
-            // that two updates can run at once which would be inefficient and lead to
-            // incorrect results anyway.
-            serialUpdateHandlingQueue.async {
-                backend.runInMainThread {
-                    // Now that we're about to start, let another update queue up. If we
-                    // instead waited until we're finished the update, we'd introduce the
-                    // possibility of dropping updates that would've affected views that
-                    // we've already processed, leading to stale view contents.
-                    semaphore.signal()
+                        // Run the closure and while we're at it measure how long it takes
+                        // so that we can use it when throttling if updates start backing up.
+                        let start = ProcessInfo.processInfo.systemUptime
+                        action()
+                        let elapsed = ProcessInfo.processInfo.systemUptime - start
 
-                    // Run the closure and while we're at it measure how long it takes
-                    // so that we can use it when throttling if updates start backing up.
-                    let start = ProcessInfo.processInfo.systemUptime
-                    action()
-                    let elapsed = ProcessInfo.processInfo.systemUptime - start
+                        // I chose exponential smoothing because it's simple to compute, doesn't
+                        // require storing a window of previous values, and quickly converges to
+                        // a sensible value when the average moves, while still somewhat ignoring
+                        // outliers.
+                        updateStatistics.exponentiallySmoothedUpdateLength =
+                            elapsed / 2 + updateStatistics.exponentiallySmoothedUpdateLength / 2
+                    }
 
-                    // I chose exponential smoothing because it's simple to compute, doesn't
-                    // require storing a window of previous values, and quickly converges to
-                    // a sensible value when the average moves, while still somewhat ignoring
-                    // outliers.
-                    updateStatistics.exponentiallySmoothedUpdateLength =
-                        elapsed / 2 + updateStatistics.exponentiallySmoothedUpdateLength / 2
-                }
+                    if ProcessInfo.processInfo.systemUptime - updateStatistics
+                        .lastUpdateMergeTime < 1
+                    {
+                        // The factor of 1.5 was determined empirically. This algorithm is
+                        // open for improvements since it's purely here to reduce the risk
+                        // of UI freezes. A factor of 1.5 equates to a gap between updates of
+                        // approximately 50% of the average update length.
+                        let throttlingDelay = updateStatistics
+                            .exponentiallySmoothedUpdateLength * 1.5
 
-                if ProcessInfo.processInfo.systemUptime - updateStatistics.lastUpdateMergeTime < 1 {
-                    // The factor of 1.5 was determined empirically. This algorithm is
-                    // open for improvements since it's purely here to reduce the risk
-                    // of UI freezes. A factor of 1.5 equates to a gap between updates of
-                    // approximately 50% of the average update length.
-                    let throttlingDelay = updateStatistics.exponentiallySmoothedUpdateLength * 1.5
-
-                    // Sleeping on a dispatch queue generally isn't a good idea because
-                    // you prevent the queue from servicing any other work, but in this
-                    // case that's the whole point. The goal is to give the main thread
-                    // a break, which we do by blocking this queue and in effect guarding
-                    // the main thread from subsequent updates until we wake up again.
-                    Thread.sleep(forTimeInterval: throttlingDelay)
+                        // Sleeping on a dispatch queue generally isn't a good idea because
+                        // you prevent the queue from servicing any other work, but in this
+                        // case that's the whole point. The goal is to give the main thread
+                        // a break, which we do by blocking this queue and in effect guarding
+                        // the main thread from subsequent updates until we wake up again.
+                        Thread.sleep(forTimeInterval: throttlingDelay)
+                    }
                 }
             }
-        }
         #endif
     }
 }

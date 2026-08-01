@@ -777,10 +777,10 @@ struct StaticHTMLBackendTests {
                 let b = rectangles[second]
                 let verticalOverlap =
                     min(a.origin.y + a.size.y, b.origin.y + b.size.y)
-                    - max(a.origin.y, b.origin.y)
+                        - max(a.origin.y, b.origin.y)
                 let horizontalOverlap =
                     min(a.origin.x + a.size.x, b.origin.x + b.size.x)
-                    - max(a.origin.x, b.origin.x)
+                        - max(a.origin.x, b.origin.x)
                 #expect(verticalOverlap <= 0 || horizontalOverlap <= 0)
             }
         }
