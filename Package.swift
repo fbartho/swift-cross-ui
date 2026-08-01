@@ -87,6 +87,14 @@ let hotReloadingEnabled: Bool
 
 let testGtk3Backend = env["SCUI_TEST_GTK3BACKEND"] == "1"
 
+// ImageFormats pulls in libpng, which needs setjmp/longjmp and therefore can't
+// build for wasm. SwiftPM's platform conditions have no wasm case in this
+// tools-version, so the dependency is dropped via an environment variable
+// instead. Sources guard the import with `#if !canImport(WASILibc)`.
+let wasmBuild = env["SCUI_WASM"] == "1"
+let imageFormatsDependencies: [Target.Dependency] =
+    wasmBuild ? [] : [.product(name: "ImageFormats", package: "swift-image-formats")]
+
 var swiftSettings: [SwiftSetting] = []
 if hotReloadingEnabled {
     swiftSettings += [
@@ -197,6 +205,7 @@ let package = Package(
                 "SwiftCrossUIMetadataSupport",
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "Mutex", package: "swift-mutex"),
+            ] + imageFormatsDependencies + [
 
                 // This import is purely required to fix a linker issue and a plugin build
                 // error that occur on macOS when building for non-Android platforms now that
@@ -317,6 +326,17 @@ let package = Package(
             dependencies: []
         ),
         .target(name: "DummyBackend", dependencies: ["SwiftCrossUI"]),
+
+        // Runtime smoke test for the experimental wasm port. Builds everywhere
+        // so it can't silently rot, but it only earns its keep when run under a
+        // wasm runtime (see Scripts/wasm-smoke-test.sh).
+        .executableTarget(
+            name: "WasmSmokeTest",
+            dependencies: [
+                "SwiftCrossUI",
+                "DummyBackend",
+            ]
+        ),
 
         .executableTarget(
             name: "LayoutPerformanceBenchmark",
