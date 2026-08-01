@@ -145,6 +145,13 @@ public final class StaticHTMLBackend:
         /// a stack. `nil` means the positions are the only description there
         /// is, and the emitter has to place the children absolutely.
         public var stackLayout: StackLayout?
+        /// The width the author fixed with ``SwiftCrossUI/View/frame(width:height:alignment:)``.
+        ///
+        /// Kept apart from ``Widget/size`` because only a dimension the author
+        /// asked for should survive into output that otherwise reflows.
+        public var declaredWidth: Double?
+        /// The height the author fixed, as ``declaredWidth`` is for width.
+        public var declaredHeight: Double?
 
         public override func getChildren() -> [Widget] {
             children.map(\.widget)
@@ -352,6 +359,14 @@ public final class StaticHTMLBackend:
             alignment: alignment,
             spacing: spacing
         )
+    }
+
+    public func describeFrame(of widget: Widget, width: Double?, height: Double?) {
+        guard let container = widget as? Container else {
+            return
+        }
+        container.declaredWidth = width
+        container.declaredHeight = height
     }
 
     public func createScrollContainer(for child: Widget) -> Widget {

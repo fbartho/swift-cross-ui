@@ -470,6 +470,50 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A width the author declared is kept, and the text inside it still wraps")
+    func keepsDeclaredFrameWidth() {
+        let html = StaticHTMLRenderer.render(
+            Text("Text long enough that it has to wrap inside the frame it was given.")
+                .frame(width: 300),
+            title: "Frame"
+        ).html
+
+        // A declared frame is the only way an author pins geometry, so it's
+        // the only thing that survives into output that otherwise reflows.
+        #expect(html.contains("width:300px"))
+        // The frame sets the measure; it doesn't stop the text flowing inside
+        // it, and its leftover space must not be read back as padding.
+        #expect(!html.contains("position:absolute"))
+        #expect(!html.contains("padding"))
+    }
+
+    @MainActor
+    @Test("Only overlapping children fall back to absolute positioning")
+    func onlyOverlappingChildrenAreAbsolutelyPositioned() {
+        let overlapping = StaticHTMLRenderer.render(
+            ZStack {
+                Color.blue.frame(width: 200, height: 60)
+                Text("Overlaid")
+            },
+            title: "ZStack"
+        ).html
+
+        // Flow has no rule that puts one element on top of another.
+        #expect(overlapping.contains("position:absolute"))
+        #expect(overlapping.contains("position:relative"))
+
+        // Children that merely sit side by side reflow instead.
+        let sideBySide = StaticHTMLRenderer.render(
+            HStack {
+                Text("One")
+                Text("Two")
+            },
+            title: "Flow"
+        ).html
+        #expect(!sideBySide.contains("position:absolute"))
+    }
+
+    @MainActor
     @Test("Content with no intrinsic size keeps the size it was given")
     func keepsExplicitSizeForContentWithoutIntrinsicSize() {
         let html = StaticHTMLRenderer.render(

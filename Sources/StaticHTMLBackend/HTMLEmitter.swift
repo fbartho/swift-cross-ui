@@ -228,6 +228,17 @@ public struct HTMLEmitter {
         indent: String,
         indentLevel: Int
     ) -> String {
+        // A size the author asked for is kept whatever else the container
+        // turns out to be. Nothing else about a container's geometry survives
+        // into the output, so this is the one place a fixed dimension can come
+        // from: the author writing one down.
+        if let width = container.declaredWidth {
+            style.set("\(Int(width))px", for: "width")
+        }
+        if let height = container.declaredHeight {
+            style.set("\(Int(height))px", for: "height")
+        }
+
         guard let stack = container.stackLayout else {
             // A single child inset from every edge is padding, which flow
             // expresses directly. The insets are exactly recoverable: the
@@ -238,7 +249,12 @@ public struct HTMLEmitter {
                 let trailing = container.size.x - child.size.x - position.x
                 let bottom = container.size.y - child.size.y - position.y
                 if position.x >= 0 && position.y >= 0 && trailing >= 0 && bottom >= 0 {
-                    if position != .zero || trailing != 0 || bottom != 0 {
+                    // A frame positions its child by alignment rather than by
+                    // insetting it, so reading the leftover space as padding
+                    // would double the width the author asked for.
+                    let isFrame =
+                        container.declaredWidth != nil || container.declaredHeight != nil
+                    if !isFrame && (position != .zero || trailing != 0 || bottom != 0) {
                         style.set(
                             "\(position.y)px \(trailing)px \(bottom)px \(position.x)px",
                             for: "padding"
@@ -253,11 +269,23 @@ public struct HTMLEmitter {
                 }
             }
 
-            // Anything else positions its children in a way flow has no rule
-            // for — an overlay, most likely — so the coordinates stand.
+            // Children that overlap can only be described by their
+            // coordinates: flow has no rule that would stack them on top of
+            // each other. Everything else stays in flow, because a container
+            // the author didn't pin shouldn't stop the page reflowing just
+            // because this emitter doesn't recognise it.
+            guard Self.childrenOverlap(container.children) else {
+                return emitChildren(
+                    container.children,
+                    placement: .flow,
+                    indent: indent,
+                    indentLevel: indentLevel
+                )
+            }
+
             style.set("relative", for: "position")
-            style.set("\(container.size.x)px", for: "width")
-            style.set("\(container.size.y)px", for: "height")
+            style.set(style.value(for: "width") ?? "\(container.size.x)px", for: "width")
+            style.set(style.value(for: "height") ?? "\(container.size.y)px", for: "height")
             return emitChildren(
                 container.children,
                 placement: .absolute,
@@ -324,6 +352,31 @@ public struct HTMLEmitter {
         }
         style.set("\(size.x)px", for: "min-width")
         style.set("\(size.y)px", for: "min-height")
+    }
+
+    /// Whether any two of a container's children share area.
+    ///
+    /// Overlap is the one arrangement flow has no rule for, so it's what
+    /// decides that a container has to keep its committed coordinates.
+    nonisolated static func childrenOverlap(
+        _ children: [(widget: StaticHTMLBackend.Widget, position: SIMD2<Int>)]
+    ) -> Bool {
+        for first in children.indices {
+            for second in children.indices where second > first {
+                let a = children[first]
+                let b = children[second]
+                let horizontal =
+                    min(a.position.x + a.widget.size.x, b.position.x + b.widget.size.x)
+                    - max(a.position.x, b.position.x)
+                let vertical =
+                    min(a.position.y + a.widget.size.y, b.position.y + b.widget.size.y)
+                    - max(a.position.y, b.position.y)
+                if horizontal > 0 && vertical > 0 {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// Maps a stack's cross-axis alignment to its CSS equivalent.

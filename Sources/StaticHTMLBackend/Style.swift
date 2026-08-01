@@ -34,6 +34,14 @@ public struct Style: Hashable, Sendable {
         declarations[property] = value
     }
 
+    /// Returns the value set for a property, if any.
+    ///
+    /// - Parameter property: The CSS property name.
+    /// - Returns: The property's value, or `nil` if the property isn't set.
+    public func value(for property: String) -> String? {
+        declarations[property]
+    }
+
     /// The style's declarations rendered as a CSS declaration block body.
     ///
     /// Properties appear in sorted order so that output is deterministic.
