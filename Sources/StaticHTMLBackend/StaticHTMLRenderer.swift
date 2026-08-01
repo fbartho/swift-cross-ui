@@ -193,11 +193,23 @@ public enum StaticHTMLRenderer {
         let children = widget.getChildren()
 
         guard !children.isEmpty else {
+            // A structural wrapper (Container, ScrollContainer) with no
+            // children has no content, not "content that happens to carry no
+            // tag" — an empty OptionalView (if without else) or an empty
+            // Group is exactly this shape. Reporting isEmpty here, the same
+            // as a widget with no populated descendants at all, keeps it from
+            // vetoing a shared ancestor request the way a real, untagged leaf
+            // legitimately would: deepestCommonRequest reads any concrete
+            // (even nil) tag from every populated sibling as meaningful, so
+            // one that never had a chance to hold one has to be excluded
+            // instead of read as "explicitly untagged".
+            let isStructuralWrapper = widget is StaticHTMLBackend.Container
+                || widget is StaticHTMLBackend.ScrollContainer
             return Coverage(
                 owner: widget,
                 tag: widget.pendingTagRequest,
                 attributes: widget.pendingAttributesRequest,
-                isEmpty: false
+                isEmpty: isStructuralWrapper
             )
         }
 
@@ -212,7 +224,14 @@ public enum StaticHTMLRenderer {
         // naming — modifiers stack up several of these around one view. Keep
         // the child as the owner so that a tag lands on the view the author
         // applied it to rather than on one of its wrappers.
-        if populated.count == 1, let inner = first.owner {
+        //
+        // This has to check the actual child count, not populated.count: a
+        // container holding an if-without-else or an empty Group alongside a
+        // real child also ends up with exactly one populated coverage, but
+        // it's a container the author gave multiple children, not a
+        // transparent wrapper around a single one — its own tag (if it has
+        // one) belongs on it, not hoisted past it onto the lone survivor.
+        if children.count == 1, populated.count == 1, let inner = first.owner {
             return Coverage(
                 owner: inner,
                 tag: first.tag,

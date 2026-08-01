@@ -228,6 +228,50 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("An empty if-without-else sibling doesn't push a container's tag onto its lone child")
+    func emptyOptionalSiblingDoesNotDisplaceContainerTag() {
+        // hoistRequests used to treat "exactly one populated child" as proof
+        // that a container was a transparent modifier wrapper, but an
+        // if-without-else that evaluated false produces exactly that shape
+        // too: a real container with a genuine child, plus an empty
+        // OptionalView contributing nothing. The tag the author put on the
+        // container was hoisted straight past it onto the lone survivor,
+        // costing the container its own element and displacing the
+        // survivor's derived heading.
+        let view = VStack {
+            Text("Title").font(.title)
+            if false {
+                Text("Never shown")
+            }
+        }
+        .htmlTag(.article)
+        let html = StaticHTMLRenderer.render(view, title: "Optional sibling").html
+
+        #expect(html.components(separatedBy: "<article").count - 1 == 1)
+        // The tag landed on the VStack, so Title is free to become the
+        // heading its declared style calls for, rather than being consumed
+        // by the container's own tag.
+        #expect(html.contains(">Title</h2>"))
+    }
+
+    @MainActor
+    @Test("A tagged Group wrapping a single view still reaches that view")
+    func taggedGroupStillReachesItsSingleChild() {
+        // A Group wrapping exactly one child is the transparent-wrapper case
+        // the single-child collapse exists for; it must keep working once
+        // that collapse is restricted to widgets that only ever had one
+        // child in the tree (as opposed to one that merely rendered empty).
+        let view = Group {
+            Text("Solo")
+        }
+        .htmlTag(.aside)
+        let html = StaticHTMLRenderer.render(view, title: "Tagged group").html
+
+        #expect(html.contains("<aside"))
+        #expect(html.contains(">Solo</aside>"))
+    }
+
+    @MainActor
     @Test("A container's tag leaves its children's derived headings intact")
     func containerTagDoesNotEatDerivedHeadings() {
         let view = VStack {
