@@ -49,6 +49,32 @@ public final class HTMLAttributesRequest: Sendable {
     }
 }
 
+/// A request to give one view's element a navigation-intent `href`.
+///
+/// Kept distinct from ``HTMLAttributesRequest`` — rather than folding this
+/// into a generic `"href"` key — because the emitter has to tell "the author
+/// declared navigation intent" apart from "the author attached an arbitrary
+/// attribute that happens to be named href": the former is the signal that
+/// picks a row out of the Button/NavigationLink emission matrix (see
+/// ``HTMLEmitter``'s button case), the latter is inert data with no bearing
+/// on which element or activation state gets emitted.
+public final class HTMLHrefRequest: Sendable {
+    /// The requested href value.
+    public let href: String
+    /// The request this one shadowed, if it was applied inside another.
+    public let enclosing: HTMLHrefRequest?
+
+    /// Creates a request.
+    ///
+    /// - Parameters:
+    ///   - href: The href to give the view's element.
+    ///   - enclosing: The request already in scope, which this one shadows.
+    public init(href: String, enclosing: HTMLHrefRequest? = nil) {
+        self.href = href
+        self.enclosing = enclosing
+    }
+}
+
 extension EnvironmentValues {
     /// An explicit element requested by ``View/htmlTag(_:)``.
     ///
@@ -57,6 +83,9 @@ extension EnvironmentValues {
 
     /// Extra attributes requested by ``View/htmlAttributes(_:)``.
     @Entry public var htmlAttributesRequest: HTMLAttributesRequest?
+
+    /// Navigation-intent href requested by ``View/href(_:)``.
+    @Entry public var htmlHrefRequest: HTMLHrefRequest?
 }
 
 extension View {
@@ -103,6 +132,38 @@ extension View {
     public func htmlAttributes(_ attributes: [String: String]) -> some View {
         transformEnvironment(\.htmlAttributesRequest) { request in
             request = HTMLAttributesRequest(attributes: attributes, enclosing: request)
+        }
+    }
+
+    /// Gives this view navigation intent, so its element resolves to a real,
+    /// live `<a href>` under StaticHTMLBackend rather than a disabled control
+    /// waiting on a runtime.
+    ///
+    /// Per the tier-activation principle: an `href` is fully resolvable in
+    /// pure HTML — the browser handles navigation on its own — so a `Button`,
+    /// ``SwiftCrossUI/NavigationLink``, or similar view carrying one is live
+    /// at the static tier and needs no script to become usable. A view with
+    /// no `.href(_:)` but a click action, by contrast, has nothing pure HTML
+    /// can resolve — it emits `disabled` until a later tier attaches the
+    /// handler.
+    ///
+    /// A view can carry both a click action and `.href(_:)` at once (a
+    /// `Button` that both navigates and runs code, e.g. an analytics-tracked
+    /// link). That's legal: the emitted element is still the live `<a href>`
+    /// — the link half is what pure HTML can resolve — but it also carries
+    /// the enliven marker so a later tier can attach the action. See the
+    /// `href+action` row in ``HTMLEmitter``'s button case for the exact
+    /// markup and the modified-click contract that binds the code which
+    /// attaches that handler.
+    ///
+    /// This modifier only affects StaticHTMLBackend. Under any other backend
+    /// it does nothing, so a view hierarchy carrying it stays portable.
+    ///
+    /// - Parameter href: The URL or path to navigate to.
+    /// - Returns: The view, carrying the requested navigation intent.
+    public func href(_ href: String) -> some View {
+        transformEnvironment(\.htmlHrefRequest) { request in
+            request = HTMLHrefRequest(href: href, enclosing: request)
         }
     }
 }

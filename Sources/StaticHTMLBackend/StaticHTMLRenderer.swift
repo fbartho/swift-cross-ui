@@ -89,6 +89,27 @@ public enum StaticHTMLRenderer {
               font-weight: inherit;
             }
             :where(#root a) { color: inherit; }
+            /* The tier-activation principle (task #29) means Button now emits
+               a real button element for its floor-disabled, action-only row,
+               rather than the link-with-a-button-role this backend used to
+               fall back to. A real button drags in UA chrome (its own font,
+               border, background, padding) that the interned class for its
+               declared style has to fight otherwise. Kept minimal and
+               specifically scoped to button/input, the same low-specificity
+               :where() shape as the rest of this reset, so it doesn't need
+               to win a specificity fight against anything: appearance:none
+               only strips the platform's own decoration, everything else
+               (color, spacing, sizing) is still this backend's interned
+               class to set. */
+            :where(#root button, #root input) {
+              margin: 0;
+              padding: 0;
+              border: none;
+              background: none;
+              font: inherit;
+              color: inherit;
+              appearance: none;
+            }
             \(palette.isEmpty ? "" : palette + "\n")\(emitter.interner.stylesheet)
             </style>
             </head>
@@ -158,6 +179,9 @@ public enum StaticHTMLRenderer {
         if let attributes = coverage.attributes {
             assign(attributes, to: coverage)
         }
+        if let href = coverage.href {
+            assign(href, to: coverage)
+        }
     }
 
     /// The requests covering an entire subtree.
@@ -170,6 +194,8 @@ public enum StaticHTMLRenderer {
         /// The attributes request covering every leaf below, if they all share
         /// one.
         var attributes: HTMLAttributesRequest?
+        /// The href request covering every leaf below, if they all share one.
+        var href: HTMLHrefRequest?
         /// Whether the subtree contained any widget at all that could carry a
         /// request.
         var isEmpty = true
@@ -201,6 +227,7 @@ public enum StaticHTMLRenderer {
                 owner: widget,
                 tag: widget.pendingTagRequest,
                 attributes: widget.pendingAttributesRequest,
+                href: widget.pendingHrefRequest,
                 isEmpty: isStructuralWrapper
             )
         }
@@ -228,6 +255,7 @@ public enum StaticHTMLRenderer {
                 owner: inner,
                 tag: first.tag,
                 attributes: first.attributes,
+                href: first.href,
                 isEmpty: false
             )
         }
@@ -244,6 +272,10 @@ public enum StaticHTMLRenderer {
             populated.map(\.attributes),
             enclosing: \.enclosing
         )
+        let sharedHref = deepestCommonRequest(
+            populated.map(\.href),
+            enclosing: \.enclosing
+        )
 
         // Anything a child reports beyond the shared request is its own, so it
         // is assigned to the child rather than hoisted any further.
@@ -254,12 +286,16 @@ public enum StaticHTMLRenderer {
             if let attributes = coverage.attributes, attributes !== sharedAttributes {
                 assign(attributes, to: coverage)
             }
+            if let href = coverage.href, href !== sharedHref {
+                assign(href, to: coverage)
+            }
         }
 
         return Coverage(
             owner: widget,
             tag: sharedTag,
             attributes: sharedAttributes,
+            href: sharedHref,
             isEmpty: false
         )
     }
@@ -311,6 +347,11 @@ public enum StaticHTMLRenderer {
     /// Records a request as belonging to the widget a coverage came from.
     private static func assign(_ attributes: HTMLAttributesRequest, to coverage: Coverage) {
         coverage.owner?.authorAttributes = attributes.attributes
+    }
+
+    /// Records a request as belonging to the widget a coverage came from.
+    private static func assign(_ href: HTMLHrefRequest, to coverage: Coverage) {
+        coverage.owner?.href = href.href
     }
 
     /// Copies each widget's dark-scheme colors onto the corresponding widget

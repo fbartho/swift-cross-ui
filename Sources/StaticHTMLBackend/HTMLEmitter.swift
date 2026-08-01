@@ -228,10 +228,58 @@ public struct HTMLEmitter {
                 }
 
             case let button as StaticHTMLBackend.Button:
-                // With no runtime there's nothing to click, so a button is
-                // emitted as a link and given the role it plays.
-                element = .custom("a")
-                role = "button"
+                // Tier-activation principle: an element is live at this tier
+                // only if pure HTML/CSS can resolve what it does. A
+                // navigation-intent href IS resolvable in pure HTML — the
+                // browser handles it with no script — so a Button carrying
+                // one emits as a real, live `<a href>` (href-only and
+                // href+action rows). A click action has nothing pure HTML
+                // can resolve, so absent an href the button emits inert:
+                // a real `<button disabled>`, not a link dressed up with
+                // `role="button"` and a `href="#"` placeholder — that used
+                // to look reachable to a keyboard, crawler, or assistive
+                // technology exactly like a working control would. Reviving
+                // it is a later tier's job, flagged by data-scui-enliven.
+                //
+                // Emission matrix:
+                //   href-only    -> live <a href>                    (this branch)
+                //   action-only  -> <button type="button" disabled>  (isEnabled-driven branch below)
+                //   href+action  -> live <a href> + enliven, no disabled
+                //
+                // The href+action row is legal — a Button may carry both a
+                // .href and a click action (e.g. an analytics-tracked link).
+                // The emitted <a href> stays alive (never disabled: the link
+                // half is pure-HTML-resolvable on its own), and also carries
+                // data-scui-enliven so a later tier can attach the handler.
+                // That handler-attachment code (not written here — there is
+                // no JS in this tier) MUST honor the modified-click contract:
+                // a plain left-click should preventDefault and run the
+                // action; a modified click (cmd/ctrl/shift/middle-click —
+                // open-in-new-tab and friends) must fall through to native
+                // link behaviour untouched, so the link stays a real link
+                // even once enlivened.
+                //
+                // Ambiguity resolved here: nothing distinguishes href-only
+                // from href+action at this layer. `Button.init(_:action:)`
+                // defaults `action` to an empty closure, so "no action" and
+                // "a real no-op action" are indistinguishable both at the
+                // View layer and on the widget (`StaticHTMLBackend.Button`
+                // doesn't even retain the closure — see `updateButton`).
+                // Marking every href-carrying Button with the enliven marker
+                // — rather than trying to guess which ones are "really"
+                // href-only — is the honest choice: a hydration tier that
+                // finds nothing to bind for a true href-only Button simply
+                // no-ops, whereas omitting the marker for a Button that DOES
+                // have a real action would silently drop it forever.
+                if let href = widget.href {
+                    element = .custom("a")
+                    controlAttributes["href"] = href
+                    controlAttributes["data-scui-enliven"] = "js"
+                } else {
+                    element = .custom("button")
+                    controlAttributes["type"] = "button"
+                    controlAttributes["data-scui-enliven"] = "js"
+                }
                 style.set("inline-flex", for: "display")
                 style.set("center", for: "align-items")
                 style.set("center", for: "justify-content")
@@ -240,9 +288,18 @@ public struct HTMLEmitter {
                 inner = Self.escape(button.label)
 
             case let checkbox as StaticHTMLBackend.Checkbox:
+                // Bindings are dead without a runtime (uniform-application
+                // consequence of the tier-activation principle): a checkbox
+                // the reader ticks here has nothing to write the change back
+                // to, so it loads disabled + enlivened like every other
+                // control whose interactivity depends on a tier that isn't
+                // present yet. checked/aria-checked still reflect the bound
+                // value — the *display* is real, only the *interaction*
+                // isn't, until a later tier lifts disabled.
                 element = .custom("input")
                 controlAttributes["type"] = "checkbox"
                 controlAttributes["aria-checked"] = checkbox.state ? "true" : "false"
+                controlAttributes["data-scui-enliven"] = "js"
                 if checkbox.state {
                     controlAttributes["checked"] = "checked"
                 }
@@ -253,13 +310,14 @@ public struct HTMLEmitter {
                 // HTML has no native switch input, so the standard
                 // accessible pattern is a `role="switch"` on a focusable
                 // element carrying `aria-checked`. `<button>` is the
-                // natively-focusable choice; there is no click handler to
-                // wire up, but the still image at least identifies as a
-                // switch and reports its state to a screen reader.
+                // natively-focusable choice. Its binding is dead without a
+                // runtime the same as Checkbox above, so it loads disabled +
+                // enlivened too.
                 element = .custom("button")
                 role = "switch"
                 controlAttributes["type"] = "button"
                 controlAttributes["aria-checked"] = toggleSwitch.state ? "true" : "false"
+                controlAttributes["data-scui-enliven"] = "js"
                 style.set("28px", for: "width")
                 style.set("16px", for: "height")
 
@@ -267,6 +325,7 @@ public struct HTMLEmitter {
                 element = .custom("button")
                 controlAttributes["type"] = "button"
                 controlAttributes["aria-pressed"] = toggleButton.state ? "true" : "false"
+                controlAttributes["data-scui-enliven"] = "js"
                 if let font = toggleButton.font {
                     style.set("\(Int(font.pointSize))px", for: "font-size")
                     style.set("\(Int(font.lineHeight))px", for: "line-height")
@@ -279,12 +338,14 @@ public struct HTMLEmitter {
                 controlAttributes["min"] = Self.formatNumber(slider.minimumValue)
                 controlAttributes["max"] = Self.formatNumber(slider.maximumValue)
                 controlAttributes["value"] = Self.formatNumber(slider.value)
+                controlAttributes["data-scui-enliven"] = "js"
                 style.set("100%", for: "width")
 
             case let textField as StaticHTMLBackend.TextField:
                 element = .custom("input")
                 controlAttributes["type"] = textField.isSecure ? "password" : "text"
                 controlAttributes["value"] = textField.value
+                controlAttributes["data-scui-enliven"] = "js"
                 if !textField.placeholder.isEmpty {
                     controlAttributes["placeholder"] = textField.placeholder
                 }
@@ -471,19 +532,43 @@ public struct HTMLEmitter {
         if let role, attributes["role"] == nil {
             attributes["role"] = role
         }
-        if element.name == "a" {
-            // A disabled control's still image must not keep an activatable
-            // target: an `href` makes it look reachable to a keyboard,
-            // crawler, or assistive technology exactly like an enabled one
-            // would, which is worse than the div this used to fall back to
-            // when nothing was wired up at all.
-            if widget.isEnabled {
-                attributes["href"] = attributes["href"] ?? "#"
-            } else {
-                attributes["href"] = nil
-            }
+        if element.name == "a", widget.isEnabled, attributes["href"] == nil {
+            // The only remaining `<a>` case with no href by now is an author
+            // request via `.htmlTag(.custom("a"))`/similar with nothing
+            // resolvable in pure HTML behind it — there is no more implicit
+            // `href="#"` placeholder (tier-activation principle: a link with
+            // nothing to link to isn't "live", so it shouldn't look
+            // activatable). The Button case above only ever reaches `<a>`
+            // when `widget.href` is set, which already populated `href`
+            // above; this branch exists for that one remaining author-driven
+            // path, and it disables rather than fabricating a target.
+            attributes["aria-disabled"] = "true"
+            attributes["tabindex"] = "-1"
         }
-        if !widget.isEnabled {
+        if element.name == "a", !widget.isEnabled {
+            // `.disabled(true)` is a hard author override, regardless of
+            // tier: a still image of a disabled control must not keep an
+            // activatable target. `<a>` communicates disabled by omitting
+            // `href` (it has no `disabled` attribute of its own) — even a
+            // widget carrying a live `.href(_:)` loses it here, since the
+            // author explicitly said this control shouldn't respond.
+            attributes["href"] = nil
+        }
+        // Floor-disabled: an element carrying the enliven marker has
+        // nothing pure HTML/CSS can resolve on its own (tier-activation
+        // principle) — its `disabled` has to come from this backend because
+        // CSS cannot lift the attribute later; only the arriving tier's own
+        // script can remove it, which is exactly what the marker instructs
+        // it to do. A live `<a href>` is the one enliven-marked shape that's
+        // still exempt: the link half of an href+action Button is
+        // pure-HTML-resolvable by itself, so it stays activatable even
+        // before any script runs — only the action half is waiting on a
+        // tier, and `<a>` has no `disabled` attribute to gate that with
+        // anyway.
+        let isFloorDisabled =
+            attributes["data-scui-enliven"] != nil &&
+            !(element.name == "a" && attributes["href"] != nil)
+        if !widget.isEnabled || isFloorDisabled {
             // `disabled` is only defined for form-associated elements
             // (button/input); `<a>` communicates the same state by omitting
             // `href` instead, handled above. `aria-disabled` and `tabindex`

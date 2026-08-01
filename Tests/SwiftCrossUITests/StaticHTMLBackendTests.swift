@@ -753,14 +753,68 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("Buttons become links carrying a button role")
-    func emitsButtonsAsLinks() {
+    @Test("An action-only button loads disabled and marked for enlivening")
+    func emitsActionOnlyButtonAsDisabledButton() {
+        // Tier-activation principle (task #29): a click action has nothing
+        // pure HTML/CSS can resolve, so the button loads inert — a real
+        // <button disabled>, not the old <a role="button" href="#">, which
+        // used to look reachable to a keyboard, crawler, or assistive
+        // technology exactly like a working control would.
         let html = StaticHTMLRenderer.render(Button("Press") {}, title: "Buttons").html
 
+        #expect(html.contains("<button "))
+        #expect(html.contains("type=\"button\""))
+        #expect(html.contains("disabled=\"disabled\""))
+        #expect(html.contains("data-scui-enliven=\"js\""))
+        #expect(html.contains(">Press</button>"))
+        #expect(!html.contains("<a "))
+        #expect(!html.contains("role=\"button\""))
+    }
+
+    @MainActor
+    @Test("An href-only button emits a live anchor, never disabled, no role=button needed")
+    func emitsHrefOnlyButtonAsLiveLink() {
+        // href-only row of the emission matrix: an href is fully resolvable
+        // in pure HTML, so this row is live at the floor — no disabled, no
+        // role="button" (a real link doesn't need one). It still carries
+        // data-scui-enliven: Button.init's action defaults to an empty
+        // closure, so nothing distinguishes "href-only" from "href+action"
+        // at this layer (see the ambiguity-resolution comment on the Button
+        // case in HTMLEmitter) — nothing about that marker's presence makes
+        // this row any less live, since <a> has no disabled attribute to
+        // gate on it in the first place.
+        let html = StaticHTMLRenderer.render(
+            Button("Go") {}.href("/docs"),
+            title: "Href-only button"
+        ).html
+
         #expect(html.contains("<a "))
-        #expect(html.contains("role=\"button\""))
-        #expect(html.contains("href=\"#\""))
-        #expect(html.contains(">Press</a>"))
+        #expect(html.contains("href=\"/docs\""))
+        #expect(html.contains(">Go</a>"))
+        #expect(!html.contains("disabled=\"disabled\""))
+        #expect(!html.contains("aria-disabled"))
+        #expect(!html.contains("role=\"button\""))
+    }
+
+    @MainActor
+    @Test("An href+action button stays a live anchor, marked for enlivening, never disabled")
+    func emitsHrefAndActionButtonAsLiveEnlivenedLink() {
+        // href+action row: legal coexistence (Frederic, 2026-08-01). The
+        // link half is pure-HTML-resolvable, so the emitted <a href> stays
+        // alive — never disabled, <a> has no disabled attribute anyway —
+        // while the enliven marker tells a later tier to attach the click
+        // handler under the modified-click contract documented at the
+        // Button case in HTMLEmitter.
+        let html = StaticHTMLRenderer.render(
+            Button("Track & go") { }.href("/docs"),
+            title: "Href+action button"
+        ).html
+
+        #expect(html.contains("<a "))
+        #expect(html.contains("href=\"/docs\""))
+        #expect(html.contains("data-scui-enliven=\"js\""))
+        #expect(!html.contains("disabled=\"disabled\""))
+        #expect(!html.contains("aria-disabled"))
     }
 
     @MainActor
@@ -769,7 +823,10 @@ struct StaticHTMLBackendTests {
         // Before this fix, mod-disabled was a complete no-op: the emitted
         // `<a href="#" role="button">` was indistinguishable from an enabled
         // button, which is actively misleading rather than merely
-        // incomplete (sweep G3).
+        // incomplete (sweep G3). `.disabled(true)` is a hard author
+        // override that outranks the tier-activation floor: an href-only
+        // Button explicitly disabled still loses its href, since the author
+        // said this control shouldn't respond regardless of tier.
         let html = StaticHTMLRenderer.render(
             Button("Disabled action") {}.disabled(true),
             title: "Disabled button"
@@ -781,10 +838,27 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("A checkbox-styled toggle emits a real input carrying its checked state")
+    @Test("A disabled href-only button loses its href even though href is otherwise live")
+    func disabledHrefButtonLosesHref() {
+        let html = StaticHTMLRenderer.render(
+            Button("Disabled link") {}.href("/docs").disabled(true),
+            title: "Disabled href button"
+        ).html
+
+        #expect(html.contains("aria-disabled=\"true\""))
+        #expect(html.contains("tabindex=\"-1\""))
+        #expect(!html.contains("href="))
+    }
+
+    @MainActor
+    @Test("A checkbox-styled toggle emits a real input carrying its checked state, floor-disabled")
     func emitsCheckboxAsInput() {
         // Checkbox itself is an internal type, only reachable through
-        // Toggle's .checkbox style.
+        // Toggle's .checkbox style. Uniform-application consequence of the
+        // tier-activation principle (task #29): its binding is dead without
+        // a runtime, so it loads disabled + enlivened like every other
+        // form control, even though nothing here called .disabled(true).
+        // The checked/aria-checked *display* is still real.
         let html = StaticHTMLRenderer.render(
             Toggle("Subscribe", isOn: Self.box(true)).toggleStyle(.checkbox),
             title: "Checkbox"
@@ -794,14 +868,17 @@ struct StaticHTMLBackendTests {
         #expect(html.contains("type=\"checkbox\""))
         #expect(html.contains("checked=\"checked\""))
         #expect(html.contains("aria-checked=\"true\""))
+        #expect(html.contains("disabled=\"disabled\""))
+        #expect(html.contains("data-scui-enliven=\"js\""))
     }
 
     @MainActor
-    @Test("A toggle preserves its label and reports its state via aria-pressed")
+    @Test("A toggle preserves its label, reports state via aria-pressed, and loads floor-disabled")
     func emitsToggleLabelAndState() {
         // Toggle's default style is ToggleButton; the sweep confirmed the
         // label string "Enable notifications" was source-passed but 100%
-        // absent from the emitted markup (G1).
+        // absent from the emitted markup (G1). Same uniform-application
+        // consequence as Checkbox above: no runtime, so no working binding.
         let html = StaticHTMLRenderer.render(
             Toggle("Enable notifications", isOn: Self.box(true)),
             title: "Toggle"
@@ -809,10 +886,12 @@ struct StaticHTMLBackendTests {
 
         #expect(html.contains("Enable notifications"))
         #expect(html.contains("aria-pressed=\"true\""))
+        #expect(html.contains("disabled=\"disabled\""))
+        #expect(html.contains("data-scui-enliven=\"js\""))
     }
 
     @MainActor
-    @Test("A slider emits a range input carrying its value and bounds")
+    @Test("A slider emits a range input carrying its value and bounds, floor-disabled")
     func emitsSliderAsRangeInput() {
         let html = StaticHTMLRenderer.render(
             Slider(value: Self.box(0.4), in: 0.0...1.0),
@@ -824,10 +903,12 @@ struct StaticHTMLBackendTests {
         #expect(html.contains("min=\"0\""))
         #expect(html.contains("max=\"1\""))
         #expect(html.contains("value=\"0.4\""))
+        #expect(html.contains("disabled=\"disabled\""))
+        #expect(html.contains("data-scui-enliven=\"js\""))
     }
 
     @MainActor
-    @Test("A text field preserves its value and placeholder text")
+    @Test("A text field preserves its value and placeholder text, floor-disabled")
     func emitsTextFieldWithValueAndPlaceholder() {
         let html = StaticHTMLRenderer.render(
             TextField("Your name", text: Self.box("Ada Lovelace")),
@@ -838,6 +919,8 @@ struct StaticHTMLBackendTests {
         #expect(html.contains("type=\"text\""))
         #expect(html.contains("value=\"Ada Lovelace\""))
         #expect(html.contains("placeholder=\"Your name\""))
+        #expect(html.contains("disabled=\"disabled\""))
+        #expect(html.contains("data-scui-enliven=\"js\""))
     }
 
     @MainActor
@@ -1300,9 +1383,17 @@ struct StaticHTMLBackendTests {
         // the only thing that survives into output that otherwise reflows.
         #expect(html.contains("width:300px"))
         // The frame sets the measure; it doesn't stop the text flowing inside
-        // it, and its leftover space must not be read back as padding.
+        // it, and its leftover space must not be read back as padding — but
+        // scoped to the interner's own class-rule syntax (`property:value`,
+        // no space, semicolon-separated within one `{ }` block), which
+        // distinguishes a real regression from task #29's button/input
+        // reset. That reset legitimately declares its own `padding: 0;`
+        // (spaced, standalone CSS, not an interned class) in every
+        // document's global stylesheet, which a bare "padding" substring
+        // search would also catch.
         #expect(!html.contains("position:absolute"))
-        #expect(!html.contains("padding"))
+        #expect(!html.contains("padding:0"))
+        #expect(!html.contains("padding:300"))
     }
 
     @MainActor

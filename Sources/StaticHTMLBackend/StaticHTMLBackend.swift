@@ -68,6 +68,8 @@ public final class StaticHTMLBackend:
         /// The attributes request that was in scope when this widget was
         /// updated.
         var pendingAttributesRequest: HTMLAttributesRequest?
+        /// The href request that was in scope when this widget was updated.
+        var pendingHrefRequest: HTMLHrefRequest?
         /// Whether ``View/disabled(_:)`` was in scope when this widget was
         /// updated.
         ///
@@ -75,6 +77,17 @@ public final class StaticHTMLBackend:
         /// still image has to say so: leaving a disabled control looking
         /// live is actively misleading rather than merely incomplete.
         public var isEnabled = true
+        /// The href requested via ``View/href(_:)``, if any.
+        ///
+        /// Distinct from ``isEnabled``: `isEnabled` is the author explicitly
+        /// saying "this control shouldn't respond" (`.disabled(true)`), which
+        /// stays a hard override regardless of tier. `href` is the *tier*
+        /// signal — it's what tells the emitter a Button/NavigationLink's
+        /// element is resolvable in pure HTML (a live `<a>`) rather than
+        /// waiting on a runtime to enliven it (a `<button disabled>`). See
+        /// the button case in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``
+        /// for the emission matrix this drives.
+        public var href: String?
 
         public var naturalSize: SIMD2<Int> {
             .zero
@@ -90,6 +103,7 @@ public final class StaticHTMLBackend:
         func captureIntent(from environment: EnvironmentValues) {
             pendingTagRequest = environment.htmlTagRequest
             pendingAttributesRequest = environment.htmlAttributesRequest
+            pendingHrefRequest = environment.htmlHrefRequest
             isEnabled = environment.isEnabled
         }
     }
