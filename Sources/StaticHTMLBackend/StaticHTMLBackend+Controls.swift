@@ -293,26 +293,6 @@ extension StaticHTMLBackend {
         fatalError("\(Self.self): \(#function) not supported in static output")
     }
 
-    public func createSplitView(leadingChild: Widget, trailingChild: Widget) -> Widget {
-        fatalError("\(Self.self): \(#function) not supported in static output")
-    }
-
-    public func setResizeHandler(ofSplitView splitView: Widget, to action: @escaping () -> Void) {
-        fatalError("\(Self.self): \(#function) not supported in static output")
-    }
-
-    public func sidebarWidth(ofSplitView splitView: Widget) -> Int {
-        fatalError("\(Self.self): \(#function) not supported in static output")
-    }
-
-    public func setSidebarWidthBounds(
-        ofSplitView splitView: Widget,
-        minimum minimumWidth: Int,
-        maximum maximumWidth: Int
-    ) {
-        fatalError("\(Self.self): \(#function) not supported in static output")
-    }
-
     public func createPicker(style: BackendPickerStyle) -> Widget {
         fatalError("\(Self.self): \(#function) not supported in static output")
     }
