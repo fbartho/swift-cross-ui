@@ -241,6 +241,13 @@ public struct HTMLEmitter {
         // assistive technology reading it, actually objects to. Splicing the
         // wrapper's children into its place is the only fix that makes the
         // emitted markup valid.
+        //
+        // This is not subsumed by the elision rule below, which answers a
+        // different question: elision asks whether an element does any work,
+        // and a wrapper under a `<ul>` is refused there precisely because the
+        // list is not a flex container, so its child's sizing would change.
+        // Validity is the stronger claim, and it holds whatever the style
+        // says — so the two rules coexist rather than one retiring the other.
         if childContentModel.excludes(widget, emitter: self) {
             return emitChildren(
                 widget.getChildren().map { ($0, SIMD2<Int>.zero) },
