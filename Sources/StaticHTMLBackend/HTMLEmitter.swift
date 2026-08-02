@@ -458,6 +458,11 @@ public struct HTMLEmitter {
                 controlAttributes["type"] = "button"
                 controlAttributes["aria-pressed"] = toggleButton.state ? "true" : "false"
                 controlAttributes["data-scui-enliven"] = "js"
+                // A toggle button is a button, so it takes the same default
+                // chrome; without it the reset leaves it as bare text, which
+                // is the one thing a control named for a button can't look
+                // like. Pressed state comes from the aria-pressed rule.
+                extraClasses.append(HTMLButtonStyle.automatic.className)
                 if let font = toggleButton.font {
                     style.set("\(Int(font.pointSize))px", for: "font-size")
                     style.set("\(Int(font.lineHeight))px", for: "line-height")

@@ -1336,6 +1336,36 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("Form controls the reset flattens are given an appearance back")
+    func flattenedControlsAreGivenAnAppearance() {
+        // `appearance: none` on inputs leaves a checkbox occupying its box
+        // while painting nothing, which reads as a missing control rather
+        // than an unstyled one — the same failure the buttons had.
+        let html = StaticHTMLRenderer.render(
+            Toggle("Subscribe", isOn: Self.box(true)).toggleStyle(.checkbox),
+            context: "Checkbox appearance"
+        ).html
+
+        #expect(html.contains("#root input[type=\"checkbox\"]"))
+        #expect(html.contains("#root [role=\"switch\"]"))
+    }
+
+    @MainActor
+    @Test("The reset declares no gradient, which is the author-color channel")
+    func resetDeclaresNoGradient() {
+        // Gradient rules are matched by searching the emitted stylesheet for
+        // `linear-gradient`, so a decorative one in the reset would be
+        // indistinguishable from an author's and would capture that search.
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {},
+            context: "Reset without gradients"
+        ).html
+
+        let reset = html.split(separator: "id:scui-reset").dropFirst().first ?? ""
+        #expect(!reset.contains("linear-gradient"))
+    }
+
+    @MainActor
     @Test("A disabled button keeps its variant styling, dimmed rather than stripped")
     func disabledButtonKeepsVariantStyling() {
         // Per tier activation: the still image has to say the control is

@@ -197,6 +197,51 @@ extension HTMLFragmentRegistry {
                   padding: 0;
                   border-radius: 0;
                 }
+                :where(#root button[aria-pressed="true"]) {
+                  border-color: light-dark(rgba(0,80,200,1), rgba(80,140,240,1));
+                  background: light-dark(rgba(0,80,200,1), rgba(80,140,240,1));
+                  color: light-dark(rgba(255,255,255,1), rgba(10,12,16,1));
+                }
+                :where(#root input[type="checkbox"]) {
+                  border: 1px solid light-dark(rgba(0,0,0,0.4), rgba(255,255,255,0.45));
+                  border-radius: 0.2em;
+                  background: light-dark(rgba(255,255,255,1), rgba(255,255,255,0.09));
+                }
+                :where(#root input[type="checkbox"]:checked) {
+                  border-color: light-dark(rgba(0,80,200,1), rgba(80,140,240,1));
+                  background: light-dark(rgba(0,80,200,1), rgba(80,140,240,1));
+                  box-shadow:
+                    inset 0 0 0 0.12em light-dark(rgba(0,80,200,1), rgba(80,140,240,1)),
+                    inset 0 0 0 0.24em light-dark(rgba(255,255,255,1), rgba(10,12,16,1));
+                }
+                :where(#root input[type="range"]) {
+                  accent-color: light-dark(rgba(0,80,200,1), rgba(80,140,240,1));
+                  appearance: auto;
+                }
+                :where(#root [role="switch"]) {
+                  display: flex;
+                  align-items: center;
+                  width: 2em;
+                  border: 1px solid light-dark(rgba(0,0,0,0.32), rgba(255,255,255,0.36));
+                  border-radius: 1em;
+                  padding: 0.1em;
+                  background: light-dark(rgba(0,0,0,0.08), rgba(255,255,255,0.12));
+                }
+                :where(#root [role="switch"][aria-checked="true"]) {
+                  border-color: light-dark(rgba(0,80,200,1), rgba(80,140,240,1));
+                  background: light-dark(rgba(0,80,200,1), rgba(80,140,240,1));
+                }
+                :where(#root [role="switch"])::before {
+                  content: "";
+                  display: block;
+                  width: 0.7em;
+                  height: 0.7em;
+                  border-radius: 50%;
+                  background: light-dark(rgba(255,255,255,1), rgba(240,242,246,1));
+                }
+                :where(#root [role="switch"][aria-checked="true"])::before {
+                  margin-inline-start: auto;
+                }
                 :where(#root button:disabled, #root input:disabled, #root a:not([href])) {
                   opacity: 0.55;
                   cursor: default;
