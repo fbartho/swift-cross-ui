@@ -106,6 +106,20 @@ extension HTMLFragmentRegistry {
     /// zeroes the block's specificity. Left bare, `#root` scores (1,0,0) and
     /// outranks the interned classes (0,1,0) carrying each view's declared
     /// style, so the reset would win and headings would render flat.
+    ///
+    /// Buttons and links carry a default appearance rather than only being
+    /// neutralized. Flattening a control's user-agent styling without
+    /// replacing it leaves it indistinguishable from surrounding text, and a
+    /// native backend's button gets its look from the platform widget
+    /// (`NSButton`, `GtkButton`) with nothing declared in Swift — so the
+    /// equivalent has to come from here. The appearance is this backend's
+    /// own, not a return to user-agent defaults, which differ per browser
+    /// and would make output inconsistent across them.
+    ///
+    /// Colors use `light-dark()`, which is live because `color-scheme` is
+    /// declared above. Unlike the palette's custom properties, these aren't
+    /// author colors reaching the emitter through a render — they're the
+    /// backend's own chrome, so they need no per-page plumbing.
     static func resetItem() -> FragmentItem {
         FragmentItem(
             key: .reset,
@@ -120,6 +134,14 @@ extension HTMLFragmentRegistry {
                   font-weight: inherit;
                 }
                 :where(#root a) { color: inherit; }
+                :where(#root a[href]) {
+                  text-decoration: underline;
+                  text-underline-offset: 0.15em;
+                  text-decoration-thickness: from-font;
+                }
+                :where(#root a[href]:hover, #root a[href]:focus-visible) {
+                  text-decoration-thickness: 0.12em;
+                }
                 :where(#root button, #root input) {
                   margin: 0;
                   padding: 0;
@@ -128,6 +150,20 @@ extension HTMLFragmentRegistry {
                   font: inherit;
                   color: inherit;
                   appearance: none;
+                }
+                :where(#root button) {
+                  padding: 0.3em 0.8em;
+                  border: 1px solid light-dark(rgba(0,0,0,0.28), rgba(255,255,255,0.32));
+                  border-radius: 0.4em;
+                  background: light-dark(rgba(255,255,255,0.9), rgba(255,255,255,0.09));
+                  cursor: pointer;
+                }
+                :where(#root button:hover:not(:disabled)) {
+                  background: light-dark(rgba(0,0,0,0.05), rgba(255,255,255,0.16));
+                }
+                :where(#root button:disabled, #root input:disabled, #root a:not([href])) {
+                  opacity: 0.55;
+                  cursor: default;
                 }
                 """
             )

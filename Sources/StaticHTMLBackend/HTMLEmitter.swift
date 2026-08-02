@@ -404,8 +404,12 @@ public struct HTMLEmitter {
                 style.set("inline-flex", for: "display")
                 style.set("center", for: "align-items")
                 style.set("center", for: "justify-content")
-                style.set("none", for: "text-decoration")
                 style.set("border-box", for: "box-sizing")
+                // Underlining is left to the reset's `a[href]` rule rather
+                // than suppressed here. A Button that resolved to a live
+                // anchor is a link the reader can follow, and the underline
+                // is the affordance that says so; the `<button>` row has no
+                // such rule, so it stays undecorated without declaring it.
                 inner = Self.escape(button.label)
 
             case let checkbox as StaticHTMLBackend.Checkbox:

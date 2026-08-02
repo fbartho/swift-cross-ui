@@ -1193,6 +1193,87 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A button carries a bordered default appearance, not bare text")
+    func buttonCarriesDefaultAppearance() {
+        // A native backend's button looks like a button because the platform
+        // widget does; nothing in Swift declares it. The reset flattens the
+        // user-agent equivalent, so without a replacement here a Button would
+        // render as text indistinguishable from the prose around it.
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {},
+            context: "Default button"
+        ).html
+
+        #expect(html.contains(":where(#root button)"))
+        #expect(html.contains("border: 1px solid"))
+        #expect(html.contains("border-radius:"))
+        #expect(html.contains("cursor: pointer"))
+    }
+
+    @MainActor
+    @Test("The default button appearance resolves per color scheme")
+    func buttonAppearanceIsSchemeAware() {
+        // These are the backend's own chrome rather than author colors, so
+        // they resolve through light-dark() instead of reaching the palette's
+        // custom properties via a render.
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {},
+            context: "Scheme-aware button"
+        ).html
+
+        #expect(html.contains("light-dark("))
+    }
+
+    @MainActor
+    @Test("A disabled control is dimmed, so it reads as disabled and not merely unstyled")
+    func disabledControlIsDimmed() {
+        // Keyed off `:disabled` and an href-less anchor — the two mechanisms
+        // the emitter actually uses to express the state — rather than the
+        // aria-disabled mirror, which the live-anchor tests assert never
+        // appears anywhere in a document.
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {},
+            context: "Disabled dimming"
+        ).html
+
+        #expect(html.contains("#root button:disabled"))
+        #expect(html.contains("#root a:not([href])"))
+        #expect(html.contains("opacity: 0.55"))
+    }
+
+    @MainActor
+    @Test("A live anchor is underlined, and a button is not")
+    func liveAnchorIsUnderlinedButButtonIsNot() {
+        // The underline is the affordance saying a thing is followable, so it
+        // belongs to the anchor row of the emission matrix and not to the
+        // button row. The Button case emits no text-decoration of its own;
+        // the reset's `a[href]` rule is what distinguishes them.
+        let linkHTML = StaticHTMLRenderer.render(
+            Button("Go") {}.href("/docs"),
+            context: "Underlined link"
+        ).html
+
+        #expect(linkHTML.contains(":where(#root a[href])"))
+        #expect(linkHTML.contains("text-decoration: underline"))
+        #expect(!linkHTML.contains("text-decoration:none"))
+    }
+
+    @MainActor
+    @Test("A disabled link keeps no underline affordance, having nothing to follow")
+    func disabledLinkIsNotAffordant() {
+        // The underline rule is scoped to `a[href]` precisely so that the
+        // href-less anchor a disabled Button emits doesn't keep advertising
+        // itself as followable.
+        let html = StaticHTMLRenderer.render(
+            Button("Go") {}.href("/docs").disabled(true),
+            context: "Disabled link"
+        ).html
+
+        #expect(!html.contains("href="))
+        #expect(html.contains(":where(#root a[href])"))
+    }
+
+    @MainActor
     @Test("A checkbox-styled toggle emits a real input carrying its checked state, floor-disabled")
     func emitsCheckboxAsInput() {
         // Checkbox itself is an internal type, only reachable through
