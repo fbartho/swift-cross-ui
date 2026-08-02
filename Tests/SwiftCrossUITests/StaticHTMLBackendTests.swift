@@ -1439,6 +1439,58 @@ struct StaticHTMLBackendTests {
 
     @MainActor
     @Test(
+        "A bare Color hairline under .frame(maxWidth: .infinity) stretches like Divider, without Divider's marker"
+    )
+    func infiniteFrameColorStretchesWithoutDividerMarker() {
+        // Task #55: the fix above (dividerStretchesWithoutOverflowing) only
+        // reaches a leaf whose ancestor set widget.isDivider — a real
+        // Divider() view. A hand-built hairline rule using the identical
+        // shape (`Color.frame(maxWidth: .infinity, maxHeight:)`, exactly
+        // what PageLayout/DesignSystemPage's `Theme.border` declares) has no
+        // such marker, so it used to fall through to the generic rectangle
+        // path and get a min-width pinned to the build host's committed
+        // width — 800px in the repro, overflowing any narrower viewport and,
+        // because nothing downstream carried max-width:100%, dragging an
+        // unrelated sibling paragraph's ancestor chain wide enough to stop
+        // it wrapping too.
+        //
+        // The fix widens `stretchesUndeclaredAxis` to fire whenever a
+        // container's OWN declaration leaves this axis open while the other
+        // is capped at .infinity — not just when inherited from a Divider
+        // ancestor — so this leaf gets the same align-self:stretch treatment
+        // Divider already had, with no min-width floor.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Text("Above")
+                Color.gray
+                    .frame(maxWidth: .infinity, maxHeight: 1)
+                Text("Below")
+            },
+            context: "Bare stretching hairline",
+            size: SIMD2(800, 200)
+        ).html
+
+        #expect(!html.contains("min-width:800px"))
+
+        // The stretch and max-height CSS lands on the FlexibleFrameView
+        // wrapper the `.frame(maxWidth:maxHeight:)` modifier introduces
+        // (mirroring Divider's own StrictFrameView wrapper above) — the
+        // Color leaf inside it carries no width declaration of its own,
+        // which is what lets flex's default stretch fill it.
+        let frameRule = Self.styleRule(
+            forElementContaining: "data-scui=\"FlexibleFrameView\"",
+            in: html
+        )
+        #expect(frameRule?.contains("align-self:stretch") == true)
+        #expect(frameRule?.contains("max-height:1px") == true)
+
+        let colorRule = Self.styleRule(forElementContaining: "data-scui=\"Color\"", in: html)
+        #expect(colorRule?.contains("min-width:") != true)
+        #expect(colorRule?.contains("width:") != true)
+    }
+
+    @MainActor
+    @Test(
         "aspectRatio emits CSS aspect-ratio so the undeclared axis scales proportionally under reflow"
     )
     func aspectRatioEmitsProportionalCSS() {
