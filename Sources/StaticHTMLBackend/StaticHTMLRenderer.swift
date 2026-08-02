@@ -202,7 +202,10 @@ public enum StaticHTMLRenderer {
         // viewport without the class bodies changing at all.
         let palette = emitter.palette.stylesheet
         let typeScale = emitter.typeScale.stylesheet
-        let properties = [palette, typeScale]
+        // Zero-specificity (`:where`), so an interned class or a registered
+        // contribution still outranks it, the same contract the reset holds.
+        let tables = emitter.tableStylesheet
+        let properties = [palette, typeScale, tables]
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
         let baseline = ([reset.map { $0.rendered(indent: "") }.joined(separator: "\n")]

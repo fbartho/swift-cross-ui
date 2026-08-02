@@ -67,6 +67,9 @@ public struct HTMLEmitter {
     /// Collected during emission so the renderer can report a declared slot
     /// whose items would otherwise be silently dropped.
     private(set) var encounteredSlots: Set<String> = []
+    /// Whether a table reached the document, and therefore whether
+    /// ``tableStylesheet`` has anything to say.
+    private(set) var emittedTable = false
     /// The document's heading outline, collected in document order as
     /// ``HeadingMap`` derives each heading element.
     ///
@@ -713,6 +716,67 @@ public struct HTMLEmitter {
                 )
                 isRawInner = true
 
+            case let table as StaticHTMLBackend.TableWidget:
+                return emitTable(table, indent: indent, indentLevel: indentLevel)
+
+            case let splitView as StaticHTMLBackend.SplitViewWidget:
+                // Both panes flow side by side and both are readable, which is
+                // the whole of what this tier can honour: the divider is the
+                // interactive half, and there's no script to drag one with.
+                //
+                // flex-wrap is what makes the row degrade rather than overflow.
+                // The sidebar keeps a flex-basis at its committed width but is
+                // allowed to shrink to its min-width; once the detail pane's
+                // own minimum no longer fits beside it, the two wrap onto
+                // separate lines and the layout becomes stacked — the same
+                // narrow-screen shape a native split view collapses to, reached
+                // through flow rules rather than a media query, so it responds
+                // to the space actually available rather than to a viewport
+                // width guessed at build time.
+                style.set("flex", for: "display")
+                style.set("row", for: "flex-direction")
+                style.set("wrap", for: "flex-wrap")
+                style.set("stretch", for: "align-items")
+
+                var sidebarStyle = Style()
+                sidebarStyle.set("\(Self.defaultSidebarBasis)px", for: "flex-basis")
+                sidebarStyle.set("0", for: "flex-grow")
+                sidebarStyle.set("1", for: "flex-shrink")
+                if let minimum = splitView.minimumSidebarWidth {
+                    sidebarStyle.set("\(minimum)px", for: "min-width")
+                }
+                if let maximum = splitView.maximumSidebarWidth {
+                    sidebarStyle.set("\(maximum)px", for: "max-width")
+                }
+
+                var detailStyle = Style()
+                // The detail pane takes the remaining width, and its
+                // flex-basis of 0 with grow:1 is what makes "remaining"
+                // mean the whole row minus the sidebar rather than being
+                // anchored to its own committed measurement.
+                detailStyle.set("1", for: "flex-grow")
+                detailStyle.set("1", for: "flex-shrink")
+                detailStyle.set("0", for: "flex-basis")
+                // Below this the pane is narrower than a readable column, and
+                // wrapping to a stacked layout is the better outcome. It's the
+                // threshold that actually triggers the flex-wrap above.
+                detailStyle.set("\(Self.minimumDetailWidth)px", for: "min-width")
+
+                inner = "\n"
+                    + emitPane(
+                        splitView.leadingChild,
+                        style: sidebarStyle,
+                        role: .sidebar,
+                        indentLevel: indentLevel + 1
+                    ) + "\n"
+                    + emitPane(
+                        splitView.trailingChild,
+                        style: detailStyle,
+                        role: .detail,
+                        indentLevel: indentLevel + 1
+                    ) + "\n"
+                isRawInner = true
+
             case let scroll as StaticHTMLBackend.ScrollContainer:
                 style.set("auto", for: "overflow")
                 Self.pin(size: scroll.size, in: &style, placement: placement)
@@ -1184,6 +1248,278 @@ public struct HTMLEmitter {
             stretchesUndeclaredAxis: stretchesUndeclaredAxis,
             flexShrinkWeights: flexShrinkWeights
         )
+    }
+
+    /// The marker attribute a table's scroll box carries.
+    ///
+    /// Exists so ``tableStylesheet`` can find the box and its ancestors from
+    /// the stylesheet; the interned class can't do that job, since the rules
+    /// below have to reach elements this emitter never styled.
+    static let tableScrollMarker = "data-scui-tablescroll"
+
+    /// The rules that let a table's scroll box actually scroll.
+    ///
+    /// `overflow-x` only scrolls a box narrower than its content, but every
+    /// ancestor between the scroll box and the viewport is shrink-to-fit in
+    /// this emitter's output, so a wide table grows the whole chain to
+    /// max-content and overflows the page instead (measured: a table needing
+    /// 1021px at a 480px viewport took the document's scroll width to 775px
+    /// with no scrolling anywhere). These rules cap that chain.
+    ///
+    /// Scoped through `:has()` to the scroll box's own ancestors rather than
+    /// applied to every element: the same cap across the whole tree would
+    /// change the sizing of subtrees that deliberately exceed their parent,
+    /// which is a different question from this one.
+    ///
+    /// Empty unless a table actually rendered.
+    public var tableStylesheet: String {
+        guard emittedTable else {
+            return ""
+        }
+        return """
+            :where(#root div:has([\(Self.tableScrollMarker)]), #root [\(Self.tableScrollMarker)]) {
+              min-width: 0;
+              max-width: 100%;
+              box-sizing: border-box;
+            }
+            """
+    }
+
+    /// Which half of a split view a pane is.
+    private enum PaneRole {
+        case sidebar
+        case detail
+    }
+
+    /// The sidebar's starting width in a split view's flex row.
+    ///
+    /// Matches ``StaticHTMLBackend/defaultSidebarWidth``, the width the layout
+    /// system was told the sidebar had, so the emitted split lands where the
+    /// build host's pass measured the panes against.
+    private static let defaultSidebarBasis = 260
+
+    /// The width below which a split view's detail pane wraps beneath the
+    /// sidebar instead of staying beside it.
+    ///
+    /// Narrower than this the pane holds a column too thin to read, so the
+    /// stacked layout is the better rendering. This is the value that decides
+    /// where the row breaks.
+    private static let minimumDetailWidth = 320
+
+    /// Emits one pane of a split view, wrapped in its own landmark element.
+    ///
+    /// The wrapper is the backend's, not the view's: the pane containers the
+    /// core builds are plain containers with no way to say "this one is the
+    /// sidebar", and the landmark is exactly that distinction. A reader's
+    /// screen reader gets a navigable `<nav>`/`<main>` pair out of it, which is
+    /// the accessibility win the static tier is positioned to deliver.
+    ///
+    /// An author's own `.htmlTag()` on the pane content still emits inside this
+    /// wrapper and is untouched by it, so this adds a landmark rather than
+    /// overriding a declared one.
+    ///
+    /// - Parameters:
+    ///   - pane: The pane's widget.
+    ///   - style: The flex sizing for this pane.
+    ///   - role: Which half of the split view this is.
+    ///   - indentLevel: How far to indent the wrapper.
+    /// - Returns: The pane's markup.
+    private mutating func emitPane(
+        _ pane: StaticHTMLBackend.Widget,
+        style: Style,
+        role: PaneRole,
+        indentLevel: Int
+    ) -> String {
+        let indent = String(repeating: "  ", count: indentLevel + 1)
+        var style = style
+        // A pane whose content is taller than the viewport scrolls within
+        // itself on a wide screen, which is what makes the two panes read as
+        // independent regions. Once they've wrapped to a stacked layout the
+        // panes are full-width and the page scrolls instead, so this is scoped
+        // to the axis that can actually overflow.
+        style.set("auto", for: "overflow-y")
+        let element = role == .sidebar ? "nav" : "main"
+        var attributes = ""
+        if let className = interner.className(for: style) {
+            attributes = " class=\"\(className)\""
+        }
+        let inner = emit(pane, at: .zero, placement: .flow, indentLevel: indentLevel + 1)
+        return "\(indent)<\(element)\(attributes)>\n\(inner)\n\(indent)</\(element)>"
+    }
+
+    /// Emits a table as real table markup, wrapped in a scroll box.
+    ///
+    /// The wrapper isn't decoration: a table's column count is fixed by the
+    /// data, so a wide one can't reflow the way the rest of this document
+    /// does — the columns have a minimum content width below which the only
+    /// remaining options are overflowing the viewport or scrolling. An
+    /// `overflow-x:auto` box scrolls, keeping the page itself from gaining a
+    /// horizontal scrollbar on a phone. `tabindex="0"` comes with it, since a
+    /// scrollable region that can't be focused can't be scrolled by keyboard
+    /// at all.
+    ///
+    /// Cells arrive as a flat array in row-major order (see
+    /// ``BackendFeatures/Tables/setCells(ofTable:to:withRowHeights:)``), so the
+    /// column count is what recovers the rows.
+    ///
+    /// - Parameters:
+    ///   - table: The table to emit.
+    ///   - indent: The indentation for the wrapper element.
+    ///   - indentLevel: How far the wrapper is indented.
+    /// - Returns: The table's markup, wrapper included.
+    private mutating func emitTable(
+        _ table: StaticHTMLBackend.TableWidget,
+        indent: String,
+        indentLevel: Int
+    ) -> String {
+        emittedTable = true
+        var wrapperStyle = Style()
+        wrapperStyle.set("auto", for: "overflow-x")
+        // overflow-x only scrolls a box that's actually narrower than its
+        // content, and a block box in this emitter's shrink-to-fit ancestor
+        // chain sizes to max-content instead — measured at a 480px viewport,
+        // a table needing 1021px grew every ancestor to match and overflowed
+        // the page rather than scrolling. max-width caps the box against its
+        // containing block, min-width:0 defeats the automatic minimum size a
+        // flex ancestor would otherwise floor it at, and border-box keeps a
+        // padded ancestor's own box inside that cap.
+        wrapperStyle.set("100%", for: "max-width")
+        wrapperStyle.set("0", for: "min-width")
+        wrapperStyle.set("border-box", for: "box-sizing")
+        var tableStyle = Style()
+        // A table's default `border-collapse` leaves a gap between adjacent
+        // cell borders; collapsed is what makes ruling lines meet. width:100%
+        // lets the table use the full measure when the columns fit, rather
+        // than shrink-wrapping to content and leaving the box short.
+        tableStyle.set("collapse", for: "border-collapse")
+        tableStyle.set("100%", for: "width")
+
+        let cellIndent = indent + "      "
+        let cellAttributes = cellAttributes()
+        let headerCellAttributes = headerCellAttributes()
+        var rows: [String] = []
+        for rowIndex in 0..<table.rowCount {
+            var cells: [String] = []
+            for columnIndex in 0..<table.columnCount {
+                let cellIndex = rowIndex * table.columnCount + columnIndex
+                // A row the core hasn't filled in yet has no cells to emit.
+                // Emitting an empty `<td>` keeps every row the same width, so
+                // the column headers still line up with the data below them.
+                let inner =
+                    cellIndex < table.cells.count
+                        ? "\n"
+                        + emit(
+                            table.cells[cellIndex],
+                            at: .zero,
+                            placement: .flow,
+                            indentLevel: indentLevel + 3
+                        ) + "\n\(cellIndent)"
+                        : ""
+                cells.append("\(cellIndent)<td\(cellAttributes)>\(inner)</td>")
+            }
+            let rowIndent = indent + "    "
+            rows.append(
+                "\(rowIndent)<tr>\n" + cells.joined(separator: "\n") + "\n\(rowIndent)</tr>"
+            )
+        }
+
+        let headerIndent = indent + "    "
+        let headerCells = table.columnLabels
+            .map { label in
+                // `scope="col"` is what ties a header to the cells beneath it
+                // for a screen reader; without it a `<th>` in a `<thead>` is
+                // only conventionally a column header, not declaratively one.
+                "\(headerIndent)  <th scope=\"col\"\(headerCellAttributes)>"
+                    + "\(Self.escape(label))</th>"
+            }
+            .joined(separator: "\n")
+
+        var attributes: [String: String] = [:]
+        for (name, value) in table.authorAttributes
+            where HTMLElement.isValidName(name) && !Self.reservedAttributes.contains(name)
+        {
+            attributes[name] = value
+        }
+        if let tag = table.tag {
+            attributes["data-scui"] = tag
+        }
+        if let className = interner.className(for: tableStyle) {
+            attributes["class"] = className
+        }
+        let renderedAttributes =
+            attributes
+                .sorted { $0.key < $1.key }
+                .map { name, value in " \(name)=\"\(Self.escape(value))\"" }
+                .joined()
+
+        let sectionIndent = indent + "  "
+        var markup = "\(indent)<div\(wrapperAttributes(for: wrapperStyle))>\n"
+        markup += "\(sectionIndent)<table\(renderedAttributes)>\n"
+        if !table.columnLabels.isEmpty {
+            markup += "\(sectionIndent)  <thead>\n"
+            markup += "\(headerIndent)<tr>\n\(headerCells)\n\(headerIndent)</tr>\n"
+            markup += "\(sectionIndent)  </thead>\n"
+        }
+        if !rows.isEmpty {
+            markup += "\(sectionIndent)  <tbody>\n"
+            markup += rows.joined(separator: "\n") + "\n"
+            markup += "\(sectionIndent)  </tbody>\n"
+        }
+        markup += "\(sectionIndent)</table>\n"
+        markup += "\(indent)</div>"
+        return markup
+    }
+
+    /// The attributes for the scroll box a table is wrapped in.
+    ///
+    /// - Parameter style: The wrapper's style.
+    /// - Returns: The rendered attribute string.
+    private mutating func wrapperAttributes(for style: Style) -> String {
+        var attributes = " \(Self.tableScrollMarker) tabindex=\"0\""
+        if let className = interner.className(for: style) {
+            attributes = " class=\"\(className)\"" + attributes
+        }
+        return attributes
+    }
+
+    /// The shared styling for a table's data cells.
+    ///
+    /// Interned like every other style, so all cells in the document share one
+    /// class rather than repeating the rule per element.
+    private mutating func cellAttributes() -> String {
+        var style = Style()
+        style.set("left", for: "text-align")
+        style.set(
+            "\(StaticHTMLBackend.tableCellVerticalPadding)px"
+                + " \(StaticHTMLBackend.tableCellHorizontalPadding)px",
+            for: "padding"
+        )
+        guard let className = interner.className(for: style) else {
+            return ""
+        }
+        return " class=\"\(className)\""
+    }
+
+    /// The shared styling for a table's header cells.
+    ///
+    /// - Returns: The rendered attribute string.
+    private mutating func headerCellAttributes() -> String {
+        var style = Style()
+        style.set("left", for: "text-align")
+        style.set(
+            "\(StaticHTMLBackend.tableCellVerticalPadding)px"
+                + " \(StaticHTMLBackend.tableCellHorizontalPadding)px",
+            for: "padding"
+        )
+        style.set("600", for: "font-weight")
+        // A header row reads as a header only if it's visually separated from
+        // the data; a bottom rule is the lightest way to say so without
+        // inventing a color the palette doesn't have.
+        style.set("1px solid currentColor", for: "border-bottom")
+        guard let className = interner.className(for: style) else {
+            return ""
+        }
+        return " class=\"\(className)\""
     }
 
     /// Emits a list of children, each on its own line.

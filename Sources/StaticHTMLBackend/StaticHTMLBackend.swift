@@ -15,6 +15,7 @@ public final class StaticHTMLBackend:
     BaseAppBackend,
     BackendFeatures.CornerRadius,
     BackendFeatures.Colors,
+    BackendFeatures.Tables,
     BackendFeatures.Windowing
 {
     /// A window. Static output has no real windows; this only carries the
@@ -305,6 +306,18 @@ public final class StaticHTMLBackend:
 
     public var defaultTableRowContentHeight = 10
     public var defaultTableCellVerticalPadding = 10
+    /// The vertical padding emitted on table cells.
+    ///
+    /// Matches ``defaultTableCellVerticalPadding``, which is what the layout
+    /// system measured rows against, so the browser's own row heights land
+    /// near the build host's estimate.
+    static let tableCellVerticalPadding = 10
+    /// The horizontal padding emitted on table cells.
+    ///
+    /// No protocol method reports a horizontal equivalent — the core only asks
+    /// about the vertical axis — so this is the backend's own choice, wide
+    /// enough to separate adjacent columns without a ruling line between them.
+    static let tableCellHorizontalPadding = 12
     public var defaultPaddingAmount = 10
     public var scrollBarWidth = 8
     public var requiresToggleSwitchSpacer = false
