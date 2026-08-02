@@ -83,6 +83,16 @@ public struct DocumentInfo: Hashable, Sendable {
     /// just `name`/`property` and `content`) contributes its `content` value
     /// under every recognized name/property key it declared.
     public var metadata: [DocumentInfoKey: String]
+    /// The view type tag of every `Image` that emitted `alt=""` for lack of
+    /// an author-supplied `alt`, in document order.
+    ///
+    /// See ``StaticHTMLBackend/ImageView`` for why the fallback exists and
+    /// why nothing else can detect it: an empty `alt` an author deliberately
+    /// set for a decorative image is indistinguishable, in the markup, from
+    /// one this default produced. This is the one place that distinction
+    /// still exists. A page owner who wants every image described can check
+    /// this list is empty; a component library can log it in development.
+    public var imagesMissingAltText: [String]
 
     /// One entry in a document's heading outline.
     public struct Heading: Hashable, Sendable {
@@ -108,14 +118,18 @@ public struct DocumentInfo: Hashable, Sendable {
     ///   - title: The document's title.
     ///   - headings: The document's heading outline, in document order.
     ///   - metadata: The document's registered metadata.
+    ///   - imagesMissingAltText: The view type tags of images that emitted
+    ///     `alt=""` for lack of an author-supplied `alt`.
     public init(
         title: String,
         headings: [Heading] = [],
-        metadata: [DocumentInfoKey: String] = [:]
+        metadata: [DocumentInfoKey: String] = [:],
+        imagesMissingAltText: [String] = []
     ) {
         self.title = title
         self.headings = headings
         self.metadata = metadata
+        self.imagesMissingAltText = imagesMissingAltText
     }
 }
 

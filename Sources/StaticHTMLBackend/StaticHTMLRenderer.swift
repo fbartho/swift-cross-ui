@@ -116,7 +116,8 @@ public enum StaticHTMLRenderer {
         let documentInfo = DocumentInfo(
             title: context.title,
             headings: emitter.headings,
-            metadata: metadata(from: registry)
+            metadata: metadata(from: registry),
+            imagesMissingAltText: emitter.imagesMissingAltText
         )
 
         return RenderResult(

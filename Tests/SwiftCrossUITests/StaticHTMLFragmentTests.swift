@@ -683,6 +683,20 @@ struct StaticHTMLFragmentTests {
         #expect(bare.contains("alt=\"\""))
     }
 
+    @Test(
+        "A missing alt is discoverable through documentInfo, since the markup alone can't tell it from an intentional decorative alt"
+    )
+    func missingAltTextIsDiscoverable() {
+        let labelled = StaticHTMLRenderer.render(
+            Self.testImage().htmlAttributes(["alt": "A red square"]),
+            context: "Alt"
+        )
+        #expect(labelled.documentInfo.imagesMissingAltText.isEmpty)
+
+        let bare = StaticHTMLRenderer.render(Self.testImage(), context: "Alt")
+        #expect(bare.documentInfo.imagesMissingAltText == ["Image"])
+    }
+
     // MARK: - Integration
 
     @Test("A page using every surface emits them in the designed source order")

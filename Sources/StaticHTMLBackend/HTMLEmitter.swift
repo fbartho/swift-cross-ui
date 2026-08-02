@@ -77,6 +77,16 @@ public struct HTMLEmitter {
     /// the `Text` case below), so the outline and the markup can never
     /// disagree about what counts as a heading.
     private(set) var headings: [DocumentInfo.Heading] = []
+    /// The view type tag of every `Image` emitted with no author-supplied
+    /// `alt`, in document order.
+    ///
+    /// Populated at the same site that falls back to `alt=""` — see the
+    /// `ImageView` case below — so this list and the emitted markup can never
+    /// disagree about which images went undescribed. Surfaced on
+    /// ``DocumentInfo/imagesMissingAltText`` since no linter can detect the
+    /// fallback by reading the markup itself: an empty `alt` is
+    /// indistinguishable from one an author deliberately set.
+    private(set) var imagesMissingAltText: [String] = []
 
     /// How a parent is positioning one of its children.
     public enum Placement: Hashable, Sendable {
@@ -800,11 +810,15 @@ public struct HTMLEmitter {
                 // other author attribute. Absent that, an empty alt is
                 // still required: it's what marks the image decorative
                 // rather than leaving assistive tech to read the filename
-                // out of a missing attribute.
-                controlAttributes["alt"] = Self.scalarAuthorAttribute(
-                    image.authorAttributes,
-                    "alt"
-                ) ?? ""
+                // out of a missing attribute. See
+                // ``StaticHTMLBackend/ImageView`` for the full policy and
+                // ``DocumentInfo/imagesMissingAltText`` for how a page owner
+                // discovers which images fell to this default.
+                let authorAlt = Self.scalarAuthorAttribute(image.authorAttributes, "alt")
+                controlAttributes["alt"] = authorAlt ?? ""
+                if authorAlt == nil {
+                    imagesMissingAltText.append(image.tag ?? "Image")
+                }
                 // The size the layout system committed is the one the
                 // browser should honor directly, the same reasoning as the
                 // inheritedFrame branch below: a void element sizes itself

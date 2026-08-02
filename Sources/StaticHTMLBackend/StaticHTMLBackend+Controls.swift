@@ -74,6 +74,24 @@ extension StaticHTMLBackend {
     }
 
     /// An image, rendered as an inlined data URL.
+    ///
+    /// ## Alt text policy
+    ///
+    /// `Image` has no accessibility seam of its own — there's no
+    /// `.accessibilityLabel` modifier in SwiftCrossUI yet — so `alt` is only
+    /// ever author-supplied, via `.htmlAttributes(["alt": "…"])`. Any image
+    /// without that modifier emits `alt=""` rather than omitting the
+    /// attribute, which marks it decorative to assistive tech instead of
+    /// leaving a reader to guess at (or a screen reader to read aloud) the
+    /// source filename.
+    ///
+    /// This default is silent and undetectable by any linter: an empty
+    /// `alt` an author deliberately set for a decorative image looks
+    /// identical, in the markup, to one this fallback produced for an image
+    /// that needed a real description. To find every image that fell to the
+    /// default, read ``StaticHTMLRenderer/RenderResult/documentInfo`` →
+    /// ``DocumentInfo/imagesMissingAltText`` after rendering, rather than
+    /// scanning the emitted HTML.
     public class ImageView: Widget {
         public var rgbaData: [UInt8] = []
         public var pixelWidth = 0
