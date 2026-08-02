@@ -80,6 +80,34 @@ public final class StaticHTMLBackend:
         /// ``SlotComponent`` produces; the emitter writes it out in place of
         /// the element it would otherwise have emitted.
         public var rawFragment: HTMLRawFragmentRequest?
+
+        /// Whether this widget's subtree bottoms out at a raw-fragment leaf,
+        /// following single-child wrapping only.
+        ///
+        /// `RawHTMLFragment`/`SlotComponent` produce several levels of
+        /// single-child `Container` (``StrictFrameView``'s `.frame(width: 0,
+        /// height: 0)`, `.transformEnvironment`'s wrapper, the view's own
+        /// boundary) around the leaf that actually carries ``rawFragment``.
+        /// Every one of those ancestors has the same honestly-computed
+        /// `0x0` committed size — the leaf really was told to be that size —
+        /// but that size is meaningless once the wrapper reaches this
+        /// property: the real content the leaf's markup replaces itself
+        /// with has no size on the build host at all (see
+        /// ``RawHTMLFragment``'s documented cost), so an ancestor trusting
+        /// its own committed `0x0` as a real box is what lets the spliced
+        /// content overlap a flex sibling instead of the wrapper
+        /// participating in the parent's layout directly. See
+        /// ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
+        var wrapsRawFragment: Bool {
+            if rawFragment != nil {
+                return true
+            }
+            let children = getChildren()
+            guard children.count == 1 else {
+                return false
+            }
+            return children[0].wrapsRawFragment
+        }
         /// Whether ``View/disabled(_:)`` was in scope when this widget was
         /// updated.
         ///

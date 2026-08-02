@@ -759,6 +759,30 @@ public struct HTMLEmitter {
         indentLevel: Int,
         stretchesUndeclaredAxis: Bool = false
     ) -> String {
+        // A wrapper on the way to a raw-fragment leaf carries its own
+        // honestly-computed 0x0 committed size (the leaf really was told to
+        // be that size, per RawHTMLFragment/SlotComponent's
+        // .frame(width: 0, height: 0)), but that size describes nothing
+        // real: the fragment's actual content has no size on the build host
+        // at all. Every declaredWidth/declaredMaxWidth/etc. branch below
+        // would otherwise turn that 0x0 into a real CSS box — which is
+        // exactly what let the spliced content overlap a flex sibling
+        // instead of the wrapper participating directly in the parent's
+        // layout. display:contents removes the wrapper from layout
+        // entirely, so the child (and, transitively, the fragment's real
+        // content once the browser parses it) becomes a genuine flex item
+        // of whichever ancestor stack this chain sits inside. See
+        // ``StaticHTMLBackend/Widget/wrapsRawFragment``.
+        if container.wrapsRawFragment {
+            style.set("contents", for: "display")
+            return emitChildren(
+                container.children,
+                placement: .flow,
+                indent: indent,
+                indentLevel: indentLevel
+            )
+        }
+
         // A size the author asked for is kept whatever else the container
         // turns out to be. Nothing else about a container's geometry survives
         // into the output, so this is the one place a fixed dimension can come
