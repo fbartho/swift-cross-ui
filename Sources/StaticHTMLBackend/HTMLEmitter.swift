@@ -510,6 +510,125 @@ public struct HTMLEmitter {
                         || rectangle.declaredAspectRatio != nil
                 )
 
+            case let path as StaticHTMLBackend.PathWidget:
+                // A shape reaches the backend as flattened path actions with no
+                // record of which shape view produced them (see
+                // ``StaticHTMLBackend/Path``), so there is nothing to match on
+                // that would let the five built-in shapes become border-radius.
+                // SVG represents the actions themselves, which is also what
+                // makes shapes SwiftCrossUI doesn't ship work without further
+                // cases here.
+                element = .custom("svg")
+                // The path's coordinates are in the committed box's own space,
+                // so the viewBox is that box: the geometry then scales with
+                // whatever width the browser reflows the element to instead of
+                // being pinned to the build host's measurement.
+                controlAttributes["viewBox"] = "0 0 \(path.size.x) \(path.size.y)"
+                controlAttributes["xmlns"] = "http://www.w3.org/2000/svg"
+                // A shape is decorative unless the author says otherwise; an
+                // unlabelled graphic would otherwise be announced as an
+                // unnamed image.
+                if path.authorAttributes["role"] == nil
+                    && path.authorAttributes["aria-label"] == nil
+                {
+                    controlAttributes["aria-hidden"] = "true"
+                }
+                Self.pin(
+                    size: path.size,
+                    in: &style,
+                    placement: placement,
+                    declaredWidth: inheritedFrame?.width,
+                    declaredHeight: inheritedFrame?.height
+                )
+
+                var pathAttributes = ["d": path.pathData]
+                // Shape's default is a clear stroke and a foreground-colored
+                // fill, and a styled shape leaves whichever half the author
+                // didn't set clear (see ``SwiftCrossUI/StyledShape``'s commit).
+                // Writing a fully transparent paint would emit a paint server
+                // that renders nothing under both schemes and interns a class
+                // per unused color, so an invisible half becomes `none`.
+                if let fillColor = path.fillColor, Self.isVisible(fillColor) {
+                    pathAttributes["fill"] = palette.value(for: fillColor)
+                } else {
+                    pathAttributes["fill"] = "none"
+                }
+                if path.fillRule == .evenOdd {
+                    pathAttributes["fill-rule"] = "evenodd"
+                }
+                if path.strokeWidth > 0, let strokeColor = path.strokeColor,
+                   Self.isVisible(strokeColor)
+                {
+                    pathAttributes["stroke"] = palette.value(for: strokeColor)
+                    pathAttributes["stroke-width"] = Self.formatNumber(path.strokeWidth)
+                    pathAttributes["stroke-linecap"] = Self.cssLineCap(path.strokeCap)
+                    pathAttributes["stroke-linejoin"] = Self.cssLineJoin(path.strokeJoin)
+                    if case .miter(let limit) = path.strokeJoin {
+                        pathAttributes["stroke-miterlimit"] = Self.formatNumber(limit)
+                    }
+                }
+                let renderedPathAttributes =
+                    pathAttributes
+                        .sorted { $0.key < $1.key }
+                        .map { name, value in " \(name)=\"\(Self.escape(value))\"" }
+                        .joined()
+                inner = "\n\(indent)  <path\(renderedPathAttributes)/>\n"
+                isRawInner = true
+
+            case let gradient as StaticHTMLBackend.GradientWidget:
+                // Each stop resolves through the palette independently, so a
+                // gradient whose stops differ between schemes rides custom
+                // properties for exactly those stops and literals for the
+                // rest. The whole gradient is one background-image value, and
+                // the interner keys off that string, so two gradients that
+                // agree on geometry and every stop share a class.
+                let stops = gradient.stops
+                    .map { stop in
+                        "\(palette.value(for: stop.color))"
+                            + " \(Self.formatNumber(stop.location * 100))%"
+                    }
+                    .joined(separator: ",")
+                switch gradient.kind {
+                    case .linear(let start, let end):
+                        // CSS measures a linear gradient's angle clockwise from
+                        // "to top", while the view gives two points in a
+                        // y-down space; atan2 of the delta converts between
+                        // them.
+                        let angle = Self.gradientAngle(from: start, to: end)
+                        style.set(
+                            "linear-gradient(\(Self.formatNumber(angle))deg,\(stops))",
+                            for: "background-image"
+                        )
+                    case .radial(let center):
+                        style.set(
+                            "radial-gradient(circle at"
+                                + " \(Self.formatNumber(center.x * 100))%"
+                                + " \(Self.formatNumber(center.y * 100))%,\(stops))",
+                            for: "background-image"
+                        )
+                    case .angular(let center, let startAngle):
+                        style.set(
+                            "conic-gradient(from \(Self.formatNumber(startAngle))deg at"
+                                + " \(Self.formatNumber(center.x * 100))%"
+                                + " \(Self.formatNumber(center.y * 100))%,\(stops))",
+                            for: "background-image"
+                        )
+                }
+                if let ratio = gradient.declaredAspectRatio {
+                    style.set(Self.formatNumber(ratio), for: "aspect-ratio")
+                }
+                // A gradient has no content to size itself from, so its
+                // committed size is the floor for whichever axis nothing else
+                // pinned — the same reasoning as Rectangle above.
+                Self.pin(
+                    size: gradient.size,
+                    in: &style,
+                    placement: placement,
+                    declaredWidth: inheritedFrame?.width,
+                    declaredHeight: inheritedFrame?.height,
+                    hasEnclosingFrame: gradient.declaredAspectRatio != nil
+                )
+
             case let image as StaticHTMLBackend.ImageView:
                 // PNG round-trips the source's RGBA losslessly, which matters
                 // here since there's no author-chosen quality/format to defer
@@ -1324,6 +1443,58 @@ public struct HTMLEmitter {
     /// instead, handled separately above — so it's excluded here to avoid
     /// emitting an attribute the HTML spec doesn't define for it.
     nonisolated static let disablableElementNames: Set<String> = ["button", "input"]
+
+    /// Converts a linear gradient's two unit points into a CSS angle.
+    ///
+    /// CSS measures the angle clockwise from "to top"; the points are in the
+    /// view's y-down space, where the same direction is a negative y delta.
+    ///
+    /// - Parameters:
+    ///   - start: The point the gradient starts at.
+    ///   - end: The point the gradient ends at.
+    /// - Returns: The gradient's direction, in degrees.
+    nonisolated static func gradientAngle(from start: UnitPoint, to end: UnitPoint) -> Double {
+        let deltaX = end.x - start.x
+        let deltaY = end.y - start.y
+        guard deltaX != 0 || deltaY != 0 else {
+            return 180
+        }
+        let degrees = atan2(deltaX, -deltaY) * 180 / .pi
+        let normalized = degrees.truncatingRemainder(dividingBy: 360)
+        return normalized < 0 ? normalized + 360 : normalized
+    }
+
+    /// Whether a color paints anything under either scheme.
+    ///
+    /// - Parameter pair: The color to check.
+    /// - Returns: Whether the color is visible in at least one scheme.
+    nonisolated static func isVisible(_ pair: SchemePair) -> Bool {
+        pair.light.opacity > 0 || pair.dark.opacity > 0
+    }
+
+    /// Maps a stroke cap to its SVG `stroke-linecap` keyword.
+    ///
+    /// - Parameter cap: The cap to map.
+    /// - Returns: The corresponding SVG keyword.
+    nonisolated static func cssLineCap(_ cap: StrokeCap) -> String {
+        switch cap {
+            case .butt: "butt"
+            case .round: "round"
+            case .square: "square"
+        }
+    }
+
+    /// Maps a stroke join to its SVG `stroke-linejoin` keyword.
+    ///
+    /// - Parameter join: The join to map.
+    /// - Returns: The corresponding SVG keyword.
+    nonisolated static func cssLineJoin(_ join: StrokeJoin) -> String {
+        switch join {
+            case .miter: "miter"
+            case .round: "round"
+            case .bevel: "bevel"
+        }
+    }
 
     /// Formats a `Double` the way a numeric HTML attribute expects: no
     /// trailing `.0` for whole numbers, since `min`/`max`/`value` on

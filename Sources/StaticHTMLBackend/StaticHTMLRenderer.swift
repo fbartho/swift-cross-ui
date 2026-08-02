@@ -551,6 +551,39 @@ public enum StaticHTMLRenderer {
                         dark: darkColor.dark
                     )
                 }
+            case (
+            let lightPath as StaticHTMLBackend.PathWidget,
+            let darkPath as StaticHTMLBackend.PathWidget
+        ):
+                if let lightColor = lightPath.fillColor, let darkColor = darkPath.fillColor {
+                    lightPath.fillColor = SchemePair(
+                        light: lightColor.light,
+                        dark: darkColor.dark
+                    )
+                }
+                if let lightColor = lightPath.strokeColor, let darkColor = darkPath.strokeColor {
+                    lightPath.strokeColor = SchemePair(
+                        light: lightColor.light,
+                        dark: darkColor.dark
+                    )
+                }
+            case (
+            let lightGradient as StaticHTMLBackend.GradientWidget,
+            let darkGradient as StaticHTMLBackend.GradientWidget
+        ):
+                guard lightGradient.stops.count == darkGradient.stops.count else {
+                    break
+                }
+                lightGradient.stops = zip(lightGradient.stops, darkGradient.stops)
+                    .map { lightStop, darkStop in
+                        StaticHTMLBackend.GradientStop(
+                            color: SchemePair(
+                                light: lightStop.color.light,
+                                dark: darkStop.color.dark
+                            ),
+                            location: lightStop.location
+                        )
+                    }
             default:
                 break
         }

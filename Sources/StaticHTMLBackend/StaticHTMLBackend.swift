@@ -673,7 +673,7 @@ public final class StaticHTMLBackend:
     ///   - resolved: The color as resolved in this pass.
     ///   - existing: The widget's current pair, if it already has one.
     /// - Returns: The updated pair.
-    private func pair(
+    func pair(
         forResolved resolved: Color.Resolved,
         existing: SchemePair?
     ) -> SchemePair {
