@@ -825,6 +825,22 @@ public struct HTMLEmitter {
             headings.append(headingCandidate)
         }
 
+        // Navigation intent has to reach the document from whatever widget
+        // ended up owning it. The control cases above consume `widget.href`
+        // themselves, because which element a control becomes depends on it
+        // (see the Button emission matrix); everything else — a container the
+        // author wrapped in `.href(_:)`, a `Text`, an `Image` — arrives here
+        // still carrying the request, and an href that reaches no element is
+        // indistinguishable to the author from one that was never written.
+        // `<a>` is legal around flow content, so wrapping is safe for the
+        // container case as well as the leaf one.
+        if widget.href != nil, controlAttributes["href"] == nil, element.name != "a" {
+            element = .custom("a")
+        }
+        if let href = widget.href, controlAttributes["href"] == nil {
+            controlAttributes["href"] = href
+        }
+
         // A void element is replaced content: the browser sizes it from
         // whatever it turns out to reference (an image file, for instance),
         // not from CSS layout. A frame the author declared around one has no

@@ -405,6 +405,54 @@ public enum StaticHTMLRenderer {
             )
         }
 
+        // A `.background()` pair has several children but only one of them is
+        // the view the author wrapped; the other is decoration the modifier
+        // supplied. Ownership follows the content child for the same reason
+        // the single-child case above hands ownership down: an element name,
+        // an href, or an attribute set the author applied outside the pair
+        // was applied to the content, not to the backdrop and not to the
+        // pair. Without this, a single-valued request stops at the pair and
+        // reaches no element at all, since nothing consumes one on a
+        // container.
+        if let contentIndex = contentChildIndex(of: widget),
+           childCoverages.indices.contains(contentIndex),
+           let content = childCoverages[contentIndex].owner
+        {
+            let contentCoverage = childCoverages[contentIndex]
+
+            // A request from outside the pair is in scope for every child, so
+            // the decoration children report it too. Only what a decoration
+            // child reports *beyond* that is genuinely its own — a
+            // `.htmlTag()` applied to the backdrop view itself, say — and
+            // only that gets assigned here. Assigning the shared request as
+            // well would put the author's single element name, or their
+            // single href, on the backdrop and the content both: two elements
+            // for one request, and nested anchors where there should be one.
+            for (index, coverage) in childCoverages.enumerated()
+                where index != contentIndex && !coverage.isEmpty
+            {
+                if let tag = coverage.tag, tag !== contentCoverage.tag {
+                    assign(tag, to: coverage)
+                }
+                if let attributes = coverage.attributes,
+                   attributes !== contentCoverage.attributes
+                {
+                    assign(attributes, to: coverage)
+                }
+                if let href = coverage.href, href !== contentCoverage.href {
+                    assign(href, to: coverage)
+                }
+            }
+
+            return Coverage(
+                owner: content,
+                tag: contentCoverage.tag,
+                attributes: contentCoverage.attributes,
+                href: contentCoverage.href,
+                isEmpty: false
+            )
+        }
+
         // The request this widget owns is the innermost one that covers all of
         // its children. A child that was given its own tag reports that one
         // instead, but the request it shadowed is still in its chain, so the
@@ -443,6 +491,29 @@ public enum StaticHTMLRenderer {
             href: sharedHref,
             isEmpty: false
         )
+    }
+
+    /// The index of the child that is a multi-child wrapper's content, if the
+    /// wrapper has a designated content side at all.
+    ///
+    /// Only ``StaticHTMLBackend/Container/isBackgroundLayering`` pairs qualify
+    /// today: their children are always exactly `[backdrop, content]`, so the
+    /// content is index 1. Every other multi-child container in the backend
+    /// holds peers — a stack's children, a `ForEach`'s rows, the branches of
+    /// a `TupleView` — where no child is more "the" content than its
+    /// siblings, and a request covering all of them belongs to the container.
+    ///
+    /// - Parameter widget: The widget to classify.
+    /// - Returns: The content child's index, or `nil` for a widget whose
+    ///   children are peers.
+    private static func contentChildIndex(of widget: StaticHTMLBackend.Widget) -> Int? {
+        guard let container = widget as? StaticHTMLBackend.Container,
+              container.isBackgroundLayering,
+              container.children.count == 2
+        else {
+            return nil
+        }
+        return 1
     }
 
     /// Finds the innermost request that every one of a widget's children is

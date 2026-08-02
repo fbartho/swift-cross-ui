@@ -2097,4 +2097,158 @@ struct StaticHTMLBackendTests {
             }
         }
     }
+
+    @MainActor
+    @Test("An href applied outside a .background reaches the control it wraps")
+    func hrefReachesControlThroughBackgroundPair() {
+        // A `.background()` pair gives its wrapper two children — backdrop
+        // and content — so a request arriving from outside has no single
+        // child to descend into. Routing it to the content side keeps the
+        // author's href on the Button instead of dropping it and leaving a
+        // dead `<button disabled>` behind.
+        let html = StaticHTMLRenderer.render(
+            Button("Go") {}
+                .padding(8)
+                .background(Color.blue)
+                .href("/y"),
+            context: "Href over background"
+        ).html
+
+        #expect(html.contains("<a "))
+        #expect(html.contains("href=\"/y\""))
+        #expect(html.contains(">Go</a>"))
+        #expect(!html.contains("disabled=\"disabled\""))
+    }
+
+    @MainActor
+    @Test("An href reaches its control through stacked background layers")
+    func hrefReachesControlThroughStackedBackgrounds() {
+        let html = StaticHTMLRenderer.render(
+            Button("Go") {}
+                .padding(8)
+                .background(Color.blue)
+                .cornerRadius(6)
+                .background(Color.red)
+                .href("/deep"),
+            context: "Href over stacked backgrounds"
+        ).html
+
+        #expect(html.contains("href=\"/deep\""))
+        #expect(!html.contains("disabled=\"disabled\""))
+    }
+
+    @MainActor
+    @Test("A tag applied outside a .background lands on the content, not the backdrop")
+    func tagReachesContentThroughBackgroundPair() {
+        let html = StaticHTMLRenderer.render(
+            Text("Titled")
+                .background(Color.blue)
+                .htmlTag(.h2),
+            context: "Tag over background"
+        ).html
+
+        #expect(html.contains("<h2"))
+        #expect(html.contains(">Titled</h2>"))
+    }
+
+    @MainActor
+    @Test("Attributes applied outside a .background land on the content")
+    func attributesReachContentThroughBackgroundPair() {
+        let html = StaticHTMLRenderer.render(
+            Text("Marked")
+                .background(Color.blue)
+                .htmlAttributes(["data-probe": "content"]),
+            context: "Attributes over background"
+        ).html
+
+        #expect(html.contains("data-probe=\"content\""))
+    }
+
+    @MainActor
+    @Test("A background's backdrop survives an href routed to its content")
+    func backgroundBackdropSurvivesHrefRouting() {
+        // Routing the request past the wrapper must not cost the pair its
+        // backdrop — the author asked for a link and a painted box.
+        let html = StaticHTMLRenderer.render(
+            Button("Go") {}
+                .padding(8)
+                .background(Color.blue)
+                .href("/y"),
+            context: "Backdrop with href"
+        ).html
+
+        #expect(html.contains("href=\"/y\""))
+        #expect(html.contains("background-color"))
+    }
+
+    @MainActor
+    @Test("Routing to a background's content leaves the backdrop unmarked")
+    func backgroundBackdropDoesNotAlsoClaimTheRequest() {
+        // A request from outside the pair is in scope for both children, so
+        // the backdrop reports it too. Assigning it there as well would put
+        // the author's one href on two elements — nesting an anchor inside an
+        // anchor — and their one tag on two elements likewise.
+        let href = StaticHTMLRenderer.render(
+            Button("Go") {}.background(Color.blue).href("/y"),
+            context: "Backdrop unmarked"
+        ).html
+        #expect(href.components(separatedBy: "href=\"/y\"").count == 2)
+
+        let tagged = StaticHTMLRenderer.render(
+            Text("Titled").background(Color.blue).htmlTag(.h2),
+            context: "Backdrop untagged"
+        ).html
+        #expect(tagged.components(separatedBy: "<h2").count == 2)
+    }
+
+    @MainActor
+    @Test("A request applied to a background's backdrop stays on the backdrop")
+    func backdropKeepsItsOwnRequest() {
+        // Content-side routing must not swallow a request the author aimed at
+        // the backdrop view itself.
+        let html = StaticHTMLRenderer.render(
+            Text("Content")
+                .background(Color.blue.htmlAttributes(["data-backdrop": "yes"])),
+            context: "Backdrop's own request"
+        ).html
+
+        #expect(html.contains("data-backdrop=\"yes\""))
+    }
+
+    @MainActor
+    @Test("An href covering several siblings reaches the container as a live anchor")
+    func hrefCoveringSiblingsReachesContainer() {
+        // The content-side rule is scoped to wrappers that have a content
+        // side. A stack the author gave several children is not one: its
+        // children are peers, so a request covering all of them belongs to
+        // the container, which becomes the anchor wrapping them.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Text("First")
+                Text("Second")
+            }.href("/both"),
+            context: "Href over siblings"
+        ).html
+
+        #expect(html.contains("href=\"/both\""))
+        #expect(html.contains(">First</"))
+        #expect(html.contains(">Second</"))
+        #expect(html.components(separatedBy: "href=\"/both\"").count == 2)
+    }
+
+    @MainActor
+    @Test("An href on a non-control leaf makes it a live anchor")
+    func hrefOnNonControlLeafEmitsAnchor() {
+        // Only the control cases consume `widget.href` themselves. Anything
+        // else used to carry the request to emission and drop it there, which
+        // is the same silent-loss failure as the wrapper case.
+        let html = StaticHTMLRenderer.render(
+            Text("Plain").href("/t"),
+            context: "Href on text"
+        ).html
+
+        #expect(html.contains("<a "))
+        #expect(html.contains("href=\"/t\""))
+        #expect(html.contains(">Plain</a>"))
+    }
 }
