@@ -23,8 +23,13 @@ struct StaticHTMLBackendTests {
         #expect(html.contains(":where(#root h1, #root h2"))
         #expect(!html.contains("#root :where(h1"))
 
+        // The size itself now rides a custom property (see ``TypeScale``), so
+        // what has to survive the reset is the reference — if the reset won
+        // this tie, the heading would compute to the UA default no matter
+        // what the property resolves to.
         let headingRule = Self.styleRule(forElementContaining: "<h1", in: html)
-        #expect(headingRule?.contains("font-size:26px") == true)
+        #expect(headingRule?.contains("font-size:var(--scui-fs-large-title)") == true)
+        #expect(html.contains("--scui-fs-large-title: 34px;"))
     }
 
     @MainActor

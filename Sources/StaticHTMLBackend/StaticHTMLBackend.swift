@@ -267,7 +267,13 @@ public final class StaticHTMLBackend:
     public var scrollBarWidth = 8
     public var requiresToggleSwitchSpacer = false
     public var requiresImageUpdateOnScaleFactorChange = false
-    public var deviceClass = DeviceClass.desktop
+    // The web anchors to Apple's iOS metrics, not the macOS ones: the macOS
+    // 13pt body is a dense-UI size that reads as too small in a browser, and
+    // Apple's own web properties ship the iOS 17pt body instead. Reporting
+    // .phone is what makes the layout system measure against the same table
+    // ``TypeScale`` emits, so build-host estimates and the browser agree on
+    // which ramp is in play.
+    public var deviceClass = DeviceClass.phone
     public var supportsMultipleWindows = false
     public var supportedPickerStyles: [BackendPickerStyle] = []
     public let canOverrideWindowColorScheme = true
