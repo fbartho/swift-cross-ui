@@ -55,6 +55,49 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test(
+        "A .background() backdrop stretches to the foreground's box instead of pinning to committed px"
+    )
+    func backgroundBackdropStretchesToForegroundBox() {
+        // Task #53: .background() routed its two-child pair (backdrop,
+        // foreground) through the generic overlap-pin path, which bakes
+        // FIXED px width/height from the build-host committed size onto
+        // every child — silently overriding a declared .frame(maxWidth:) on
+        // the foreground (max-width and width both landed on the same
+        // element; width always wins). The fix special-cases the
+        // isBackgroundLayering pair: the foreground keeps flow sizing (and
+        // with it, its own declared constraints), and the backdrop tracks
+        // whatever box that turns out to be via inset:0 instead of baked
+        // coordinates.
+        let html = StaticHTMLRenderer.render(
+            Text("Panel").frame(maxWidth: 400).background(Color.gray),
+            context: "Background stretch",
+            size: SIMD2(1400, 900)
+        ).html
+
+        let wrapperRule = Self.internedRule(containing: "position:relative", in: html)
+        #expect(wrapperRule?.contains("width:") != true)
+        #expect(wrapperRule?.contains("height:") != true)
+
+        let backdropRule = Self.internedRule(containing: "background-color:", in: html)
+        #expect(backdropRule?.contains("inset:0") == true)
+        #expect(backdropRule?.contains("position:absolute") == true)
+        #expect(backdropRule?.contains("width:") != true)
+        #expect(backdropRule?.contains("height:") != true)
+
+        // The foreground's own declared constraint survives untouched —
+        // this is the actual regression: max-width used to be accompanied
+        // by a fixed `width:`, not just `max-width:`, on the same rule (the
+        // FlexibleFrameView wrapper .frame(maxWidth:) emits), and a fixed
+        // width always wins the cascade over a max-width on the same
+        // element. `width:` alone (not `max-width:`, which also contains
+        // the substring "width:") is what would prove the regression.
+        let foregroundRule = Self.internedRule(containing: "max-width:400px", in: html)
+        #expect(foregroundRule?.contains("max-width:400px") == true)
+        #expect(foregroundRule?.contains(" width:") != true)
+    }
+
+    @MainActor
     @Test("A view using .task doesn't crash the one-shot render")
     func taskModifierDoesNotCrash() {
         // .task routes through .onChange(of:initial:) internally
