@@ -60,9 +60,14 @@ extension EnvironmentValues {
 /// The fragment is opaque to everything the backend derives from the tree. It
 /// contributes no headings to the document outline, no accessibility
 /// information, and it has no size on the build host — a zero-size hole in
-/// layout. In flow that's harmless: the browser sizes the real content when it
-/// parses it. Inside an absolutely-positioned subtree it is a lie, and
-/// surrounding geometry will be computed as though the fragment weren't there.
+/// layout. The emitter compensates for this in flow: every wrapper on the
+/// way to the fragment's leaf emits `display:contents` rather than trusting
+/// its own honestly-computed 0x0 as a real box, so the browser sizes the
+/// real content when it parses it and the fragment becomes a genuine
+/// participant in whatever flex arrangement it sits inside, instead of a
+/// zero-size flex item that lets its content spill over a sibling. Inside an
+/// absolutely-positioned subtree it is still a lie, and surrounding geometry
+/// will be computed as though the fragment weren't there.
 ///
 /// Under any other backend this renders nothing at all, so a cross-platform
 /// tree using one needs an author-provided native alternative alongside it.
