@@ -23,6 +23,14 @@ public enum StaticHTMLRenderer {
         /// branching its layout on the color scheme, which makes a single
         /// static document unable to describe both appearances.
         public var geometryMismatches: [GeometryMismatch]
+        /// The document's structured self-description — title, heading
+        /// outline, and registered metadata.
+        ///
+        /// Additive: every value here was already produced somewhere inside
+        /// the render and discarded once emitted into markup. A consumer
+        /// that needs this data (a sitemap builder, say) reads it from here
+        /// instead of parsing `html` back out.
+        public var documentInfo: DocumentInfo
     }
 
     /// A geometry difference observed between the two color scheme passes.
@@ -105,7 +113,48 @@ public enum StaticHTMLRenderer {
             emitter: emitter
         )
 
-        return RenderResult(html: html, size: light.size, geometryMismatches: mismatches)
+        let documentInfo = DocumentInfo(
+            title: context.title,
+            headings: emitter.headings,
+            metadata: metadata(from: registry)
+        )
+
+        return RenderResult(
+            html: html,
+            size: light.size,
+            geometryMismatches: mismatches,
+            documentInfo: documentInfo
+        )
+    }
+
+    /// Derives ``DocumentInfo/metadata`` from every `.meta` item the render
+    /// registered.
+    ///
+    /// Reads the registry directly rather than re-deriving from
+    /// `context.items`, since a component contributing a meta tag through the
+    /// view tree is exactly as much "the document's metadata" as one the page
+    /// owner declared on ``DocumentContext`` — the registry is where both
+    /// already converge, deduplicated.
+    ///
+    /// - Parameter registry: The registry the render populated.
+    /// - Returns: The registered meta tags' `content` values, keyed by the
+    ///   standard key matching their `name`/`property` attribute where one
+    ///   exists.
+    private static func metadata(from registry: HTMLFragmentRegistry) -> [DocumentInfoKey: String] {
+        var metadata: [DocumentInfoKey: String] = [:]
+        for item in registry.allItems {
+            guard case .meta(let attributes) = item.content, let content = attributes["content"]
+            else {
+                continue
+            }
+            for attributeName in ["name", "property"] {
+                guard let rawName = attributes[attributeName] else {
+                    continue
+                }
+                metadata[.standardOrCustom(rawName)] = content
+            }
+        }
+        return metadata
     }
 
     /// Renders a view to a complete HTML document with a default context.

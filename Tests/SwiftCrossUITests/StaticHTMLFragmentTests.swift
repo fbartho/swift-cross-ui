@@ -457,6 +457,81 @@ struct StaticHTMLFragmentTests {
         #expect(html.contains("data-scui-head-id=\"url:/js/widget.js\""))
     }
 
+    // MARK: - documentInfo
+
+    @Test("The heading outline captures every derived heading, in document order")
+    func documentInfoCapturesHeadingOutline() {
+        let view = VStack {
+            Text("Title").font(.largeTitle)
+            Text("Section").font(.title)
+            Text("Subsection").font(.title2)
+            Text("Body")
+        }
+        let info = StaticHTMLRenderer.render(view, title: "Outline").documentInfo
+
+        #expect(
+            info.headings == [
+                DocumentInfo.Heading(level: 1, text: "Title"),
+                DocumentInfo.Heading(level: 2, text: "Section"),
+                DocumentInfo.Heading(level: 3, text: "Subsection"),
+            ]
+        )
+    }
+
+    @Test("An explicit tag overriding a derived heading excludes it from the outline")
+    func documentInfoOutlineRespectsExplicitOverride() {
+        let view = VStack {
+            Text("Real heading").font(.largeTitle)
+            Text("Not a heading").font(.title).htmlTag(.p)
+        }
+        let info = StaticHTMLRenderer.render(view, title: "Override").documentInfo
+
+        #expect(info.headings == [DocumentInfo.Heading(level: 1, text: "Real heading")])
+    }
+
+    @Test("Registered meta items map standard names onto standard keys")
+    func documentInfoMapsStandardMetaNames() {
+        let context = DocumentContext(
+            title: "Metadata",
+            items: [
+                FragmentItem(.meta(["name": "description", "content": "A page."]), slot: .head),
+                FragmentItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
+                FragmentItem(
+                    .meta(["property": "og:type", "content": "article"]),
+                    slot: .head
+                ),
+            ]
+        )
+        let info = StaticHTMLRenderer.render(Text("Body"), context: context).documentInfo
+
+        #expect(info.metadata[.description] == "A page.")
+        #expect(info.metadata[.author] == "fbartho")
+        #expect(info.metadata[.custom("og:type")] == "article")
+    }
+
+    @Test("Title flows through from the document context unchanged")
+    func documentInfoTitleFlowsThrough() {
+        let info = StaticHTMLRenderer.render(Text("Body"), title: "A Specific Title").documentInfo
+        #expect(info.title == "A Specific Title")
+    }
+
+    @Test("A page with no headings or metadata yields an empty outline and empty metadata")
+    func documentInfoEmptyPageShape() {
+        let info = StaticHTMLRenderer.render(Text("Just body text"), title: "Plain").documentInfo
+
+        #expect(info.title == "Plain")
+        #expect(info.headings.isEmpty)
+        #expect(info.metadata.isEmpty)
+    }
+
+    @Test("DocumentInfoKey maps unrecognized raw names to .custom")
+    func documentInfoKeyStandardOrCustom() {
+        #expect(DocumentInfoKey.standardOrCustom("description") == .description)
+        #expect(DocumentInfoKey.standardOrCustom("author") == .author)
+        #expect(DocumentInfoKey.standardOrCustom("canonical") == .canonicalURL)
+        #expect(DocumentInfoKey.standardOrCustom("og:image") == .custom("og:image"))
+    }
+
     // MARK: - Helpers
 
     /// A 2x2 image, small enough to keep encoded output tiny.

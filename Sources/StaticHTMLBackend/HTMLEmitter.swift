@@ -65,6 +65,13 @@ public struct HTMLEmitter {
     /// Collected during emission so the renderer can report a declared slot
     /// whose items would otherwise be silently dropped.
     private(set) var encounteredSlots: Set<String> = []
+    /// The document's heading outline, collected in document order as
+    /// ``HeadingMap`` derives each heading element.
+    ///
+    /// Populated from the same signal that decides the emitted element (see
+    /// the `Text` case below), so the outline and the markup can never
+    /// disagree about what counts as a heading.
+    private(set) var headings: [DocumentInfo.Heading] = []
 
     /// How a parent is positioning one of its children.
     public enum Placement: Hashable, Sendable {
@@ -209,6 +216,12 @@ public struct HTMLEmitter {
         var role: String?
         var inner = ""
         var isRawInner = false
+        // Set when this widget's declared text style implied a heading
+        // element — recorded provisionally, appended to `headings` after the
+        // explicit-tag override below is resolved, so the outline agrees
+        // with what's actually emitted rather than with this intermediate
+        // guess.
+        var headingCandidate: DocumentInfo.Heading?
         // Attributes a control case needs beyond what every widget already
         // gets (role, data-scui, class, ...) — checked/value/min/max/etc.
         // Kept separate from `attributes` below so author attributes are
@@ -271,6 +284,13 @@ public struct HTMLEmitter {
                 // for, so it outranks the generic span.
                 if let derived = headingMap.element(for: text.declaredFont) {
                     element = derived
+                    // Recorded provisionally — an explicit .htmlTag() override
+                    // below can still replace `element`, and the outline
+                    // should agree with what's actually emitted rather than
+                    // with this intermediate guess.
+                    if let level = derived.headingLevel {
+                        headingCandidate = DocumentInfo.Heading(level: level, text: text.content)
+                    }
                 }
 
             case let button as StaticHTMLBackend.Button:
@@ -539,6 +559,9 @@ public struct HTMLEmitter {
         // An explicit tag is the author overriding everything above.
         if let explicit = widget.explicitElement, explicit.isValid {
             element = explicit
+        }
+        if let headingCandidate, element.headingLevel == headingCandidate.level {
+            headings.append(headingCandidate)
         }
 
         // A void element is replaced content: the browser sizes it from
