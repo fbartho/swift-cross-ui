@@ -1552,6 +1552,38 @@ public struct HTMLEmitter {
     /// where the row breaks.
     private static let minimumDetailWidth = 320
 
+    /// Finds the widget an author's `.htmlTag(_:)`/`.htmlAttributes(_:)` on a
+    /// pane's root view actually resolved onto.
+    ///
+    /// `StaticHTMLRenderer.resolveIntent` hoists a request past any
+    /// transparent single-child wrapper on its way up the tree, so the
+    /// request lands on the innermost real content — several layers below
+    /// the plain container ``StaticHTMLBackend/SplitViewWidget/leadingChild``/
+    /// ``StaticHTMLBackend/SplitViewWidget/trailingChild`` actually is. This
+    /// walks back down the same chain the resolver walked up: as long as a
+    /// widget has exactly one child, that child is where a request applied to
+    /// this widget's position would have ended up, so it's also where one
+    /// meant for the wrapper has to be read from. A widget with zero or
+    /// multiple children is a real content boundary — the walk stops there,
+    /// same as the resolver's own unwrap rule.
+    ///
+    /// - Parameter widget: The pane's widget, as received from
+    ///   ``StaticHTMLBackend/SplitViewWidget``.
+    /// - Returns: The widget carrying whatever request the pane's root view
+    ///   declared.
+    private static func resolvedPaneOwner(
+        _ widget: StaticHTMLBackend.Widget
+    ) -> StaticHTMLBackend.Widget {
+        var current = widget
+        while true {
+            let children = current.getChildren()
+            guard children.count == 1 else {
+                return current
+            }
+            current = children[0]
+        }
+    }
+
     /// Emits one pane of a split view, wrapped in its own landmark element.
     ///
     /// The wrapper is the backend's, not the view's: the pane containers the
@@ -1560,9 +1592,19 @@ public struct HTMLEmitter {
     /// screen reader gets a navigable `<nav>`/`<main>` pair out of it, which is
     /// the accessibility win the static tier is positioned to deliver.
     ///
-    /// An author's own `.htmlTag()` on the pane content still emits inside this
-    /// wrapper and is untouched by it, so this adds a landmark rather than
-    /// overriding a declared one.
+    /// The wrapper's own element and `aria-label` are reachable through the
+    /// same author levers as everywhere else: `.htmlTag(_:)` on the pane's
+    /// root view overrides `<nav>`/`<main>` (e.g. demoting a second `<main>`
+    /// to `<section>` so a page keeps exactly one), and
+    /// `.htmlAttributes(["aria-label": …])` labels the landmark — needed
+    /// when a page has more than one `<nav>`, since two unlabelled landmarks
+    /// of the same kind aren't distinguishable to assistive tech. Both are
+    /// read from wherever ``resolvedPaneOwner(_:)`` says the request actually
+    /// landed, and consumed there rather than left to also reach an inner
+    /// element the author never asked to tag.
+    ///
+    /// Any other author attribute on the pane's root view still emits inside
+    /// this wrapper, untouched by it.
     ///
     /// - Parameters:
     ///   - pane: The pane's widget.
@@ -1584,11 +1626,24 @@ public struct HTMLEmitter {
         // panes are full-width and the page scrolls instead, so this is scoped
         // to the axis that can actually overflow.
         style.set("auto", for: "overflow-y")
-        let element = role == .sidebar ? "nav" : "main"
+
+        let requestOwner = Self.resolvedPaneOwner(pane)
+
+        var element = role == .sidebar ? "nav" : "main"
+        if let explicit = requestOwner.explicitElement, explicit.isValid {
+            element = explicit.name
+            requestOwner.explicitElement = nil
+        }
+
         var attributes = ""
         if let className = interner.className(for: style) {
             attributes = " class=\"\(className)\""
         }
+        if let ariaLabel = Self.scalarAuthorAttribute(requestOwner.authorAttributes, "aria-label") {
+            attributes += " aria-label=\"\(Self.escape(ariaLabel))\""
+            requestOwner.authorAttributes["aria-label"] = nil
+        }
+
         let inner = emit(pane, at: .zero, placement: .flow, indentLevel: indentLevel + 1)
         return "\(indent)<\(element)\(attributes)>\n\(inner)\n\(indent)</\(element)>"
     }

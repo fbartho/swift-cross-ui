@@ -2686,4 +2686,80 @@ struct StaticHTMLAccessibilityTests {
         #expect(html.contains("data-scui=\"TupleView1\""))
         #expect(html.contains("align-self:stretch"))
     }
+
+    @MainActor
+    @Test("A split view's panes default to an unlabelled nav/main pair")
+    func splitViewPanesDefaultToNavMain() {
+        let html = StaticHTMLRenderer.render(
+            NavigationSplitView(
+                sidebar: { Text("Sidebar") },
+                detail: { Text("Detail") }
+            ),
+            context: "Split view defaults"
+        ).html
+
+        #expect(html.components(separatedBy: "<nav").count - 1 == 1)
+        #expect(html.components(separatedBy: "<main").count - 1 == 1)
+        #expect(!html.contains("aria-label"))
+    }
+
+    @MainActor
+    @Test("aria-label on a pane's root view labels the pane's landmark")
+    func paneAriaLabelReachesTheLandmark() {
+        let html = StaticHTMLRenderer.render(
+            NavigationSplitView(
+                sidebar: { Text("Sidebar").htmlAttributes(["aria-label": "Primary"]) },
+                detail: { Text("Detail") }
+            ),
+            context: "Pane label"
+        ).html
+
+        let navLine = html.split(separator: "\n").first { $0.contains("<nav") }
+        #expect(navLine?.contains("aria-label=\"Primary\"") == true)
+        // The label reaches the landmark instead of also duplicating onto an
+        // inner wrapper — a second copy would still leave an unlabelled
+        // ancestor/descendant pair, which is exactly the redundancy this
+        // lever is meant to avoid.
+        #expect(html.components(separatedBy: "aria-label").count - 1 == 1)
+    }
+
+    @MainActor
+    @Test("htmlTag on a pane's root view overrides its landmark element")
+    func paneHtmlTagOverridesTheLandmark() {
+        let html = StaticHTMLRenderer.render(
+            NavigationSplitView(
+                sidebar: { Text("Sidebar") },
+                detail: { Text("Detail").htmlTag(.section) }
+            ),
+            context: "Pane tag override"
+        ).html
+
+        // The detail pane demoted itself to <section>, so the page keeps
+        // exactly one <main> even though a split view always has two panes.
+        #expect(html.components(separatedBy: "<main").count - 1 == 0)
+        #expect(html.components(separatedBy: "<section").count - 1 == 1)
+        #expect(html.components(separatedBy: "<nav").count - 1 == 1)
+    }
+
+    @MainActor
+    @Test("A pane's tag override and aria-label don't also land on an inner wrapper")
+    func paneLeversDontDoubleApplyToInnerContent() {
+        let html = StaticHTMLRenderer.render(
+            NavigationSplitView(
+                sidebar: {
+                    Text("Sidebar")
+                        .htmlTag(.section)
+                        .htmlAttributes(["aria-label": "Primary"])
+                },
+                detail: { Text("Detail") }
+            ),
+            context: "Pane lever consumption"
+        ).html
+
+        // Consumed by the wrapper: one <section>, not a <section> inside a
+        // <nav>, and one aria-label, not two.
+        #expect(html.components(separatedBy: "<section").count - 1 == 1)
+        #expect(html.components(separatedBy: "<nav").count - 1 == 0)
+        #expect(html.components(separatedBy: "aria-label").count - 1 == 1)
+    }
 }
