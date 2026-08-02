@@ -71,9 +71,9 @@ extension EnvironmentValues {
     /// has a print context to report, so there is no live-tier answer this
     /// default falls short of. The CSS half is real regardless:
     /// `@media print`, evaluated by the browser only inside an actual print
-    /// preview, independent of whatever this environment value says. Task
-    /// #26 flagged the resume builder as the use case that wants this
-    /// (print-specific layout/spacing tightening); the CSS condition alone
-    /// covers that without needing the environment value to ever be `true`.
+    /// preview, independent of whatever this environment value says. The
+    /// motivating use case — a resume builder tightening layout and spacing
+    /// for print — is served by that CSS condition alone, without this
+    /// environment value ever needing to be `true`.
     @Entry public var printActive: Bool = false
 }

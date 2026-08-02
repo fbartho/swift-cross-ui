@@ -261,14 +261,14 @@ struct StaticHTMLFragmentTests {
         "A raw fragment's wrapper chain emits display:contents, so it doesn't overlap flex siblings"
     )
     func rawFragmentWrapperDoesNotOverlapFlexSiblings() {
-        // Task #54: RawHTMLFragment's leaf carries a real 0x0 committed
-        // size (`.frame(width: 0, height: 0)`), which every ancestor
-        // wrapper on the way to it (the view's own boundary,
-        // .transformEnvironment) also honestly reports. That's true in
-        // block flow — the browser sizes the real content when it parses
-        // it — but inside this backend's flex-based stacks a width:0;
-        // height:0 flex item doesn't push siblings aside, so the spliced
-        // content visually overlaps the next sibling. display:contents on
+        // RawHTMLFragment's leaf carries a real 0x0 committed size
+        // (`.frame(width: 0, height: 0)`), which every ancestor wrapper on
+        // the way to it (the view's own boundary, .transformEnvironment)
+        // also honestly reports. That's harmless in block flow — the
+        // browser sizes the real content when it parses it — but inside
+        // this backend's flex-based stacks a width:0;height:0 flex item
+        // doesn't push siblings aside, so the spliced content would
+        // visually overlap the next sibling. display:contents on
         // every wrapper in the chain removes them from layout entirely, so
         // the fragment's real content becomes a genuine flex item instead.
         let html = StaticHTMLRenderer.render(

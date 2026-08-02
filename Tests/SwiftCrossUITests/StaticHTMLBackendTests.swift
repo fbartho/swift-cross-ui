@@ -35,13 +35,13 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A .background() Color sibling doesn't displace an ancestor's tag")
     func backgroundColorSiblingDoesNotDisplaceAncestorTag() {
-        // Before a Color leaf could carry pendingTagRequest, it reported no
-        // request at all, which reads as "not covered by anything" — and one
-        // uncovered child is enough to rule out every candidate tag for the
-        // whole subtree (see deepestCommonRequest). A .background(Color(...))
-        // introduces exactly one such sibling, so it used to knock the tag
-        // off the container it was applied to and take any derived headings
-        // down with it.
+        // A Color leaf has to carry pendingTagRequest. A leaf reporting no
+        // request at all reads as "not covered by anything", and one
+        // uncovered child rules out every candidate tag for the whole
+        // subtree (see deepestCommonRequest) — so a .background(Color(...)),
+        // which introduces exactly one such sibling, would otherwise knock
+        // the tag off the container it was applied to and take any derived
+        // headings with it.
         let view = VStack {
             Text("Title").font(.largeTitle)
             Text("Code block").background(Color.gray)
@@ -59,16 +59,15 @@ struct StaticHTMLBackendTests {
         "A .background() backdrop stretches to the foreground's box instead of pinning to committed px"
     )
     func backgroundBackdropStretchesToForegroundBox() {
-        // Task #53: .background() routed its two-child pair (backdrop,
-        // foreground) through the generic overlap-pin path, which bakes
-        // FIXED px width/height from the build-host committed size onto
-        // every child — silently overriding a declared .frame(maxWidth:) on
-        // the foreground (max-width and width both landed on the same
-        // element; width always wins). The fix special-cases the
-        // isBackgroundLayering pair: the foreground keeps flow sizing (and
-        // with it, its own declared constraints), and the backdrop tracks
-        // whatever box that turns out to be via inset:0 instead of baked
-        // coordinates.
+        // .background()'s two-child pair (backdrop, foreground) must not go
+        // through the generic overlap-pin path, which bakes FIXED px
+        // width/height from the build-host committed size onto every child
+        // and so silently overrides a declared .frame(maxWidth:) on the
+        // foreground (max-width and width land on the same element, and a
+        // fixed width always wins). The isBackgroundLayering pair is
+        // special-cased instead: the foreground keeps flow sizing, and with
+        // it its own declared constraints, while the backdrop tracks
+        // whatever box that turns out to be via inset:0.
         let html = StaticHTMLRenderer.render(
             Text("Panel").frame(maxWidth: 400).background(Color.gray),
             context: "Background stretch",
@@ -85,13 +84,12 @@ struct StaticHTMLBackendTests {
         #expect(backdropRule?.contains("width:") != true)
         #expect(backdropRule?.contains("height:") != true)
 
-        // The foreground's own declared constraint survives untouched —
-        // this is the actual regression: max-width used to be accompanied
-        // by a fixed `width:`, not just `max-width:`, on the same rule (the
-        // FlexibleFrameView wrapper .frame(maxWidth:) emits), and a fixed
-        // width always wins the cascade over a max-width on the same
-        // element. `width:` alone (not `max-width:`, which also contains
-        // the substring "width:") is what would prove the regression.
+        // The foreground's own declared constraint has to survive untouched.
+        // A fixed `width:` accompanying the `max-width:` on the same rule
+        // (the one the FlexibleFrameView wrapper emits for .frame(maxWidth:))
+        // would win the cascade and defeat it. Matching on ` width:` rather
+        // than `width:` is deliberate — the latter also matches inside
+        // "max-width:".
         let foregroundRule = Self.internedRule(containing: "max-width:400px", in: html)
         #expect(foregroundRule?.contains("max-width:400px") == true)
         #expect(foregroundRule?.contains(" width:") != true)
@@ -100,16 +98,15 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A .background() backdrop paints behind the foreground, not over it")
     func backgroundBackdropPaintsBehindForeground() {
-        // Task #58: the #53 backdrop is positioned (inset:0) while the
-        // foreground stayed in normal flow, and a positioned element paints
-        // above unpositioned in-flow siblings regardless of tree order (CSS
-        // 2.1 Appendix E, step 8 vs steps 4 and 7). Every geometry assertion
-        // in the #53 test still passed while the rendered page was blank,
-        // which is why this asserts paint order specifically.
+        // The backdrop is positioned (inset:0) while the foreground stays in
+        // normal flow, and a positioned element paints above unpositioned
+        // in-flow siblings regardless of tree order (CSS 2.1 Appendix E,
+        // step 8 vs steps 4 and 7). Geometry assertions alone can all pass
+        // on a page that renders blank, so paint order is asserted directly.
         //
         // Browser-verified with elementFromPoint over the text (see
-        // Scripts/check-paint-order.mjs): before the fix the hit was the
-        // backdrop Color div, after it the Text span.
+        // Scripts/check-paint-order.mjs): the hit is the Text span, not the
+        // backdrop Color div.
         let html = StaticHTMLRenderer.render(
             Text("Panel").background(Color.gray),
             context: "Background paint order",
@@ -130,9 +127,10 @@ struct StaticHTMLBackendTests {
     @Test("A ZStack's top layer still paints last, since both layers stay positioned")
     func zStackTopLayerPaintsLast() {
         // The overlap-pin path (both children position:absolute, no z-index)
-        // is untouched by task #58's backdrop fix: equal-level positioned
-        // siblings paint in tree order, so the last child wins. Asserted so
-        // a future z-index added to that path can't silently invert it.
+        // is separate from the backdrop-layering path: equal-level
+        // positioned siblings paint in tree order, so the last child wins.
+        // Asserted so a future z-index added to that path can't silently
+        // invert it.
         let html = StaticHTMLRenderer.render(
             ZStack {
                 Color.gray.frame(width: 300, height: 100)
@@ -361,14 +359,14 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("An empty if-without-else sibling doesn't push a container's tag onto its lone child")
     func emptyOptionalSiblingDoesNotDisplaceContainerTag() {
-        // hoistRequests used to treat "exactly one populated child" as proof
-        // that a container was a transparent modifier wrapper, but an
-        // if-without-else that evaluated false produces exactly that shape
-        // too: a real container with a genuine child, plus an empty
-        // OptionalView contributing nothing. The tag the author put on the
-        // container was hoisted straight past it onto the lone survivor,
-        // costing the container its own element and displacing the
-        // survivor's derived heading.
+        // hoistRequests must not treat "exactly one populated child" as proof
+        // that a container is a transparent modifier wrapper: an
+        // if-without-else that evaluates false produces exactly that shape
+        // too — a real container with a genuine child, plus an empty
+        // OptionalView contributing nothing. Hoisting there would carry the
+        // author's tag past the container onto the lone survivor, costing
+        // the container its own element and displacing the survivor's
+        // derived heading.
         let view = VStack {
             Text("Title").font(.title)
             if false {
@@ -586,18 +584,15 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A flexible frame's min/max constraints become CSS min/max, not a fixed size")
     func flexibleFrameReportsMinMaxConstraints() {
-        // Only StrictFrameView (.frame(width:height:)) used to report through
-        // describeFrame; FlexibleFrameView (.frame(minWidth:...)) silently
-        // dropped its constraints in flow emission — the same
-        // declared-intent-inversion bug class StrictFrameView had before
-        // describeFrame existed.
+        // FlexibleFrameView (.frame(minWidth:…)) has to report through
+        // describeFrame just as StrictFrameView (.frame(width:height:))
+        // does; otherwise its constraints drop silently in flow emission.
         //
         // No .htmlTag() here: a frame wrapping a single child is exactly the
-        // shape that gets hoisted onto its child (see task #17), so an
-        // explicit tag would land on the Text leaf, not on the frame's own
-        // div — the interned stylesheet is checked directly instead, since
-        // the frame's declared class exists whichever element ends up
-        // wearing the tag.
+        // shape that gets hoisted onto its child, so an explicit tag would
+        // land on the Text leaf rather than the frame's own div. The
+        // interned stylesheet is checked directly instead, since the frame's
+        // declared class exists whichever element ends up wearing the tag.
         let view = Text("Flexible")
             .frame(minWidth: 100, maxWidth: 300, minHeight: 50, maxHeight: 200)
         let html = StaticHTMLRenderer.render(view, context: "Flexible frame").html
@@ -706,9 +701,9 @@ struct StaticHTMLBackendTests {
     func imageViewEmitsInlinedPNG() {
         // Distinct from the escape-hatch tests above: those presume an
         // author-written <img src> already exists via .htmlTag/.htmlAttributes.
-        // This exercises the actual Image(_:) view, which previously had no
-        // HTMLEmitter case at all and fell through to an empty div — see
-        // sweep finding G2.
+        // This exercises the actual Image(_:) view, which needs its own
+        // HTMLEmitter case — without one it falls through to an empty div
+        // and the image content is lost entirely.
         let source = ImageFormats.Image<RGBA>(
             width: 2,
             height: 2,
@@ -821,10 +816,10 @@ struct StaticHTMLBackendTests {
     /// Finds the interned style rule containing `marker`, without going
     /// through an element's `class` attribute first.
     ///
-    /// Useful when the element carrying the rule isn't the one under test —
-    /// hoisting (see task #17) can move an explicit tag off a wrapper and
-    /// onto its single child, leaving the wrapper's own class undiscoverable
-    /// from its tag alone.
+    /// Useful when the element carrying the rule isn't the one under test:
+    /// hoisting can move an explicit tag off a wrapper and onto its single
+    /// child, leaving the wrapper's own class undiscoverable from its tag
+    /// alone.
     private static func internedRule(containing marker: String, in html: String) -> String? {
         html.split(separator: "\n").first { $0.contains(marker) }.map(String.init)
     }
@@ -921,11 +916,11 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("An action-only button loads disabled and marked for enlivening")
     func emitsActionOnlyButtonAsDisabledButton() {
-        // Tier-activation principle (task #29): a click action has nothing
-        // pure HTML/CSS can resolve, so the button loads inert — a real
-        // <button disabled>, not the old <a role="button" href="#">, which
-        // used to look reachable to a keyboard, crawler, or assistive
-        // technology exactly like a working control would.
+        // Tier-activation principle: a click action has nothing pure
+        // HTML/CSS can resolve, so the button loads inert — a real
+        // <button disabled>, never an <a role="button" href="#">, which
+        // would look reachable to a keyboard, crawler, or assistive
+        // technology exactly like a working control.
         let html = StaticHTMLRenderer.render(Button("Press") {}, context: "Buttons").html
 
         #expect(html.contains("<button "))
@@ -1021,9 +1016,9 @@ struct StaticHTMLBackendTests {
     func emitsCheckboxAsInput() {
         // Checkbox itself is an internal type, only reachable through
         // Toggle's .checkbox style. Uniform-application consequence of the
-        // tier-activation principle (task #29): its binding is dead without
-        // a runtime, so it loads disabled + enlivened like every other
-        // form control, even though nothing here called .disabled(true).
+        // tier-activation principle: its binding is dead without a runtime,
+        // so it loads disabled + enlivened like every other form control,
+        // even though nothing here called .disabled(true).
         // The checked/aria-checked *display* is still real.
         let html = StaticHTMLRenderer.render(
             Toggle("Subscribe", isOn: Self.box(true)).toggleStyle(.checkbox),
@@ -1334,11 +1329,11 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("Spacer gets flex:1 1 0%, not the empty class it used to carry")
+    @Test("Spacer gets flex:1 1 0%, not an empty class")
     func spacerEmitsFlexGrow() {
-        // Sweep finding G7: Spacer's committed Container widget carried no
-        // class at all — no flex-grow, no flex-basis — so in a flex row it
-        // collapsed and its siblings sat adjacent instead of pushed apart.
+        // Spacer's committed Container widget has to carry flex-grow and
+        // flex-basis; with an empty class it collapses in a flex row and its
+        // siblings sit adjacent instead of being pushed apart.
         // Spacer has no dedicated Widget subclass, so recognising it here
         // relies on ``BackendFeatures/Widgets/describeSpacer(of:)`` (task
         // #32), which is also what the real layoutPriority(-infinity)
@@ -1430,14 +1425,13 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("Divider stretches via flex, not a pinned min-width that would overflow")
     func dividerStretchesWithoutOverflowing() {
-        // Sweep finding G8: Divider's un-declared axis (Divider only
-        // declares .frame(height: 1); width is intentionally left to the
-        // layout system) used to inherit a min-width pinned to whatever the
-        // layout system's stretch-to-fill happened to compute at this one
-        // render width — min-width:800px in the sweep's probe — which
-        // overflows any narrower viewport.
+        // Divider's un-declared axis (Divider only declares
+        // .frame(height: 1); width is intentionally left to the layout
+        // system) must not inherit a min-width pinned to whatever
+        // stretch-to-fill computed at this one render width — such a
+        // min-width overflows every narrower viewport.
         //
-        // The fix chains flex stretch from the widget
+        // Stretch is chained instead, from the widget
         // ``BackendFeatures/Widgets/describeDivider(of:)`` marks down to the
         // leaf, three wrappers deep (Divider → StrictFrameView → Color),
         // because
@@ -1454,12 +1448,11 @@ struct StaticHTMLBackendTests {
         //   - The Color leaf itself needs no CSS of its own on that axis:
         //     flex's default align-items is already stretch, so simply not
         //     emitting a competing min-width lets it fill.
-        // An earlier version of this fix used width:100% on the leaf
-        // instead — that only works if every ancestor's own width has
-        // already resolved to something non-zero, which silently fails
-        // through however many wrapper levels shrink-wrap by default; this
-        // was caught by rendering the actual output in a browser and
-        // measuring computed widths, not just inspecting the CSS text.
+        // width:100% on the leaf is not a substitute: it only works if every
+        // ancestor's own width has already resolved to something non-zero,
+        // and it fails silently through however many wrapper levels
+        // shrink-wrap by default. Distinguishing the two needs computed
+        // widths measured in a browser, not an inspection of the CSS text.
         let html = StaticHTMLRenderer.render(
             VStack {
                 Text("Above")
@@ -1541,20 +1534,14 @@ struct StaticHTMLBackendTests {
         "aspectRatio emits CSS aspect-ratio so the undeclared axis scales proportionally under reflow"
     )
     func aspectRatioEmitsProportionalCSS() {
-        // Sweep finding G9 originally expected literal CSS aspect-ratio:
-        // output; task #22's investigation found AspectRatioModifier is a
-        // pure layout-proposal transform with no widget of its own, and
-        // documented the committed 300x150 size (2:1 at width:300) as the
-        // correct and complete translation — matching the "committed
-        // geometry is correct given an explicit frame" reasoning already
-        // established for GeometryReader/ScrollView.
-        //
-        // Task #32 supersedes that: under this emitter's reflow philosophy
-        // (everything else here re-derives from declared intent at every
-        // width, not just the one the build host proposed), a declared
-        // ratio on flexible-width content has to scale proportionally in
-        // the browser too, or it silently stops being 2:1 the moment the
-        // reader resizes. ``BackendFeatures/Widgets/describeAspectRatio(of:ratio:contentMode:)``
+        // AspectRatioModifier is a pure layout-proposal transform with no
+        // widget of its own, so emitting its committed size (300x150, i.e.
+        // 2:1 at width:300) would be exact only at the width the build host
+        // proposed. Under this emitter's reflow philosophy — everything here
+        // re-derives from declared intent at every width — a declared ratio
+        // on flexible-width content has to scale proportionally in the
+        // browser, or it silently stops being 2:1 the moment the reader
+        // resizes. ``BackendFeatures/Widgets/describeAspectRatio(of:ratio:contentMode:)``
         // carries the author's ratio to the backend for exactly this case;
         // AspectRatioView.commit calls it with `nil` when the view instead
         // adopted its child's own ideal ratio (no explicit value given),
@@ -1583,8 +1570,8 @@ struct StaticHTMLBackendTests {
         "Responsive environment values default honestly for a one-shot build-host render"
     )
     func responsiveEnvironmentValuesCarryDocumentedStaticDefaults() {
-        // Task #26: reducedMotion, pointerCapability, and printActive are
-        // the MEASURING-tier halves of future GeometrySelector.Condition
+        // reducedMotion, pointerCapability, and printActive are the
+        // MEASURING-tier halves of future GeometrySelector.Condition
         // cases — populated where a runtime CAN know them, which
         // StaticHTMLBackend never can (it's always a one-shot build-host
         // render with no reader to ask). This locks in the documented
@@ -1636,12 +1623,11 @@ struct StaticHTMLBackendTests {
         // The frame sets the measure; it doesn't stop the text flowing inside
         // it, and its leftover space must not be read back as padding — but
         // scoped to the interner's own class-rule syntax (`property:value`,
-        // no space, semicolon-separated within one `{ }` block), which
-        // distinguishes a real regression from task #29's button/input
-        // reset. That reset legitimately declares its own `padding: 0;`
+        // no space, semicolon-separated within one `{ }` block). The
+        // button/input reset legitimately declares its own `padding: 0;`
         // (spaced, standalone CSS, not an interned class) in every
-        // document's global stylesheet, which a bare "padding" substring
-        // search would also catch.
+        // document's global stylesheet, so a bare "padding" substring search
+        // would match that too.
         #expect(!html.contains("position:absolute"))
         #expect(!html.contains("padding:0"))
         #expect(!html.contains("padding:300"))
@@ -1685,9 +1671,9 @@ struct StaticHTMLBackendTests {
         // dropping its committed size would collapse it entirely. Both axes
         // are exact declarations here (.frame(width:height:), not a
         // flexible range), so they're pinned exactly as `width`/`height`,
-        // not floored as `min-width`/`min-height` — see the Divider fix
-        // (task #22), which is what distinguishes an author-declared axis
-        // from one the layout system merely stretched to fill.
+        // not floored as `min-width`/`min-height`. That distinction is what
+        // separates an author-declared axis from one the layout system
+        // merely stretched to fill — see the Divider stretch test above.
         #expect(html.contains("width:320px"))
         #expect(html.contains("height:4px"))
         #expect(!html.contains("min-width"))

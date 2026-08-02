@@ -125,11 +125,10 @@ extension HTMLFragmentRegistry {
                   font-weight: inherit;
                 }
                 :where(#root a) { color: inherit; }
-                /* The tier-activation principle (task #29) means Button now emits
-                   a real button element for its floor-disabled, action-only row,
-                   rather than the link-with-a-button-role this backend used to
-                   fall back to. A real button drags in UA chrome (its own font,
-                   border, background, padding) that the interned class for its
+                /* Under the tier-activation principle, Button emits a real
+                   button element for its floor-disabled, action-only row. A
+                   real button drags in UA chrome (its own font, border,
+                   background, padding) that the interned class for its
                    declared style has to fight otherwise. Kept minimal and
                    specifically scoped to button/input, the same low-specificity
                    :where() shape as the rest of this reset, so it doesn't need

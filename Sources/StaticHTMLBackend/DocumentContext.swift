@@ -4,9 +4,9 @@ import SwiftCrossUI
 /// Everything the page owner gets to say about the document being assembled.
 ///
 /// The view tree describes content; this describes the document that carries
-/// it. Both the title and the heading derivation used to be loose parameters on
-/// ``StaticHTMLRenderer/render(_:context:size:)`` — they live here now because
-/// they answer the same question every other member does ("what document is
+/// it. The title and the heading derivation belong here rather than as
+/// parameters on ``StaticHTMLRenderer/render(_:context:size:)`` because they
+/// answer the same question every other member does ("what document is
 /// this?"), and keeping them together means the page owner passes one value
 /// rather than a growing parameter list.
 ///

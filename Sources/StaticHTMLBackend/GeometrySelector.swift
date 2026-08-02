@@ -330,10 +330,9 @@ public struct GeometrySelector: View {
     ///   depends on). This has to be self-negation, not "hidden under every
     ///   other branch's at-rule": a width inside a GAP (nothing declared
     ///   covers it, which is exactly when a fallback is required) matches
-    ///   NO other branch's at-rule at all, so nothing would hide this
-    ///   branch there under the other scheme — browser-verified (headless
-    ///   Chrome) as a real bug in an earlier version of this method, not a
-    ///   theoretical concern.
+    ///   NO other branch's at-rule at all, so under that scheme nothing
+    ///   would hide this branch there and it would render alongside the
+    ///   fallback. Browser-verified in headless Chrome, not theoretical.
     /// - The **fallback**, by contrast, correctly uses "hidden under every
     ///   OTHER branch's own at-rule" (per the ratified design) — no
     ///   complement computed from the other ranges. This works because the

@@ -491,15 +491,12 @@ public struct HTMLEmitter {
                 // axis isn't left to a flex ancestor's default — CSS
                 // aspect-ratio derives it directly from whichever axis IS
                 // declared, so it stays correct under reflow at any width,
-                // not just the one the build host happened to propose. This
-                // supersedes the "committed geometry is the correct and
-                // complete translation" interim documented at #22: that
-                // reasoning covered a fixed frame (``AspectRatioModifier``
-                // reshaping proposals is exact for one width), but the
-                // reflow philosophy this emitter otherwise follows means a
+                // not just the one the build host happened to propose.
+                // Emitting the committed geometry instead would be exact only
+                // for a fixed frame; under this emitter's reflow philosophy a
                 // ratio declared on flexible-width content must scale
-                // proportionally in the browser, not bake the one committed
-                // outcome as a floor.
+                // proportionally in the browser rather than bake the one
+                // committed outcome as a floor.
                 if let ratio = rectangle.declaredAspectRatio {
                     style.set(Self.formatNumber(ratio), for: "aspect-ratio")
                 }
@@ -884,11 +881,10 @@ public struct HTMLEmitter {
                     // also gets offered the frame directly; see
                     // ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:)``.
                     // Only declaredWidth/declaredHeight carry through — nil
-                    // where the frame left that axis alone, never falling
-                    // back to the container's own (possibly stretched)
-                    // committed size, which is what used to pin an
-                    // undeclared axis to whatever room the layout system
-                    // happened to give it.
+                    // where the frame left that axis alone. Falling back to
+                    // the container's own (possibly stretched) committed
+                    // size would pin an undeclared axis to whatever room the
+                    // layout system happened to give it.
                     let inheritedFrame =
                         isFrame
                             ? InheritedFrame(
@@ -931,12 +927,10 @@ public struct HTMLEmitter {
                         // width left to stretch) needs flex-direction:column
                         // so width becomes the cross axis; the perpendicular
                         // case needs row. Leaving flex-direction at its
-                        // default (row) here — as an earlier version of this
-                        // fix did — stretched the wrong axis entirely: a
-                        // block-level child's *height* filled its
-                        // display:flex parent while its width, the axis
-                        // that actually needed filling, still shrank to
-                        // content.
+                        // default (row) stretches the wrong axis entirely: a
+                        // block-level child's *height* fills its display:flex
+                        // parent while its width, the axis that actually
+                        // needs filling, still shrinks to content.
                         if isFrame, inheritedFrame?.width == nil, inheritedFrame?.height != nil {
                             style.set("column", for: "flex-direction")
                             style.set("flex", for: "display")

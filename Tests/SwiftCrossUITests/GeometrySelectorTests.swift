@@ -134,10 +134,9 @@ struct GeometrySelectorTests {
     func gatingRuleHidesOwnBranchOutsideItsRange() {
         // Each branch hides OUTSIDE its own range — not "hidden by a
         // neighbor's own at-rule" — because that's the only shape that
-        // still hides a branch correctly inside a GAP no branch's own
-        // range covers (see fallbackIsTheOnlyVisibleBranchInsideAGap,
-        // browser-verified as a real bug in an earlier version of this
-        // method: nothing fired in the gap under the neighbor-hides scheme).
+        // still hides a branch correctly inside a GAP no branch's own range
+        // covers (see fallbackIsTheOnlyVisibleBranchInsideAGap). Under a
+        // neighbor-hides scheme nothing fires in the gap; browser-verified.
         let view = GeometrySelector {
             WidthCase(..<600) { Text("Narrow") }
             WidthCase(600..<900) { Text("Medium") }
@@ -268,21 +267,20 @@ struct GeometrySelectorTests {
         #expect(!html.contains("@media not (max-width: 399.98px)"))
     }
 
-    // MARK: - Gap regression (a real bug, browser-verified and fixed)
+    // MARK: - Gap coverage
 
     @Test(
         "Inside a gap, the fallback is the ONLY visible branch — regular branches self-hide there too"
     )
     func fallbackIsTheOnlyVisibleBranchInsideAGap() {
-        // An earlier version of registerGatingCSS hid each ranged branch
-        // only under ITS SIBLINGS' own at-rules ("hidden by a neighbor"),
-        // which is correct when ranges are gap-free but leaves a ranged
-        // branch with NOTHING to hide it inside a gap — no sibling's own
-        // at-rule fires there. Verified wrong in a real browser (headless
-        // Chrome): all three branches showed display:block simultaneously
-        // at a gap-region viewport width. The fix hides each ranged branch
-        // under the NEGATION of its own range instead, which correctly
-        // fires everywhere outside that range, gap included.
+        // registerGatingCSS must hide each ranged branch under the NEGATION
+        // of its own range. Hiding a branch only under ITS SIBLINGS' own
+        // at-rules ("hidden by a neighbor") is correct when ranges are
+        // gap-free, but leaves a ranged branch with NOTHING to hide it
+        // inside a gap, since no sibling's own at-rule fires there — in
+        // headless Chrome all three branches show display:block
+        // simultaneously at a gap-region viewport width. Self-negation
+        // fires everywhere outside the range, gap included.
         let view = GeometrySelector {
             WidthCase(..<600) { Text("Narrow") }
             WidthCase(900...) { Text("Wide") }

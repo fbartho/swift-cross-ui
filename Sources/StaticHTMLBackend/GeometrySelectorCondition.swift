@@ -138,8 +138,8 @@ extension GeometrySelector {
     /// per the ratified design) and later kinds (print, reduced motion, …)
     /// without an API break to existing callers.
     ///
-    /// Task #26 shipped the MEASURING-tier half of three of those future
-    /// kinds early, as plain environment values rather than `Condition`
+    /// Three of those future kinds already expose their MEASURING-tier half
+    /// as plain environment values rather than `Condition`
     /// cases: ``EnvironmentValues/reducedMotion``,
     /// ``EnvironmentValues/pointerCapability``, and
     /// ``EnvironmentValues/printActive``. Each documents its own CSS half

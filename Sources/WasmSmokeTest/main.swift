@@ -158,12 +158,10 @@ func run() -> Int32 {
 
     // MARK: observeAsUIUpdater on the WASI path
     //
-    // This is the branch the wasm port rewrote. The old multi-threaded code
-    // used a semaphore plus a Dispatch queue; the failure mode it risked on a
-    // single-threaded runtime was that after the first update the semaphore
-    // would never be signalled again, permanently dropping every later update.
-    // So the property that matters most here is that the FINAL update in a
-    // rapid burst is delivered.
+    // A single-threaded runtime has no second thread to signal a semaphore or
+    // drain a Dispatch queue, so any scheme that defers delivery risks
+    // dropping every update after the first. The property that matters most
+    // here is therefore that the FINAL update in a rapid burst is delivered.
 
     print("")
     print("== publisher: observeAsUIUpdater ==")
@@ -186,8 +184,8 @@ func run() -> Int32 {
     checker.expectEqual(updateCount.value, 1, "first UI update is delivered")
     checker.expectEqual(lastSeenGeneration.value, 0, "first UI update sees current generation")
 
-    // A rapid burst. Under the old semaphore scheme this is exactly where
-    // updates went missing.
+    // A rapid burst — the case where a deferred-delivery scheme drops
+    // updates on this runtime.
     let burstSize = 50
     for index in 1...burstSize {
         generation.value = index
