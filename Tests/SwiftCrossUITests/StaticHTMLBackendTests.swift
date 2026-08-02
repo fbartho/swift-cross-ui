@@ -1204,8 +1204,8 @@ struct StaticHTMLBackendTests {
             context: "Default button"
         ).html
 
-        #expect(html.contains(":where(#root button)"))
-        #expect(html.contains("border: 1px solid"))
+        #expect(html.contains("class=\"scui-btn-automatic"))
+        #expect(html.contains("border-color: light-dark("))
         #expect(html.contains("border-radius:"))
         #expect(html.contains("cursor: pointer"))
     }
@@ -1271,6 +1271,83 @@ struct StaticHTMLBackendTests {
 
         #expect(!html.contains("href="))
         #expect(html.contains(":where(#root a[href])"))
+    }
+
+    @MainActor
+    @Test("Each button style emits its own class", arguments: HTMLButtonStyle.allCases)
+    func buttonStyleEmitsItsClass(style: HTMLButtonStyle) {
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {}.htmlButtonStyle(style),
+            context: "Styled button"
+        ).html
+
+        #expect(html.contains("class=\"\(style.className)"))
+    }
+
+    @MainActor
+    @Test("A button style reaches the button's own element, not a wrapper")
+    func buttonStyleLandsOnTheButtonElement() throws {
+        // The whole point of the modifier: layout modifiers each emit their
+        // own wrapper div and so can never style the control's own box, which
+        // is where a border has to sit for the focus ring and hit area to
+        // agree with it.
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {}.htmlButtonStyle(.borderedProminent),
+            context: "Prominent button"
+        ).html
+
+        let start = try #require(html.range(of: "<button"))
+        let end = try #require(html.range(of: ">", range: start.upperBound..<html.endIndex))
+        let tag = String(html[start.lowerBound..<end.upperBound])
+        #expect(tag.contains("scui-btn-borderedprominent"))
+    }
+
+    @MainActor
+    @Test("A style set on an ancestor reaches the buttons beneath it")
+    func buttonStyleInheritsToDescendants() {
+        // Unlike the tag/href requests, which name one element each, a button
+        // style covers everything beneath it the way `font` does.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Button("One") {}
+                Button("Two") {}
+            }
+            .htmlButtonStyle(.borderless),
+            context: "Inherited style"
+        ).html
+
+        // Counting `class="` occurrences rather than bare class names: the
+        // name also appears in the reset's own rules, which aren't markup.
+        #expect(html.components(separatedBy: "class=\"scui-btn-borderless").count == 3)
+    }
+
+    @MainActor
+    @Test("An href-carrying button is styled the same as one that emits a real button")
+    func buttonStyleAppliesAcrossTheEmissionMatrix() {
+        // A Button with an href emits an <a>, so rules keyed off the `button`
+        // element would style only half the matrix. Both rows carry the class.
+        let anchorHTML = StaticHTMLRenderer.render(
+            Button("Go") {}.href("/docs").htmlButtonStyle(.bordered),
+            context: "Styled link"
+        ).html
+
+        #expect(anchorHTML.contains("<a "))
+        #expect(anchorHTML.contains("scui-btn-bordered"))
+    }
+
+    @MainActor
+    @Test("A disabled button keeps its variant styling, dimmed rather than stripped")
+    func disabledButtonKeepsVariantStyling() {
+        // Per tier activation: the still image has to say the control is
+        // disabled without pretending it's a different kind of control.
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {}.htmlButtonStyle(.borderedProminent),
+            context: "Disabled prominent button"
+        ).html
+
+        #expect(html.contains("disabled=\"disabled\""))
+        #expect(html.contains("scui-btn-borderedprominent"))
+        #expect(html.contains("opacity: 0.55"))
     }
 
     @MainActor

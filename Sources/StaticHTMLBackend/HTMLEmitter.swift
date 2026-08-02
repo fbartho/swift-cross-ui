@@ -270,6 +270,12 @@ public struct HTMLEmitter {
         // Kept separate from `attributes` below so author attributes are
         // still merged first and can't be clobbered by a backend-owned one.
         var controlAttributes: [String: String] = [:]
+        // Backend-owned classes that name a shared, hand-written rule rather
+        // than an interned declaration set. Kept out of `style` because the
+        // interner keys on declarations: a variant whose whole point is to be
+        // one named rule reused across every button would otherwise be
+        // duplicated into a distinct class per button.
+        var extraClasses: [String] = []
 
         switch widget {
             case let text as StaticHTMLBackend.TextView:
@@ -401,6 +407,7 @@ public struct HTMLEmitter {
                     controlAttributes["type"] = "button"
                     controlAttributes["data-scui-enliven"] = "js"
                 }
+                extraClasses.append(button.style.className)
                 style.set("inline-flex", for: "display")
                 style.set("center", for: "align-items")
                 style.set("center", for: "justify-content")
@@ -897,8 +904,12 @@ public struct HTMLEmitter {
         if let tag = widget.tag {
             attributes["data-scui"] = tag
         }
-        if let className = interner.className(for: style) {
-            attributes["class"] = className
+        var classNames = extraClasses
+        if let interned = interner.className(for: style) {
+            classNames.append(interned)
+        }
+        if !classNames.isEmpty {
+            attributes["class"] = classNames.joined(separator: " ")
         }
 
         let renderedAttributes =

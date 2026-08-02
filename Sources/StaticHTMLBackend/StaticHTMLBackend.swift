@@ -195,6 +195,8 @@ public final class StaticHTMLBackend:
     public class Button: Widget {
         public var label = ""
         public var font: Font.Resolved?
+        /// The appearance requested by ``SwiftCrossUI/View/htmlButtonStyle(_:)``.
+        public var style: HTMLButtonStyle = .automatic
 
         /// Buttons take their intrinsic size from the backend, so leaving this
         /// at zero would render them 0x0. Estimated from the label the same
@@ -747,6 +749,7 @@ public final class StaticHTMLBackend:
         let button = button as! Button
         button.label = label
         button.font = environment.resolvedFont
+        button.style = environment.htmlButtonStyle
         button.captureIntent(from: environment)
     }
 
