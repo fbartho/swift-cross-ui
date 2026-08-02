@@ -520,6 +520,63 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test(
+        "A heading-mapped font inside a button's label styles the text without becoming a heading"
+    )
+    func buttonLabelWithHeadingFontStaysStyledNotHeading() {
+        // A button label carries a declared text style for the same reason
+        // any other Text does — to look right — not to claim a place in the
+        // document outline. Before this fix, a nav button styled with
+        // .title2 leaked an <h3> into the page: the button itself emitted as
+        // <h3> instead of <button>, and the label reached the heading
+        // outline as if it were a section heading.
+        let view = Button(action: {}) {
+            Text("fbartho").font(.title2)
+        }
+        let result = StaticHTMLRenderer.render(view, context: "Labeled button heading")
+
+        #expect(result.html.contains("<button "))
+        #expect(!result.html.contains("<h3"))
+        #expect(result.html.contains(">fbartho</span>"))
+        #expect(result.documentInfo.headings.isEmpty)
+    }
+
+    @MainActor
+    @Test("An .htmlTag() inside a button's label is refused, not silently applied to the button")
+    func htmlTagInsideButtonLabelIsRefused() {
+        // The label's own element choice isn't reachable through .htmlTag():
+        // the button's element comes from the emission matrix
+        // (<button>/<a href>), and letting a request meant for the label
+        // resolve here would silently replace the control's element with
+        // whatever the label asked for instead. The refusal is surfaced
+        // rather than dropped, since nothing in the markup shows it happened.
+        let view = Button(action: {}) {
+            Text("fbartho").font(.title2).htmlTag(.span)
+        }
+        let result = StaticHTMLRenderer.render(view, context: "Tag inside label")
+
+        #expect(result.html.contains("<button "))
+        #expect(!result.html.contains("<span aria-disabled"))
+        #expect(result.documentInfo.labelSubtreeRequestsRefused == ["htmlTag(span)"])
+    }
+
+    @MainActor
+    @Test("An .htmlTag() applied to the Button itself still resolves normally")
+    func htmlTagOnButtonItselfStillResolves() {
+        // The refusal above is scoped to requests introduced inside the
+        // label subtree. One applied to the button (or above it) is
+        // unaffected — this is the read side of the same identity check.
+        let view = Button(action: {}) {
+            Text("fbartho").font(.title2)
+        }
+        .htmlTag(.custom("a"))
+        let html = StaticHTMLRenderer.render(view, context: "Tag on button").html
+
+        #expect(html.contains("<a "))
+        #expect(!html.contains("<button "))
+    }
+
+    @MainActor
     @Test("An attributes request on a container isn't copied onto every leaf")
     func containerAttributesSurviveAnOverridingChild() {
         let view = VStack {

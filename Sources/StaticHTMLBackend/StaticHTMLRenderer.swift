@@ -118,7 +118,8 @@ public enum StaticHTMLRenderer {
             title: context.title,
             headings: emitter.headings,
             metadata: metadata(from: registry),
-            imagesMissingAltText: emitter.imagesMissingAltText
+            imagesMissingAltText: emitter.imagesMissingAltText,
+            labelSubtreeRequestsRefused: emitter.labelSubtreeRequestsRefused
         )
 
         return RenderResult(
@@ -315,6 +316,7 @@ public enum StaticHTMLRenderer {
 
         sinkTapMarkers(in: root)
         sinkCornerRadii(in: root)
+        markControlLabels(in: root)
 
         var identifierCounter = 0
         associateLabels(in: root, counter: &identifierCounter)
@@ -392,6 +394,38 @@ public enum StaticHTMLRenderer {
         }
         for child in children {
             sinkTapMarkers(in: child)
+        }
+    }
+
+    /// Flags every widget inside a ``StaticHTMLBackend/ViewLabelButton``'s
+    /// label subtree, so heading derivation can exclude it.
+    ///
+    /// A button's label carries a declared text style for the same reason
+    /// any other text does — to look right — not to claim a place in the
+    /// document outline. Nothing about being a control's label changes what
+    /// element the label renders as (a `Text` inside one still becomes a
+    /// `<span>`, still gets styled from its font), so this only affects
+    /// whether ``HTMLEmitter`` treats a heading-mapped font as an outline
+    /// entry; see the `Text` case in
+    /// ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``.
+    ///
+    /// - Parameter widget: The subtree to walk.
+    private static func markControlLabels(in widget: StaticHTMLBackend.Widget) {
+        if let button = widget as? StaticHTMLBackend.ViewLabelButton {
+            markInsideControlLabel(button.label)
+        }
+        for child in widget.getChildren() {
+            markControlLabels(in: child)
+        }
+    }
+
+    /// Marks every widget in a subtree as sitting inside a control's label.
+    ///
+    /// - Parameter widget: The subtree to mark.
+    private static func markInsideControlLabel(_ widget: StaticHTMLBackend.Widget) {
+        widget.isInsideControlLabel = true
+        for child in widget.getChildren() {
+            markInsideControlLabel(child)
         }
     }
 
@@ -551,6 +585,67 @@ public enum StaticHTMLRenderer {
                 tag: first.tag,
                 attributes: first.attributes,
                 href: first.href,
+                isEmpty: false
+            )
+        }
+
+        // A widget that owns its element (only `ViewLabelButton` today) has
+        // exactly one child and always falls into the "shared request" shape
+        // below: with one child, the deepest request common to all of them is
+        // just that child's own request. Left to the generic path, that
+        // request would return as this widget's *unassigned* coverage for an
+        // ancestor to claim — the same deferral the single-child collapse
+        // above performs deliberately. There is no legitimate ancestor for a
+        // view-label button's label to defer to, though: the button IS the
+        // element the label's request would land on, and whether that's
+        // correct depends entirely on where the request came from.
+        //
+        // `widget.pendingTagRequest` (etc.) is what the button's own view
+        // captured from the environment at its own update — identity-equal
+        // to the label's request only when the author applied `.htmlTag()`/
+        // `.htmlAttributes()`/`.href()` at-or-above the button itself, since
+        // `transformEnvironment` allocates a new request object every time
+        // one of those modifiers runs (see `HTMLModifiers.swift`). A request
+        // the label introduced on its own is a different object the button
+        // never saw, and letting it resolve here would replace the button's
+        // emission-matrix element (`<button>`/`<a href>`) with whatever the
+        // label asked for — corrupting the control rather than styling its
+        // label. That's refused rather than silently dropped: recorded on
+        // the widget so the emitter can surface it via
+        // ``DocumentInfo/labelSubtreeRequestsRefused``, the same
+        // never-silent principle ``DocumentInfo/imagesMissingAltText`` follows
+        // for its own fallback.
+        if ownsItsElement {
+            // A request that turns out to be the button's own — applied
+            // at-or-above it, inherited by the label rather than introduced
+            // there — is left unassigned here and returned in the coverage
+            // below, exactly like the ordinary shared-request path further
+            // down: an ancestor (a `.background()` pair's routing, most
+            // commonly) still needs to see it to know this subtree is
+            // already covered, or it would assign the same request to a
+            // decoration sibling too. Only a request the label introduced on
+            // its own is refused outright, since nothing above this widget
+            // is meant to resolve it.
+            var tag = first.tag
+            if let candidate = tag, candidate !== widget.pendingTagRequest {
+                widget.refusedLabelRequests.append("htmlTag(\(candidate.element.name))")
+                tag = nil
+            }
+            var attributes = first.attributes
+            if let candidate = attributes, candidate !== widget.pendingAttributesRequest {
+                widget.refusedLabelRequests.append("htmlAttributes")
+                attributes = nil
+            }
+            var href = first.href
+            if let candidate = href, candidate !== widget.pendingHrefRequest {
+                widget.refusedLabelRequests.append("href")
+                href = nil
+            }
+            return Coverage(
+                owner: widget,
+                tag: tag,
+                attributes: attributes,
+                href: href,
                 isEmpty: false
             )
         }

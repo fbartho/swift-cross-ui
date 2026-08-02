@@ -192,6 +192,33 @@ public final class StaticHTMLBackend:
         /// from ``BackendFeatures/Widgets/describeDivider(of:)``. See
         /// ``isSpacer`` for why this replaces a ``tag`` string match.
         public var isDivider = false
+        /// Whether this widget sits inside a ``ViewLabelButton``'s label
+        /// subtree, from ``StaticHTMLRenderer``'s label-boundary pass.
+        ///
+        /// A button label renders styled text, never a document heading — its
+        /// declared font is what makes the label look right, not a claim
+        /// about outline structure. Without this flag, a `Text` inside a
+        /// label is indistinguishable from one sitting in ordinary flow
+        /// content and derives a heading purely from its font, leaking the
+        /// button into the document outline. See ``HeadingMap`` and the
+        /// `Text` case in
+        /// ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``.
+        var isInsideControlLabel = false
+        /// Element names an author requested via ``View/htmlTag(_:)`` or
+        /// ``View/htmlAttributes(_:)`` from inside this ``ViewLabelButton``'s
+        /// label subtree, refused rather than silently ignored.
+        ///
+        /// Only a request covering the label's element itself is refused —
+        /// the button already resolves its own element from the emission
+        /// matrix (see the `ViewLabelButton` case in
+        /// ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``),
+        /// and letting a request meant for the label reach the button instead
+        /// would silently replace `<button>`/`<a>` with whatever element the
+        /// label asked for, corrupting the control. A request covering only
+        /// part of the label (an icon beside the label text, say) is
+        /// unaffected and resolves normally within the subtree. See
+        /// ``StaticHTMLRenderer/hoistRequests(in:)``.
+        var refusedLabelRequests: [String] = []
 
         public var naturalSize: SIMD2<Int> {
             .zero

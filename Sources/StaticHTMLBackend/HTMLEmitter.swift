@@ -89,6 +89,21 @@ public struct HTMLEmitter {
     /// fallback by reading the markup itself: an empty `alt` is
     /// indistinguishable from one an author deliberately set.
     private(set) var imagesMissingAltText: [String] = []
+    /// Descriptions of `.htmlTag(_:)`/`.htmlAttributes(_:)`/`.href(_:)`
+    /// requests that were refused because they were applied inside a
+    /// ``StaticHTMLBackend/ViewLabelButton``'s label subtree, in document
+    /// order.
+    ///
+    /// A button's own element comes from the emission matrix (see the
+    /// `ViewLabelButton` case below), not from a request its label happens
+    /// to be in scope for — letting one through would silently replace
+    /// `<button>`/`<a href>` with whatever the label asked for. Refused
+    /// rather than silently dropped, since nothing in the emitted markup
+    /// would otherwise show that the request existed at all. Surfaced on
+    /// ``DocumentInfo/labelSubtreeRequestsRefused`` — see
+    /// ``StaticHTMLRenderer/hoistRequests(in:)`` for where the refusal is
+    /// decided.
+    private(set) var labelSubtreeRequestsRefused: [String] = []
 
     /// How a parent is positioning one of its children.
     public enum Placement: Hashable, Sendable {
@@ -463,8 +478,19 @@ public struct HTMLEmitter {
                 }
                 inner = Self.escape(text.content)
                 // A declared text style is the author saying what this line is
-                // for, so it outranks the generic span.
-                if let derived = headingMap.element(for: text.declaredFont) {
+                // for, so it outranks the generic span — everywhere except
+                // inside a control's label. A label's declared style says how
+                // the label should look, the same reason any other Text
+                // carries one; it says nothing about document structure, so
+                // it's never read as heading intent there. Left unguarded,
+                // any label styled with a heading-mapped font (a nav button
+                // using .title2, say) would leak into the outline as if it
+                // were a section heading, and the control itself would emit
+                // as an `<h3>` rather than the `<button>`/`<a>` its emission
+                // matrix chose.
+                if !widget.isInsideControlLabel,
+                   let derived = headingMap.element(for: text.declaredFont)
+                {
                     element = derived
                     // Recorded provisionally — an explicit .htmlTag() override
                     // below can still replace `element`, and the outline
@@ -545,6 +571,7 @@ public struct HTMLEmitter {
                 // tier-activation reasoning is identical and documented there.
                 // What differs is the label: this button owns a child subtree
                 // rather than a string, so the label is emitted by walking it.
+                labelSubtreeRequestsRefused.append(contentsOf: button.refusedLabelRequests)
                 if let href = widget.href {
                     element = .custom("a")
                     controlAttributes["href"] = href

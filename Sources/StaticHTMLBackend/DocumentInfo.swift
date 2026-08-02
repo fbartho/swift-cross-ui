@@ -93,6 +93,19 @@ public struct DocumentInfo: Hashable, Sendable {
     /// still exists. A page owner who wants every image described can check
     /// this list is empty; a component library can log it in development.
     public var imagesMissingAltText: [String]
+    /// Descriptions of `.htmlTag(_:)`/`.htmlAttributes(_:)`/`.href(_:)`
+    /// requests that were refused because they were applied inside a
+    /// view-label button's label subtree, in document order.
+    ///
+    /// A button's own element is chosen by the emission matrix, never by a
+    /// request its label happens to be in scope for — the button and its
+    /// label are different views, and the label's request is meant to style
+    /// the label, not to replace the control it lives inside. Refused rather
+    /// than silently ignored, since nothing in the emitted markup would
+    /// otherwise reveal that the request was ever written. A page owner who
+    /// wants author intent fully honored can check this list is empty; a
+    /// component library can log it in development.
+    public var labelSubtreeRequestsRefused: [String]
 
     /// One entry in a document's heading outline.
     public struct Heading: Hashable, Sendable {
@@ -120,16 +133,20 @@ public struct DocumentInfo: Hashable, Sendable {
     ///   - metadata: The document's registered metadata.
     ///   - imagesMissingAltText: The view type tags of images that emitted
     ///     `alt=""` for lack of an author-supplied `alt`.
+    ///   - labelSubtreeRequestsRefused: Descriptions of requests refused for
+    ///     originating inside a view-label button's label subtree.
     public init(
         title: String,
         headings: [Heading] = [],
         metadata: [DocumentInfoKey: String] = [:],
-        imagesMissingAltText: [String] = []
+        imagesMissingAltText: [String] = [],
+        labelSubtreeRequestsRefused: [String] = []
     ) {
         self.title = title
         self.headings = headings
         self.metadata = metadata
         self.imagesMissingAltText = imagesMissingAltText
+        self.labelSubtreeRequestsRefused = labelSubtreeRequestsRefused
     }
 }
 
