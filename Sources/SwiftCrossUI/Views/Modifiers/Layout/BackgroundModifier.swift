@@ -110,5 +110,6 @@ struct BackgroundModifier<Background: View, Foreground: View>: TypeSafeView {
         backend.setPosition(ofChildAt: 1, in: widget, to: foregroundPosition)
 
         backend.setSize(of: widget, to: frameSize.vector)
+        backend.describeBackground(of: widget)
     }
 }

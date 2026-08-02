@@ -213,6 +213,26 @@ extension BackendFeatures {
         ///
         /// - Parameter widget: The container standing in for the divider.
         func describeDivider(of widget: Widget)
+
+        /// Tells the backend that a container is standing in for a
+        /// ``SwiftCrossUI/View/background(_:)`` pair.
+        ///
+        /// The default implementation does nothing, for the same reason as
+        /// ``describeSpacer(of:)``: a backend that positions children itself
+        /// already has the layering baked into committed geometry. It
+        /// matters to a backend that re-expresses layout as flow, though —
+        /// committed geometry alone can't distinguish this two-child,
+        /// always-overlapping pair (backdrop, then foreground, per
+        /// ``BackgroundModifier``) from an author's own ``ZStack``, and the
+        /// two need different treatment: a ``ZStack``'s overlap is declared
+        /// intent the backend must preserve, while a background's backdrop
+        /// should track whatever box the foreground ends up occupying —
+        /// including one a declared flexible frame reflows at another width
+        /// — rather than freezing to the size committed on the build host.
+        ///
+        /// - Parameter widget: The container standing in for the background
+        ///   pair.
+        func describeBackground(of widget: Widget)
     }
 }
 
@@ -275,5 +295,10 @@ extension BackendFeatures.Widgets {
     public func describeDivider(of widget: Widget) {
         // As above: a backend that positions children itself already has
         // the divider's effect baked into its committed size.
+    }
+
+    public func describeBackground(of widget: Widget) {
+        // As above: a backend that positions children itself already has
+        // the layering baked into committed geometry.
     }
 }
