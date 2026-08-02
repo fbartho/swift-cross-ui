@@ -313,9 +313,49 @@ public enum StaticHTMLRenderer {
         }
 
         sinkTapMarkers(in: root)
+        sinkCornerRadii(in: root)
 
         var identifierCounter = 0
         associateLabels(in: root, counter: &identifierCounter)
+    }
+
+    /// Moves each corner radius down onto the element that owns the box it
+    /// rounds.
+    ///
+    /// `CornerRadiusModifier` produces a wrapper of its own, so the radius
+    /// starts one element above the box it is meant to round. Left there, the
+    /// clip that comes with it (`overflow:hidden`) cuts a box the rounded
+    /// content is merely nested inside: a `.background()` pair's backdrop is
+    /// absolutely positioned within the *pair's* stacking context, so a clip
+    /// established on an ancestor of that context does not shape it and the
+    /// backdrop paints square corners over the rounded ones.
+    ///
+    /// Sinking the radius puts `border-radius`, `overflow:hidden`,
+    /// `isolation:isolate`, and `position:relative` on one element, which is
+    /// what makes the clip reach the backdrop. It also removes the wrapper's
+    /// last reason to exist, so elision can take it.
+    ///
+    /// Descent follows single-child wrapping only, the same shape
+    /// ``sinkTapMarkers(in:)`` uses: a wrapper adds no box worth rounding, so
+    /// the radius belongs to the one view beneath it. It stops at a widget
+    /// that already carries a radius (the inner one is the author's own, more
+    /// specific answer), at a control owning its label subtree, and at any
+    /// widget with zero or several children — rounding one of a group would be
+    /// a guess, and the wrapper really is the box in that case.
+    ///
+    /// - Parameter widget: The subtree to walk.
+    private static func sinkCornerRadii(in widget: StaticHTMLBackend.Widget) {
+        let children = widget.getChildren()
+        if widget.cornerRadius > 0, children.count == 1, let child = children.first,
+           child.cornerRadius == 0,
+           !(widget is StaticHTMLBackend.ViewLabelButton)
+        {
+            child.cornerRadius = widget.cornerRadius
+            widget.cornerRadius = 0
+        }
+        for child in children {
+            sinkCornerRadii(in: child)
+        }
     }
 
     /// Moves each tap marker down onto the element the author made tappable.

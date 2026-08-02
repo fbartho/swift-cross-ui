@@ -167,6 +167,34 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A radius, its clip, and a background pair's isolation compose on one element")
+    func cornerRadiusComposesWithBackgroundIsolation() {
+        // The backdrop is absolutely positioned at inset:0 with z-index:-1, so
+        // the element that clips it has to be the same one that establishes the
+        // stacking context it sinks within — otherwise the corners are cut by a
+        // box the backdrop isn't a descendant of, and it paints square over
+        // them. All four declarations landing on one class is what makes the
+        // clip reach the backdrop.
+        //
+        // Pixel-verified separately by sampling a screenshot: the arc's corners
+        // read white (clipped) while its interior reads the backdrop colour.
+        // Hit-testing cannot show this — elementFromPoint ignores overflow
+        // clipping.
+        let html = StaticHTMLRenderer.render(
+            Text("Card").frame(width: 200, height: 100)
+                .background(Color.red)
+                .cornerRadius(20),
+            context: "Composed radius",
+            size: SIMD2(1400, 900)
+        ).html
+
+        let rule = Self.internedRule(containing: "border-radius:20px", in: html)
+        #expect(rule?.contains("overflow:hidden") == true)
+        #expect(rule?.contains("isolation:isolate") == true)
+        #expect(rule?.contains("position:relative") == true)
+    }
+
+    @MainActor
     @Test("A ZStack's top layer still paints last, since both layers stay positioned")
     func zStackTopLayerPaintsLast() {
         // The overlap-pin path (both children position:absolute, no z-index)
