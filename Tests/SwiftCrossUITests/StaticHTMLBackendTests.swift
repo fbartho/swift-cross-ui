@@ -720,6 +720,109 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("ForEach's wrapper relays a row's stretch instead of shrink-wrapping it")
+    func foreachWrapperRelaysChildStretch() {
+        // align-self only ever addresses an element's own parent, so the row's
+        // own stretch stops at the first ancestor that shrink-wraps. ForEach
+        // and the TupleView its body expands to are two such ancestors between
+        // the row and the leading-aligned VStack: without relaying, every row
+        // fills a wrapper that is itself only as wide as its content, so rows
+        // come out unequal and viewport-independent.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                ForEach(["a", "a much longer row of text"], id: \.self) { row in
+                    HStack {
+                        Text(row)
+                        Spacer()
+                        Text("42")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            },
+            context: "ForEach stretch"
+        ).html
+
+        let foreachRule = Self.styleRule(forElementContaining: "data-scui=\"ForEach\"", in: html)
+        #expect(foreachRule?.contains("align-self:stretch") == true)
+        #expect(foreachRule?.contains("flex-grow:1") == true)
+
+        let tupleRule = Self.styleRule(forElementContaining: "data-scui=\"TupleView1\"", in: html)
+        #expect(tupleRule?.contains("align-self:stretch") == true)
+    }
+
+    @MainActor
+    @Test("A .background() pair relays the stretch its foreground declares")
+    func backgroundLayeringRelaysForegroundStretch() {
+        // The pair sizes to its foreground (see the isBackgroundLayering
+        // branch), so a foreground that stretches has to take the pair with
+        // it — otherwise the backdrop paints only as wide as the content and
+        // the stretch is invisible.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                ForEach(["a", "a much longer row of text"], id: \.self) { row in
+                    HStack {
+                        Text(row)
+                        Spacer()
+                        Text("42")
+                    }
+                    .frame(maxWidth: .infinity)
+                    .background(Color.gray)
+                }
+            },
+            context: "Background stretch"
+        ).html
+
+        let pairRule = Self.styleRule(
+            forElementContaining: "data-scui=\"BackgroundModifier\"",
+            in: html
+        )
+        #expect(pairRule?.contains("align-self:stretch") == true)
+        #expect(pairRule?.contains("position:relative") == true)
+    }
+
+    @MainActor
+    @Test("A wrapper with no stretching descendant is left shrink-wrapping")
+    func structuralWrapperWithoutStretchIsUntouched() {
+        // The relay is driven by a descendant actually declaring the stretch
+        // idiom. A ForEach of plain rows has no such declaration, so its
+        // wrapper must keep the leading-aligned column's shrink-to-fit sizing
+        // rather than silently growing every list to full width.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                ForEach(["a", "b"], id: \.self) { row in
+                    Text(row)
+                }
+            },
+            context: "No stretch"
+        ).html
+
+        let foreachRule = Self.styleRule(forElementContaining: "data-scui=\"ForEach\"", in: html)
+        #expect(foreachRule?.contains("align-self:stretch") != true)
+        #expect(foreachRule?.contains("flex-grow:") != true)
+    }
+
+    @MainActor
+    @Test("A wrapper carrying its own frame absorbs the stretch rather than relaying it")
+    func framedWrapperDoesNotRelayChildStretch() {
+        // A declared width is the author's answer for everything below it, so
+        // an inner stretch fills that box and stops there. Relaying past it
+        // would let a descendant override the width the author wrote down.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                VStack {
+                    Text("Row").frame(maxWidth: .infinity)
+                }
+                .frame(width: 300)
+            },
+            context: "Framed wrapper"
+        ).html
+
+        let framedRule = Self.internedRule(containing: "width:300px", in: html)
+        #expect(framedRule?.contains("width:300px") == true)
+        #expect(framedRule?.contains("align-self:stretch") != true)
+    }
+
+    @MainActor
     @Test("A tagged void leaf with no frame gets no size CSS")
     func voidLeafWithoutFrameStaysUnsized() {
         let view = Text("")

@@ -286,6 +286,80 @@ public final class StaticHTMLBackend:
         /// for width.
         public var declaredMaxHeight: Double?
 
+        /// Whether this container declares the `.frame(maxWidth: .infinity)`
+        /// stretch idiom itself.
+        var declaresInfiniteWidthStretch: Bool {
+            declaredMaxWidth == .infinity && declaredWidth == nil
+        }
+
+        /// Whether this container is a structural wrapper — one the view tree
+        /// produced to hold children, not one the author declared anything
+        /// about.
+        ///
+        /// `ForEach` and the `TupleView`s a `ViewBuilder` block expands to are
+        /// the cases that matter: they arrive here as ordinary stack
+        /// containers, indistinguishable from a `VStack` the author wrote,
+        /// except that no frame was ever declared on them. That distinction
+        /// is what makes it safe to let a child's stretch intent pass through
+        /// them — see ``relaysChildStretch``.
+        ///
+        /// A `.background()` pair is deliberately excluded even though it
+        /// declares no frame of its own: it's a real box whose width tracks
+        /// its foreground, and it reaches emission through its own branch
+        /// rather than the generic stack path this property feeds.
+        var isStructuralWrapper: Bool {
+            declaredWidth == nil && declaredHeight == nil
+                && declaredMinWidth == nil && declaredMaxWidth == nil
+                && declaredMinHeight == nil && declaredMaxHeight == nil
+                && !isBackgroundLayering
+                && stackLayout != nil
+        }
+
+        /// Whether this container's subtree carries a stretch that an
+        /// ancestor has to re-declare for it to take effect.
+        ///
+        /// Descends through wrappers that pass their own width straight to
+        /// the child — structural wrappers, and a `.background()` pair, whose
+        /// foreground keeps flow sizing (so a stretch inside one is still a
+        /// live request against whatever box the pair ends up being). It
+        /// stops at any container that declares a width of its own: that
+        /// declaration is the author's answer for everything below it.
+        var containsRelayableStretch: Bool {
+            if declaresInfiniteWidthStretch {
+                return true
+            }
+            guard isStructuralWrapper || isBackgroundLayering else {
+                return false
+            }
+            return children.contains { child in
+                (child.widget as? Container)?.containsRelayableStretch ?? false
+            }
+        }
+
+        /// Whether a descendant's `.frame(maxWidth: .infinity)` stretch has to
+        /// be re-declared on this container to reach the enclosing stack.
+        ///
+        /// `align-self` only ever addresses an element's own parent, so a
+        /// stretch declared several levels down stops at the first ancestor
+        /// that shrink-wraps. A structural wrapper is exactly such an
+        /// ancestor: it's a flex item of the stack above it with
+        /// `align-self:auto`, so it takes that stack's `align-items` —
+        /// `flex-start` in a leading-aligned column — and content-sizes,
+        /// leaving the stretching descendant filling a box that is itself
+        /// only as wide as its content.
+        ///
+        /// Only wrappers the author declared nothing about relay
+        /// (``isStructuralWrapper``); a container carrying its own frame is a
+        /// real box whose width is the author's answer to this question.
+        var relaysChildStretch: Bool {
+            guard isStructuralWrapper else {
+                return false
+            }
+            return children.contains { child in
+                (child.widget as? Container)?.containsRelayableStretch ?? false
+            }
+        }
+
         public override func getChildren() -> [Widget] {
             children.map(\.widget)
         }

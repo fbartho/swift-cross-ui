@@ -1025,6 +1025,18 @@ public struct HTMLEmitter {
             }
         }
 
+        // A wrapper standing between a stack and a stretching descendant has
+        // to carry the same stretch, or the descendant fills only the
+        // wrapper's shrink-wrapped box. A `.background()` pair sizes to its
+        // foreground, so it relays for the same reason its foreground keeps
+        // flow sizing. See
+        // ``StaticHTMLBackend/Container/relaysChildStretch``.
+        if container.relaysChildStretch
+            || (container.isBackgroundLayering && container.containsRelayableStretch)
+        {
+            Self.applyInfiniteStretch(in: &style)
+        }
+
         // A container whose own declaration leaves this axis open while
         // capping the other at `.infinity` (a hand-built `Color` hairline
         // via `.frame(maxWidth: .infinity, maxHeight:)`, not just a
