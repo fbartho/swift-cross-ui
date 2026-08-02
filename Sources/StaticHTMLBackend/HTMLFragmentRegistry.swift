@@ -39,7 +39,8 @@ public final class HTMLFragmentRegistry {
             """
             \(item.content.kindName) can't be emitted into \(item.slot.debugName). \
             Its content kind is only legal in \
-            \(item.content.allowedSlots?.map(\.debugName).sorted().joined(separator: ", ") ?? "any slot").
+            \(item.content.allowedSlots?.map(\.debugName).sorted()
+                .joined(separator: ", ") ?? "any slot").
             """
         )
 
@@ -119,7 +120,7 @@ extension FragmentItem.Slot {
         switch self {
             case .head: ".head"
             case .bodyEnd: ".bodyEnd"
-            case let .custom(name): ".custom(\"\(name)\")"
+            case .custom(let name): ".custom(\"\(name)\")"
         }
     }
 }

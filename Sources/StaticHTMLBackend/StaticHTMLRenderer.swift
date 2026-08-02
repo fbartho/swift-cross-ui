@@ -153,7 +153,9 @@ public enum StaticHTMLRenderer {
         // that guarantee independent of when the renderer happened to drain
         // each source.
         let ownerKeys = Set(context.items.map(\.key))
-        func partition(_ slot: FragmentItem.Slot) -> (contributed: [FragmentItem], owned: [FragmentItem]) {
+        func partition(_ slot: FragmentItem
+            .Slot) -> (contributed: [FragmentItem], owned: [FragmentItem])
+        {
             let items = registry.items(in: slot)
             return (
                 items.filter { !ownerKeys.contains($0.key) },

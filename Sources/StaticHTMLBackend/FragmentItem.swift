@@ -127,17 +127,17 @@ public enum FragmentContent: Hashable, Sendable {
     /// The dedupe key this content implies when the author supplies none.
     var derivedKey: FragmentItem.DedupeKey {
         switch self {
-            case let .script(src, _):
+            case .script(let src, _):
                 .url(src)
-            case let .stylesheet(href):
+            case .stylesheet(let href):
                 .url(href)
-            case let .inlineScript(source):
+            case .inlineScript(let source):
                 .contentHash(Self.hash(of: "script:" + source))
-            case let .style(css):
+            case .style(let css):
                 .contentHash(Self.hash(of: "style:" + css))
-            case let .rawHTML(html):
+            case .rawHTML(let html):
                 .contentHash(Self.hash(of: "raw:" + html))
-            case let .meta(attributes):
+            case .meta(let attributes):
                 .contentHash(
                     Self.hash(
                         of: "meta:"
@@ -186,11 +186,11 @@ extension FragmentItem.DedupeKey {
     /// to a single tag. See the registry's cross-tier note.
     public var markerValue: String {
         switch self {
-            case let .url(url):
+            case .url(let url):
                 "url:\(url)"
-            case let .id(id):
+            case .id(let id):
                 "id:\(id)"
-            case let .contentHash(hash):
+            case .contentHash(let hash):
                 "sha:\(hash)"
         }
     }

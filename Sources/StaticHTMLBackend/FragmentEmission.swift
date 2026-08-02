@@ -15,11 +15,11 @@ extension FragmentItem {
         let marker = " data-scui-head-id=\"\(HTMLEmitter.escape(key.markerValue))\""
 
         switch content {
-            case let .script(src, attributes):
+            case .script(let src, let attributes):
                 let extra = Self.renderAttributes(attributes)
                 return "\(indent)<script src=\"\(HTMLEmitter.escape(src))\"\(extra)\(marker)></script>"
 
-            case let .inlineScript(source):
+            case .inlineScript(let source):
                 // Script and style bodies are CDATA-ish: HTML entities aren't
                 // decoded inside them, so escaping the body would corrupt the
                 // code rather than protect anything. The one sequence that can
@@ -31,21 +31,21 @@ extension FragmentItem {
                     \(indent)</script>
                     """
 
-            case let .stylesheet(href):
+            case .stylesheet(let href):
                 return
                     "\(indent)<link rel=\"stylesheet\" href=\"\(HTMLEmitter.escape(href))\"\(marker)>"
 
-            case let .style(css):
+            case .style(let css):
                 return """
                     \(indent)<style\(marker)>
                     \(Self.escapeStyleBody(css))
                     \(indent)</style>
                     """
 
-            case let .meta(attributes):
+            case .meta(let attributes):
                 return "\(indent)<meta\(Self.renderAttributes(attributes))\(marker)>"
 
-            case let .rawHTML(html):
+            case .rawHTML(let html):
                 // Unescaped by contract — the same caller-trusted stance as
                 // RawHTMLFragment. A wrapper element would be the only place to
                 // hang the marker, and wrapping arbitrary markup changes what
