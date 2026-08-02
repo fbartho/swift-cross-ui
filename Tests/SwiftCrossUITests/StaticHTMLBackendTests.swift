@@ -360,6 +360,68 @@ struct StaticHTMLBackendTests {
         #expect(html.components(separatedBy: "id=\"inner\"").count - 1 == 1)
     }
 
+    // MARK: - Stacked .htmlAttributes on the SAME view merge
+
+    @MainActor
+    @Test("Two stacked .htmlAttributes calls on one view both reach the element")
+    func stackedAttributesOnOneViewMerge() {
+        let view = Text("Both").htmlAttributes(["data-outer": "o"]).htmlAttributes([
+            "data-inner": "i"
+        ])
+        let html = StaticHTMLRenderer.render(view, title: "Merge").html
+
+        #expect(html.contains("data-outer=\"o\""))
+        #expect(html.contains("data-inner=\"i\""))
+    }
+
+    @MainActor
+    @Test("On a conflicting key, the innermost (closer to the content) call wins")
+    func stackedAttributesConflictingKeyInnermostWins() {
+        // The SECOND .htmlAttributes call is applied outside the first —
+        // transformEnvironment wraps outer-then-inner as the view builds —
+        // so the first call (closer to Text) is the innermost in the
+        // resolved chain and should win the "id" conflict.
+        let view = Text("Conflict")
+            .htmlAttributes(["id": "closer-to-content"])
+            .htmlAttributes(["id": "farther-from-content"])
+        let html = StaticHTMLRenderer.render(view, title: "Merge").html
+
+        #expect(html.contains("id=\"closer-to-content\""))
+        #expect(!html.contains("id=\"farther-from-content\""))
+    }
+
+    @MainActor
+    @Test("Reserved keys still strip after merging stacked .htmlAttributes calls")
+    func stackedAttributesReservedKeysStillStripped() {
+        let view = Text("Guarded")
+            .htmlAttributes(["style": "color:red", "data-real": "kept-inner"])
+            .htmlAttributes(["class": "mine", "data-other": "kept-outer"])
+        let html = StaticHTMLRenderer.render(view, title: "Merge").html
+
+        #expect(!html.contains("color:red"))
+        #expect(!html.contains("class=\"mine\""))
+        #expect(html.contains("data-real=\"kept-inner\""))
+        #expect(html.contains("data-other=\"kept-outer\""))
+    }
+
+    @MainActor
+    @Test("A three-deep stack of .htmlAttributes calls resolves the full chain")
+    func threeDeepAttributesStackResolvesFully() {
+        // Mirrors GeometrySelector's realistic composition: an outer marker
+        // (e.g. a structural-selector's data-gsel), a middle layer an author
+        // or another component added, and content-level attributes closest
+        // to the leaf itself — all three must reach the element.
+        let view = Text("Layered")
+            .htmlAttributes(["data-content": "innermost"])
+            .htmlAttributes(["data-component": "middle"])
+            .htmlAttributes(["data-marker": "outermost"])
+        let html = StaticHTMLRenderer.render(view, title: "Merge").html
+
+        #expect(html.contains("data-content=\"innermost\""))
+        #expect(html.contains("data-component=\"middle\""))
+        #expect(html.contains("data-marker=\"outermost\""))
+    }
+
     @MainActor
     @Test("Raw string tags are validated, and junk is rejected")
     func rejectsInvalidRawStringTags() {

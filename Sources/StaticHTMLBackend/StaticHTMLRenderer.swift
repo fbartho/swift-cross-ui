@@ -458,8 +458,36 @@ public enum StaticHTMLRenderer {
     }
 
     /// Records a request as belonging to the widget a coverage came from.
+    ///
+    /// Unlike the tag/href cases, this doesn't just take `attributes.attributes`
+    /// — it merges the whole `enclosing` chain (see `mergedAttributes(from:)`),
+    /// because `HTMLAttributesRequest` is dictionary-valued: several stacked
+    /// `.htmlAttributes(_:)` calls all deserve to reach the element, not just
+    /// the innermost one.
     private static func assign(_ attributes: HTMLAttributesRequest, to coverage: Coverage) {
-        coverage.owner?.authorAttributes = attributes.attributes
+        coverage.owner?.authorAttributes = mergedAttributes(from: attributes)
+    }
+
+    /// Unions a chain of `HTMLAttributesRequest`s into one dictionary.
+    ///
+    /// Walks from `request` outward through `enclosing`, so the request
+    /// closest to the content is visited first. A dictionary merge keeps the
+    /// FIRST value it sees per key (`uniquingKeysWith` never overwrites once
+    /// a key exists), which is exactly innermost-wins-per-key: the request
+    /// closest to the content sets a key before any outer request gets a
+    /// chance to.
+    ///
+    /// - Parameter request: The innermost request in the chain to merge.
+    /// - Returns: Every key from every request in the chain, each key's
+    ///   value taken from the innermost request that set it.
+    private static func mergedAttributes(from request: HTMLAttributesRequest) -> [String: String] {
+        var merged: [String: String] = [:]
+        var current: HTMLAttributesRequest? = request
+        while let node = current {
+            merged.merge(node.attributes) { keepInner, _ in keepInner }
+            current = node.enclosing
+        }
+        return merged
     }
 
     /// Records a request as belonging to the widget a coverage came from.

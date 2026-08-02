@@ -12,6 +12,13 @@ import SwiftCrossUI
 /// a widget under `.htmlTag(.header)` whose sibling subtree overrode the tag
 /// would leave the outer request with no widget reporting it, and the header
 /// would be lost or scattered across the leaves that didn't override.
+///
+/// **Single-valued, so innermost-wins-outright is correct here.** An element
+/// has exactly one tag; two stacked `.htmlTag(_:)` calls are a genuine
+/// override, not two facts that both deserve to reach the document, so the
+/// outer one is meant to be fully shadowed. Contrast ``HTMLAttributesRequest``,
+/// which is dictionary-valued — many attributes can coexist on one element —
+/// and merges its stacked requests instead of discarding the outer one.
 public final class HTMLTagRequest: Sendable {
     /// The requested element.
     public let element: HTMLElement
@@ -31,18 +38,31 @@ public final class HTMLTagRequest: Sendable {
 
 /// A request to add attributes to one view's element.
 ///
-/// Resolved by identity, for the same reason as ``HTMLTagRequest``.
+/// Resolved by identity, for the same reason as ``HTMLTagRequest`` — but
+/// unlike a tag or an `href`, an element can carry any number of attributes
+/// at once, so a request here doesn't *shadow* the one it encloses the way
+/// ``HTMLTagRequest``/``HTMLHrefRequest`` do. It's kept alongside it: when
+/// several `.htmlAttributes(_:)` calls stack on one view, every one of them
+/// resolves onto the same element, merged key-by-key with the innermost
+/// (closest to the content) winning a conflict — the same "most specific
+/// wins" intuition as CSS cascade or nested environment overrides. See
+/// `StaticHTMLRenderer.mergedAttributes(from:)`, which walks `enclosing` to
+/// perform that merge; the field exists on this type only to make the chain
+/// walkable, not because outer requests are meant to be discarded.
 public final class HTMLAttributesRequest: Sendable {
     /// The requested attributes.
     public let attributes: [String: String]
-    /// The request this one shadowed, if it was applied inside another.
+    /// The request this one was applied inside, if any — see the type's doc
+    /// comment: this is *not* a shadowed-and-discarded predecessor the way
+    /// it is for ``HTMLTagRequest``, it's the next entry a merge walks to.
     public let enclosing: HTMLAttributesRequest?
 
     /// Creates a request.
     ///
     /// - Parameters:
     ///   - attributes: The attributes to add.
-    ///   - enclosing: The request already in scope, which this one shadows.
+    ///   - enclosing: The request already in scope, which this one is
+    ///     layered onto (not shadowing — see the type's doc comment).
     public init(attributes: [String: String], enclosing: HTMLAttributesRequest? = nil) {
         self.attributes = attributes
         self.enclosing = enclosing
@@ -58,6 +78,11 @@ public final class HTMLAttributesRequest: Sendable {
 /// picks a row out of the Button/NavigationLink emission matrix (see
 /// ``HTMLEmitter``'s button case), the latter is inert data with no bearing
 /// on which element or activation state gets emitted.
+///
+/// **Single-valued, so innermost-wins-outright is correct here**, the same
+/// reasoning as ``HTMLTagRequest``: an element navigates to one place, so a
+/// second `.href(_:)` is an override, not an addition — see that type's doc
+/// comment for the contrast with ``HTMLAttributesRequest``'s merge behavior.
 public final class HTMLHrefRequest: Sendable {
     /// The requested href value.
     public let href: String
@@ -126,6 +151,15 @@ extension View {
     /// `class`, and `data-scui`, which the backend owns — style interning and
     /// the type-name attribute would both break if authors could overwrite
     /// them. Values are escaped when emitted.
+    ///
+    /// Stacking this modifier is legal and merges: `.htmlAttributes(["a":
+    /// "1"]).htmlAttributes(["b": "2"])` resolves to both `a` and `b` on the
+    /// element. On a key both calls set, the one closer to the content — the
+    /// later, "more inside" call in the chain — wins, mirroring how nested
+    /// environment overrides work generally. This is unlike ``htmlTag(_:)``
+    /// or ``href(_:)``, which are single-valued and where a later call
+    /// simply replaces the earlier one; see ``HTMLAttributesRequest``'s doc
+    /// comment for why attributes are the case that merges.
     ///
     /// - Parameter attributes: The attributes to add, keyed by name.
     /// - Returns: The view, carrying the requested attributes.
