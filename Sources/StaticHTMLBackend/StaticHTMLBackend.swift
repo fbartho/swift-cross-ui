@@ -70,6 +70,16 @@ public final class StaticHTMLBackend:
         var pendingAttributesRequest: HTMLAttributesRequest?
         /// The href request that was in scope when this widget was updated.
         var pendingHrefRequest: HTMLHrefRequest?
+        /// The raw-fragment request that was in scope when this widget was
+        /// updated.
+        var pendingRawFragmentRequest: HTMLRawFragmentRequest?
+        /// Markup this widget should be replaced by, resolved from
+        /// ``pendingRawFragmentRequest`` once the whole tree is built.
+        ///
+        /// Set only on the zero-size leaf a ``RawHTMLFragment`` or
+        /// ``SlotComponent`` produces; the emitter writes it out in place of
+        /// the element it would otherwise have emitted.
+        public var rawFragment: HTMLRawFragmentRequest?
         /// Whether ``View/disabled(_:)`` was in scope when this widget was
         /// updated.
         ///
@@ -104,6 +114,7 @@ public final class StaticHTMLBackend:
             pendingTagRequest = environment.htmlTagRequest
             pendingAttributesRequest = environment.htmlAttributesRequest
             pendingHrefRequest = environment.htmlHrefRequest
+            pendingRawFragmentRequest = environment.htmlRawFragmentRequest
             isEnabled = environment.isEnabled
         }
     }

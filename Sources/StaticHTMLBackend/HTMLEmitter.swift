@@ -43,6 +43,28 @@ public struct HTMLEmitter {
     public var interner = StyleInterner()
     /// The palette that turns scheme-varying colors into custom properties.
     public var palette = ColorPalette()
+    /// The registry the emitter registers built-in machinery into, and that
+    /// view-tree contributions have already been registered into.
+    ///
+    /// Registering here rather than in the views is what makes built-in
+    /// machinery conditional on a widget actually rendering: a retroactive
+    /// conformance on a core view would never fire (the core's update loop
+    /// knows nothing about the protocol), but the emitter sees every widget
+    /// that reaches the document, has the layout data to parameterize the
+    /// asset, and registers exactly once thanks to dedupe.
+    public var registry: HTMLFragmentRegistry?
+    /// Where image data is published, and the size below which it's inlined
+    /// instead.
+    var assetStore: (any AssetStore)?
+    var inlineAssetThreshold: Int?
+    /// The custom slot names the document declared, for validating
+    /// ``SlotComponent`` markers as they're encountered.
+    var declaredSlots: Set<String> = []
+    /// The slot names a ``SlotComponent`` marker was actually found for.
+    ///
+    /// Collected during emission so the renderer can report a declared slot
+    /// whose items would otherwise be silently dropped.
+    private(set) var encounteredSlots: Set<String> = []
 
     /// How a parent is positioning one of its children.
     public enum Placement: Hashable, Sendable {
@@ -122,6 +144,30 @@ public struct HTMLEmitter {
         flexShrinkWeight: Double? = nil
     ) -> String {
         let indent = String(repeating: "  ", count: indentLevel + 1)
+
+        // A raw fragment or slot marker replaces the element entirely — the
+        // zero-size leaf the view produced exists only to carry the payload
+        // here, so emitting a box around it would put a stray div in the
+        // document.
+        if let fragment = widget.rawFragment {
+            if let slotName = fragment.slotName {
+                encounteredSlots.insert(slotName)
+                precondition(
+                    declaredSlots.contains(slotName),
+                    """
+                    SlotComponent("\(slotName)") has no matching slot on the \
+                    document context. Declare it with \
+                    DocumentContext.withSlot("\(slotName)") — an undeclared \
+                    name is a typo, and emitting nothing here would hide it.
+                    """
+                )
+                let items = registry?.items(in: .custom(slotName)) ?? []
+                return items
+                    .map { $0.rendered(indent: indent) }
+                    .joined(separator: "\n")
+            }
+            return "\(indent)\(fragment.html)"
+        }
 
         var style = Style()
         if let flexShrinkWeight {
