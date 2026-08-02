@@ -215,6 +215,16 @@ public struct HTMLEmitter {
             // ``HTMLEmitter/Placement/backgroundStretch``.
             style.set("absolute", for: "position")
             style.set("0", for: "inset")
+            // A positioned element paints above its unpositioned in-flow
+            // siblings whatever the tree order says (CSS 2.1 Appendix E:
+            // positioned/z-index:auto is step 8, in-flow blocks are step 4
+            // and inline content step 7), and this backdrop's sibling is
+            // the foreground in flow. z-index:-1 moves it to step 3, below
+            // both. The wrapper isolates so it can't sink past the
+            // ancestors' backgrounds too — see the isBackgroundLayering
+            // branch in
+            // ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
+            style.set("-1", for: "z-index")
         }
         if widget.cornerRadius > 0 {
             style.set("\(widget.cornerRadius)px", for: "border-radius")
@@ -960,6 +970,16 @@ public struct HTMLEmitter {
             // path baking both to the build host's committed px size.
             if container.isBackgroundLayering, container.children.count == 2 {
                 style.set("relative", for: "position")
+                // The backdrop is z-index:-1 (see the .backgroundStretch
+                // branch in
+                // ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``),
+                // which without a stacking context here would put it behind
+                // this wrapper's own ancestors' backgrounds rather than just
+                // behind the foreground. isolation rather than z-index:0
+                // because it creates the context without also giving this
+                // wrapper an explicit paint level among its own siblings,
+                // which would reorder the whole subtree against them.
+                style.set("isolate", for: "isolation")
                 let backdrop = container.children[0].widget
                 let foreground = container.children[1].widget
                 // Matches the shape ``HTMLEmitter/emitChildren(_:placement:indent:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeights:)``
