@@ -101,6 +101,11 @@ extension HTMLFragmentRegistry {
     /// leans on user-agent defaults it would be wrong to flatten (list markers,
     /// blockquote indentation); what needs neutralizing is only the small set
     /// of defaults that fight values the layout system already resolved.
+    ///
+    /// Every selector must keep its `#root` prefix *inside* `:where()`, which
+    /// zeroes the block's specificity. Left bare, `#root` scores (1,0,0) and
+    /// outranks the interned classes (0,1,0) carrying each view's declared
+    /// style, so the reset would win and headings would render flat.
     static func resetItem() -> FragmentItem {
         FragmentItem(
             key: .reset,
@@ -109,33 +114,12 @@ extension HTMLFragmentRegistry {
                 """
                 :root { color-scheme: light dark; }
                 body { margin: 0; font-family: -apple-system, system-ui, sans-serif; }
-                /* Font sizing and weight come from the declared text styles the
-                   layout system resolved, so the user agent's heading defaults
-                   would only fight them. Margins likewise: spacing between
-                   elements is the stacks' gap, not the browser's.
-
-                   The whole selector is wrapped in :where(), not just the tag
-                   list, so the block carries zero specificity. #root on its own
-                   is an id selector — (1,0,0) — which would otherwise outrank
-                   every interned class (0,1,0) and make a heading's declared
-                   font-size lose to this reset instead of the other way around. */
                 :where(#root h1, #root h2, #root h3, #root h4, #root h5, #root h6, #root p) {
                   margin: 0;
                   font-size: inherit;
                   font-weight: inherit;
                 }
                 :where(#root a) { color: inherit; }
-                /* Under the tier-activation principle, Button emits a real
-                   button element for its floor-disabled, action-only row. A
-                   real button drags in UA chrome (its own font, border,
-                   background, padding) that the interned class for its
-                   declared style has to fight otherwise. Kept minimal and
-                   specifically scoped to button/input, the same low-specificity
-                   :where() shape as the rest of this reset, so it doesn't need
-                   to win a specificity fight against anything: appearance:none
-                   only strips the platform's own decoration, everything else
-                   (color, spacing, sizing) is still this backend's interned
-                   class to set. */
                 :where(#root button, #root input) {
                   margin: 0;
                   padding: 0;
