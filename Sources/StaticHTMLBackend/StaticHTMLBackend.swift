@@ -296,23 +296,23 @@ public final class StaticHTMLBackend:
         /// produced to hold children, not one the author declared anything
         /// about.
         ///
-        /// `ForEach` and the `TupleView`s a `ViewBuilder` block expands to are
-        /// the cases that matter: they arrive here as ordinary stack
-        /// containers, indistinguishable from a `VStack` the author wrote,
-        /// except that no frame was ever declared on them. That distinction
-        /// is what makes it safe to let a child's stretch intent pass through
-        /// them — see ``relaysChildStretch``.
+        /// `ForEach`, `Group`, the `TupleView`s a `ViewBuilder` block expands
+        /// to, and the `EitherView` an `if`/`else` produces are the cases that
+        /// matter: they arrive here as ordinary containers, indistinguishable
+        /// from a `VStack` the author wrote, except that no frame was ever
+        /// declared on them. That distinction is what makes it safe to let a
+        /// child's stretch intent pass through them — see
+        /// ``relaysChildStretch``.
         ///
         /// A `.background()` pair is deliberately excluded even though it
         /// declares no frame of its own: it's a real box whose width tracks
         /// its foreground, and it reaches emission through its own branch
-        /// rather than the generic stack path this property feeds.
+        /// rather than the paths this property feeds.
         var isStructuralWrapper: Bool {
             declaredWidth == nil && declaredHeight == nil
                 && declaredMinWidth == nil && declaredMaxWidth == nil
                 && declaredMinHeight == nil && declaredMaxHeight == nil
                 && !isBackgroundLayering
-                && stackLayout != nil
         }
 
         /// Whether this container's subtree carries a stretch that an

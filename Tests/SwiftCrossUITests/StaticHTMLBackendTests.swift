@@ -802,6 +802,41 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("Group and if/else wrappers relay a stretch the same way ForEach does")
+    func groupAndConditionalWrappersRelayChildStretch() {
+        // Group carries a stack layout and EitherView doesn't, so they reach
+        // emission through different branches — but both sit between the
+        // stack and the stretch as flex items that would otherwise
+        // shrink-wrap, which is the only property the relay depends on.
+        let grouped = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                Group {
+                    Text("row").frame(maxWidth: .infinity)
+                }
+            },
+            context: "Group stretch"
+        ).html
+        let groupRule = Self.styleRule(forElementContaining: "data-scui=\"Group\"", in: grouped)
+        #expect(groupRule?.contains("align-self:stretch") == true)
+
+        let conditional = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                if Bool.random() || true {
+                    Text("row").frame(maxWidth: .infinity)
+                } else {
+                    Text("other")
+                }
+            },
+            context: "Conditional stretch"
+        ).html
+        let eitherRule = Self.styleRule(
+            forElementContaining: "data-scui=\"EitherView\"",
+            in: conditional
+        )
+        #expect(eitherRule?.contains("align-self:stretch") == true)
+    }
+
+    @MainActor
     @Test("A wrapper carrying its own frame absorbs the stretch rather than relaying it")
     func framedWrapperDoesNotRelayChildStretch() {
         // A declared width is the author's answer for everything below it, so
