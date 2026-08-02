@@ -2,6 +2,7 @@ import Foundation
 import ImageFormats
 import Testing
 
+import DummyBackend
 @testable import StaticHTMLBackend
 
 @_spi(Backends) import SwiftCrossUI
@@ -288,6 +289,170 @@ struct StaticHTMLFragmentTests {
         #expect(html.contains("display:contents"))
         #expect(!html.contains("width:0px"))
         #expect(!html.contains("height:0px"))
+    }
+
+    // MARK: - Comments
+
+    @Test("A comment is emitted with the delimiters around its text")
+    func commentEmitsDelimitedText() {
+        let html = StaticHTMLRenderer.render(
+            HTMLComment("Navigation starts here"),
+            context: "Comment"
+        ).html
+        #expect(html.contains("<!-- Navigation starts here -->"))
+    }
+
+    @Test("A comment is indented to the level it's spliced at")
+    func commentMatchesSpliceIndentation() {
+        // The emitter prefixes a spliced fragment with the indent of the
+        // element it replaces, so the comment lines up with the innermost
+        // wrapper of its own chain rather than floating at column zero.
+        //
+        // That chain — the view's own boundary, .transformEnvironment,
+        // StrictFrameView — is RawHTMLFragment's, and it puts the payload
+        // three levels deeper than the stack siblings it sits between. The
+        // wrappers exist for layout (they carry display:contents so the
+        // fragment doesn't overlap flex siblings) and are invisible in the
+        // rendered page, so this is cosmetic in the source only. Asserted at
+        // the depth the infrastructure actually produces rather than the
+        // shallower one, so a future change to the chain shows up here.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Text("Before")
+                HTMLComment("Between the two")
+                Text("After")
+            },
+            context: "Comment indentation"
+        ).html
+
+        func indent(ofLineContaining needle: String) -> String? {
+            html.components(separatedBy: "\n")
+                .first { $0.contains(needle) }
+                .map { String($0.prefix { $0 == " " }) }
+        }
+
+        let commentIndent = indent(ofLineContaining: "<!--")
+        let wrapperIndent = indent(ofLineContaining: "data-scui=\"StrictFrameView\"")
+        #expect(commentIndent != nil)
+        #expect(wrapperIndent != nil)
+        if let commentIndent, let wrapperIndent {
+            // One level inside the wrapper that encloses it.
+            #expect(commentIndent == wrapperIndent + "  ")
+        }
+    }
+
+    @Test("A comment nests no deeper than a bare raw fragment")
+    func commentAddsNoWrapperLevel() {
+        // HTMLComment sets the fragment request itself rather than nesting a
+        // RawHTMLFragment, which would add a fourth wrapper and indent the
+        // comment one step further from the markup it annotates.
+        func depth(of html: String) -> Int {
+            html.components(separatedBy: "\n")
+                .first { $0.contains("<!--") || $0.contains("<p>Spliced</p>") }
+                .map { $0.prefix { $0 == " " }.count } ?? -1
+        }
+
+        let comment = StaticHTMLRenderer.render(
+            VStack {
+                Text("Before")
+                HTMLComment("Annotation")
+                Text("After")
+            },
+            context: "Comment depth"
+        ).html
+        let fragment = StaticHTMLRenderer.render(
+            VStack {
+                Text("Before")
+                RawHTMLFragment("<p>Spliced</p>")
+                Text("After")
+            },
+            context: "Fragment depth"
+        ).html
+
+        #expect(depth(of: comment) == depth(of: fragment))
+    }
+
+    @Test("A payload containing the terminator can't break out of the comment")
+    func commentNeutralizesTerminator() {
+        let html = StaticHTMLRenderer.render(
+            HTMLComment("evil --> <script>alert(1)</script>"),
+            context: "Comment terminator"
+        ).html
+
+        // The escaped form keeps the author's text readable while leaving the
+        // parser nothing to end the comment on. Entities aren't decoded inside
+        // comments, so the &gt; stays literal rather than becoming a > again.
+        #expect(html.contains("--&gt;"))
+        // Exactly one terminator: the one this comment's own closing
+        // delimiter contributes. The payload's markup stays inside the
+        // comment as text rather than becoming a real element — browser
+        // -verified in probes/corner-radius-bg/comment-safety.html, where the
+        // document parses to a single comment node, no script elements, and
+        // the script body never runs.
+        #expect(html.components(separatedBy: "-->").count == 2)
+    }
+
+    @Test("A trailing hyphen can't combine with the closing delimiter")
+    func commentSeparatesTrailingHyphen() {
+        // Without the separator the emitted text would end `--->`, which is a
+        // terminator the author didn't write.
+        #expect(HTMLComment.sanitize("ends with a dash-") == "ends with a dash- ")
+        let html = StaticHTMLRenderer.render(
+            HTMLComment("ends with a dash-"),
+            context: "Comment trailing hyphen"
+        ).html
+        #expect(!html.contains("--->"))
+    }
+
+    @Test("A bare double hyphen is left alone, since no browser ends a comment on it")
+    func commentPreservesDoubleHyphen() {
+        // Rewriting every `--` would corrupt ordinary prose (a CLI flag, an
+        // em-dash written as two hyphens) to satisfy a validator rule that no
+        // parser enforces.
+        #expect(HTMLComment.sanitize("run --verbose") == "run --verbose")
+    }
+
+    @Test("A comment renders as nothing under a non-HTML backend")
+    func commentIsANoOpUnderOtherBackends() {
+        // The payload rides an environment value only StaticHTMLBackend reads,
+        // so under any other backend the view is just the zero-size Color the
+        // fragment's body produces. A comment has no native equivalent, and
+        // rendering as nothing is the intended behaviour rather than a gap.
+        let backend = DummyBackend()
+        let window = backend.createWindow(withDefaultSize: nil, id: "window")
+        let environment = EnvironmentValues(backend: backend).with(\.window, window)
+
+        let node = ViewGraphNode(
+            for: HTMLComment("Invisible to native backends"),
+            backend: backend,
+            environment: environment
+        )
+        let result = node.computeLayout(
+            proposedSize: .unspecified,
+            environment: environment
+        )
+        _ = node.commit()
+
+        #expect(result.size == .zero)
+    }
+
+    @Test("A comment doesn't participate in layout")
+    func commentDoesNotParticipateInLayout() {
+        // Comments aren't boxes. The comment rides RawHTMLFragment's
+        // zero-size leaf, whose wrapper chain emits display:contents so the
+        // siblings lay out as though it weren't there.
+        let withComment = StaticHTMLRenderer.render(
+            VStack {
+                Text("Before")
+                HTMLComment("Invisible")
+                Text("After")
+            },
+            context: "Comment layout"
+        ).html
+
+        #expect(withComment.contains("display:contents"))
+        #expect(!withComment.contains("width:0px"))
+        #expect(!withComment.contains("height:0px"))
     }
 
     // MARK: - Custom slots
