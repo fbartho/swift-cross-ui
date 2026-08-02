@@ -124,6 +124,49 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A corner radius clips its subtree, so a .background() backdrop is rounded too")
+    func cornerRadiusClipsBackgroundBackdrop() {
+        // border-radius only rounds the element's own background and border.
+        // The backdrop a .background() emits is a separate absolutely
+        // positioned child with a radius of its own of 0, so without a clip
+        // on the rounding element it keeps painting square corners over the
+        // rounded ones. Every native backend pairs the radius with a clip
+        // (AppKit's clipsToBounds, UIKit's masksToBounds).
+        //
+        // Browser-verified by screenshot rather than geometry: the corners of
+        // an unclipped card stay filled with the backdrop colour while every
+        // computed box is already correct, so only paint distinguishes the
+        // two. See probes/corner-radius-bg.
+        let html = StaticHTMLRenderer.render(
+            Text("Panel").frame(width: 300, height: 200)
+                .background(Color.gray)
+                .frame(width: 300, height: 200)
+                .cornerRadius(24),
+            context: "Rounded background",
+            size: SIMD2(1400, 900)
+        ).html
+
+        let roundedRule = Self.internedRule(containing: "border-radius:24px", in: html)
+        #expect(roundedRule?.contains("overflow:hidden") == true)
+    }
+
+    @MainActor
+    @Test("A corner radius on plain content clips too, matching the native backends")
+    func cornerRadiusClipsPlainContent() {
+        // The clip isn't conditional on a background being present: the
+        // radius means the same thing wherever it's applied, and a child that
+        // overflows a rounded box would otherwise paint outside the curve.
+        let html = StaticHTMLRenderer.render(
+            Text("Plain").frame(width: 300, height: 200).cornerRadius(24),
+            context: "Rounded plain",
+            size: SIMD2(1400, 900)
+        ).html
+
+        let roundedRule = Self.internedRule(containing: "border-radius:24px", in: html)
+        #expect(roundedRule?.contains("overflow:hidden") == true)
+    }
+
+    @MainActor
     @Test("A ZStack's top layer still paints last, since both layers stay positioned")
     func zStackTopLayerPaintsLast() {
         // The overlap-pin path (both children position:absolute, no z-index)

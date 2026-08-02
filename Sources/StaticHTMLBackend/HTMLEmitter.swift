@@ -228,6 +228,14 @@ public struct HTMLEmitter {
         }
         if widget.cornerRadius > 0 {
             style.set("\(widget.cornerRadius)px", for: "border-radius")
+            // border-radius alone only rounds this element's own background
+            // and border; descendants keep painting square over the rounded
+            // corners. The native backends all pair the radius with a clip
+            // (AppKit's clipsToBounds, UIKit's masksToBounds), so a
+            // .background() backdrop — absolutely positioned at inset:0 with
+            // a radius of its own of 0 — needs the same treatment here or it
+            // fills the corners the radius was meant to cut.
+            style.set("hidden", for: "overflow")
         }
         if widget.isDivider {
             // Divider's documented behaviour is to expand along the minor
