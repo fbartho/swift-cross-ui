@@ -84,6 +84,17 @@ public struct HTMLEmitter {
         /// The element is pinned to the coordinates the layout system committed
         /// for it. Used only where flow can't express the arrangement.
         case absolute
+        /// The element is absolutely positioned but stretched to cover its
+        /// positioned ancestor's box (`inset:0`) rather than pinned to the
+        /// build-host's committed px size. Used for a
+        /// ``SwiftCrossUI/View/background(_:)`` backdrop specifically (see
+        /// ``StaticHTMLBackend/Container/isBackgroundLayering``): the
+        /// backdrop has no content of its own to size itself from, so it has
+        /// to track whatever box the foreground box ends up being — which
+        /// ``absolute``'s baked width/height can't do once that box reflows
+        /// at a width other than the one the layout system happened to
+        /// propose.
+        case backgroundStretch
     }
 
     /// Creates an emitter.
@@ -196,6 +207,14 @@ public struct HTMLEmitter {
             style.set("\(origin.y)px", for: "top")
             style.set("\(widget.size.x)px", for: "width")
             style.set("\(widget.size.y)px", for: "height")
+        }
+        if placement == .backgroundStretch {
+            // inset:0, not baked coordinates: the backdrop has to cover
+            // whatever box the positioned ancestor ends up being at the
+            // reader's width, not the one the build host committed. See
+            // ``HTMLEmitter/Placement/backgroundStretch``.
+            style.set("absolute", for: "position")
+            style.set("0", for: "inset")
         }
         if widget.cornerRadius > 0 {
             style.set("\(widget.cornerRadius)px", for: "border-radius")
@@ -891,6 +910,42 @@ public struct HTMLEmitter {
                 }
             }
 
+            // A .background() pair is a two-child, always-overlapping
+            // container by construction (see
+            // ``StaticHTMLBackend/Container/isBackgroundLayering``), but it
+            // isn't the author declaring overlap the way a ZStack is — the
+            // backdrop has no content of its own, so nothing is lost by
+            // letting the foreground keep flow sizing (and with it, any
+            // declared flexible constraint like .frame(maxWidth:)) while the
+            // backdrop stretches to cover whatever box that turns out to be
+            // at the reader's width, rather than the generic overlap-pin
+            // path baking both to the build host's committed px size.
+            if container.isBackgroundLayering, container.children.count == 2 {
+                style.set("relative", for: "position")
+                let backdrop = container.children[0].widget
+                let foreground = container.children[1].widget
+                // Matches the shape ``HTMLEmitter/emitChildren(_:placement:indent:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeights:)``
+                // produces — a leading newline, each child's markup
+                // newline-terminated — since the closing tag this returns
+                // into (`isRawInner` branch, back in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``)
+                // appends `indent` itself; that helper can't be reused
+                // directly because the two children need different
+                // placements, not one shared across the list.
+                return "\n"
+                    + emit(
+                        backdrop,
+                        at: .zero,
+                        placement: .backgroundStretch,
+                        indentLevel: indentLevel + 1
+                    ) + "\n"
+                    + emit(
+                        foreground,
+                        at: .zero,
+                        placement: .flow,
+                        indentLevel: indentLevel + 1
+                    ) + "\n"
+            }
+
             // Children that overlap can only be described by their
             // coordinates: flow has no rule that would stack them on top of
             // each other. Everything else stays in flow, because a container
@@ -1041,7 +1096,9 @@ public struct HTMLEmitter {
         hasEnclosingFrame: Bool = false
     ) {
         guard placement == .flow else {
-            // The absolute branch has already set an exact width and height.
+            // .absolute has already set an exact width and height;
+            // .backgroundStretch has already set inset:0, which sizes the
+            // element without any width/height declaration of its own.
             return
         }
         if let declaredWidth {

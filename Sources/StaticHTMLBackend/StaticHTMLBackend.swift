@@ -218,6 +218,20 @@ public final class StaticHTMLBackend:
         /// undeclared priority), which is a real, meaningful value the
         /// emitter still needs to see.
         public var childLayoutPriorities: [Double]?
+        /// Whether this container is standing in for a
+        /// ``SwiftCrossUI/View/background(_:)`` pair, from
+        /// ``BackendFeatures/Widgets/describeBackground(of:)``.
+        ///
+        /// `children` is always exactly `[backdrop, foreground]` in that
+        /// order when this is set (``BackgroundModifier/body`` is a
+        /// `TupleView2(background, foreground)`, and ``BackgroundModifier/commit``
+        /// positions index 0/1 accordingly) — the emitter special-cases this
+        /// shape instead of routing it through the generic overlap-pin path
+        /// every other two-child, always-overlapping container takes, since
+        /// a ``ZStack``'s overlap is declared author intent to preserve
+        /// while a background's backdrop should track the foreground's box
+        /// at whatever width the browser reflows it to.
+        public var isBackgroundLayering = false
         /// The width the author fixed with ``SwiftCrossUI/View/frame(width:height:alignment:)``.
         ///
         /// Kept apart from ``Widget/size`` because only a dimension the author
@@ -527,6 +541,10 @@ public final class StaticHTMLBackend:
 
     public func describeDivider(of widget: Widget) {
         widget.isDivider = true
+    }
+
+    public func describeBackground(of widget: Widget) {
+        (widget as? Container)?.isBackgroundLayering = true
     }
 
     public func createScrollContainer(for child: Widget) -> Widget {
