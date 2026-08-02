@@ -334,10 +334,17 @@ public enum StaticHTMLRenderer {
     /// author made that whole group tappable, and picking one child would be a
     /// guess.
     ///
+    /// Descent also stops at a control that owns its label subtree: a
+    /// view-label button is a single-child widget, but it becomes the element
+    /// the reader activates, so sinking the marker onto its label would mark
+    /// the text inside the control rather than the control.
+    ///
     /// - Parameter widget: The subtree to walk.
     private static func sinkTapMarkers(in widget: StaticHTMLBackend.Widget) {
         let children = widget.getChildren()
-        if widget.awaitsTapEnlivening, children.count == 1, let child = children.first {
+        if widget.awaitsTapEnlivening, children.count == 1, let child = children.first,
+           !(widget is StaticHTMLBackend.ViewLabelButton)
+        {
             widget.awaitsTapEnlivening = false
             child.awaitsTapEnlivening = true
         }
@@ -488,7 +495,15 @@ public enum StaticHTMLRenderer {
         // it's a container the author gave multiple children, not a
         // transparent wrapper around a single one — its own tag (if it has
         // one) belongs on it, not hoisted past it onto the lone survivor.
-        if children.count == 1, populated.count == 1, let inner = first.owner {
+        // A view-label button has exactly one child, but unlike a wrapper it
+        // becomes an element of its own that consumes these requests — the
+        // emission matrix turns an href into the button's own `<a href>`.
+        // Handing ownership to its label would put the href on the text
+        // inside the control instead, emitting a link nested in a disabled
+        // button rather than a live one.
+        let ownsItsElement = widget is StaticHTMLBackend.ViewLabelButton
+
+        if children.count == 1, populated.count == 1, !ownsItsElement, let inner = first.owner {
             return Coverage(
                 owner: inner,
                 tag: first.tag,
