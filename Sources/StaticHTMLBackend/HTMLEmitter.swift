@@ -998,6 +998,24 @@ public struct HTMLEmitter {
             attributes["aria-disabled"] = "true"
             attributes["tabindex"] = "-1"
         }
+        // A tap gesture has nothing pure HTML/CSS can resolve, so the element
+        // it was attached to is marked for the tier that can bind it. Applied
+        // after the floor-disabled rule above, and deliberately outside it:
+        // the marked element is ordinary content, not a control, so it gets
+        // no `disabled`/`aria-disabled`/`tabindex="-1"` — a <span> the author
+        // made tappable is still just a span at this tier, and claiming
+        // disabled semantics for it would describe a control that isn't
+        // there. Nothing at the floor announces the tap either (no cursor, no
+        // role): the affordance arrives with the tier that can honour it.
+        //
+        // A control that reached here already marked keeps its single marker
+        // — `data-scui-enliven` says "this element has interaction waiting on
+        // the JS tier", which a tapped Button states once, not twice. The
+        // enlivening tier binds whatever that element's widget kind implies,
+        // so the control's own action and the tap gesture ride the same flag.
+        if widget.awaitsTapEnlivening, attributes["data-scui-enliven"] == nil {
+            attributes["data-scui-enliven"] = "js"
+        }
         // Written before data-scui so an author attribute of the same name
         // still loses to the backend, matching how every other backend-owned
         // attribute is applied.

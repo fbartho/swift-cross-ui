@@ -311,8 +311,39 @@ public enum StaticHTMLRenderer {
             assign(href, to: coverage)
         }
 
+        sinkTapMarkers(in: root)
+
         var identifierCounter = 0
         associateLabels(in: root, counter: &identifierCounter)
+    }
+
+    /// Moves each tap marker down onto the element the author made tappable.
+    ///
+    /// `OnTapGestureModifier` produces a wrapper widget of its own, so unlike
+    /// an href — which rides the environment and is hoisted to the widget
+    /// whose subtree it covers — the flag starts on the wrapper rather than on
+    /// the content. Left there it would mark a `<div>` around a control that
+    /// carries its own marker, so a tapped `Button` would emit two markers for
+    /// one interaction and the enlivening tier would have to guess which
+    /// element it was meant to bind.
+    ///
+    /// Descent follows single-child wrapping only, the same shape
+    /// ``hoistRequests(in:)`` hands ownership down through: a wrapper adds no
+    /// element worth marking, so the marker belongs to the one view beneath
+    /// it. A wrapper around several children keeps the marker itself — the
+    /// author made that whole group tappable, and picking one child would be a
+    /// guess.
+    ///
+    /// - Parameter widget: The subtree to walk.
+    private static func sinkTapMarkers(in widget: StaticHTMLBackend.Widget) {
+        let children = widget.getChildren()
+        if widget.awaitsTapEnlivening, children.count == 1, let child = children.first {
+            widget.awaitsTapEnlivening = false
+            child.awaitsTapEnlivening = true
+        }
+        for child in children {
+            sinkTapMarkers(in: child)
+        }
     }
 
     /// Wires each unlabelled control to the text that names it.

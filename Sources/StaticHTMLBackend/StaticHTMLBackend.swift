@@ -127,6 +127,18 @@ public final class StaticHTMLBackend:
         /// the button case in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``
         /// for the emission matrix this drives.
         public var href: String?
+        /// Whether a tap gesture was attached here that only a runtime tier
+        /// can deliver, from
+        /// ``StaticHTMLBackend/updateTapGestureTarget(_:gesture:environment:action:)``.
+        ///
+        /// Like ``href``, this is a tier signal rather than an author
+        /// override: it says the element has interaction waiting on a tier
+        /// that isn't present, which is what the emitter turns into
+        /// `data-scui-enliven`. Unlike a control, the marked element is
+        /// ordinary content — it gets no `disabled`, because there is no
+        /// control here to disable and marking arbitrary content disabled
+        /// would claim a semantics it doesn't have.
+        public var awaitsTapEnlivening = false
         /// The `id` this widget has to carry because something else refers to
         /// it, from ``StaticHTMLRenderer``'s label-association pass.
         ///

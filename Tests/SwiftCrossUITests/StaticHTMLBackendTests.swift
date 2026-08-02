@@ -1193,6 +1193,106 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A tap gesture renders its content and marks it, instead of trapping")
+    func tapGestureRendersFloorInert() {
+        // Tier-activation principle: the backend declares TapGestures and
+        // degrades, rather than leaving the feature unimplemented so that
+        // `onTapGesture` traps at widget construction ("does not implement
+        // 'BackendFeatures.TapGestures'"). The content renders; only the
+        // interactivity waits for the tier that can deliver it.
+        let html = StaticHTMLRenderer.render(
+            Text("Tap me").onTapGesture {},
+            context: "Tap gesture"
+        ).html
+
+        #expect(html.contains("data-scui-enliven=\"js\""))
+        #expect(html.contains(">Tap me<"))
+    }
+
+    @MainActor
+    @Test("A tap target adds no element and no layout participation of its own")
+    func tapGestureAddsNoWrapperElement() {
+        // `createTapGestureTarget` returns the child unchanged, so the marker
+        // lands on the element the content would have emitted anyway. Byte
+        // equality against the unmarked render — modulo the marker itself,
+        // and the debug view-type name, which names whichever view owns the
+        // widget rather than describing the emitted box — is what says the tap
+        // target cost the document no wrapper, no extra box, and no change to
+        // how anything is laid out.
+        let plain = StaticHTMLRenderer.render(Text("Tap me"), context: "Tap gesture").html
+        let tapped = StaticHTMLRenderer.render(
+            Text("Tap me").onTapGesture {},
+            context: "Tap gesture"
+        ).html
+        let normalized =
+            tapped
+                .replacingOccurrences(of: " data-scui-enliven=\"js\"", with: "")
+                .replacingOccurrences(
+                    of: "data-scui=\"OnTapGestureModifier\"",
+                    with: "data-scui=\"Text\""
+                )
+
+        #expect(normalized == plain)
+    }
+
+    @MainActor
+    @Test("A tap-marked span is not dressed up as a disabled control")
+    func tapGestureDoesNotClaimControlSemantics() {
+        // The floor-disabled rule keys off the enliven marker, but it speaks
+        // for controls: ordinary content made tappable has no control to
+        // disable, and `aria-disabled` on a span would describe one that
+        // isn't there. Nothing at the floor should advertise an affordance
+        // the tier can't yet honour either — the interned style the marked
+        // element carries declares no cursor, so the reset's control cursors
+        // (which every document's head carries regardless) never reach it.
+        let html = StaticHTMLRenderer.render(
+            Text("Tap me").onTapGesture {},
+            context: "Tap gesture"
+        ).html
+        let markedRule = Self.styleRule(forElementContaining: "data-scui-enliven", in: html)
+
+        #expect(!html.contains("aria-disabled"))
+        #expect(!html.contains("tabindex=\"-1\""))
+        #expect(!html.contains("disabled=\"disabled\""))
+        #expect(!html.contains("role=\"button\""))
+        #expect(markedRule?.contains("cursor") != true)
+    }
+
+    @MainActor
+    @Test("A disabled tap gesture records nothing for a later tier to bind")
+    func disabledTapGestureIsNotMarked() {
+        // `.disabled(true)` is a hard author override at every tier, matching
+        // how every other control here treats it: there is no gesture left
+        // for an arriving tier to attach.
+        let html = StaticHTMLRenderer.render(
+            Text("Tap me").onTapGesture {}.disabled(true),
+            context: "Disabled tap gesture"
+        ).html
+
+        #expect(!html.contains("data-scui-enliven"))
+        #expect(html.contains(">Tap me<"))
+    }
+
+    @MainActor
+    @Test("A tapped link keeps one marker and stays a live anchor")
+    func tappedLinkIsMarkedOnceAndStaysLive() {
+        // Overlap rule: a control that already carries the marker doesn't get
+        // a second one — the flag says "interaction waits on the JS tier",
+        // which is stated once. The link half stays pure-HTML-resolvable, so
+        // the anchor is live at the floor exactly as an untapped one is.
+        let html = StaticHTMLRenderer.render(
+            Button("Track & go") {}.href("/docs").onTapGesture {},
+            context: "Tapped link"
+        ).html
+
+        let markers = html.components(separatedBy: "data-scui-enliven").count - 1
+        #expect(markers == 1)
+        #expect(html.contains("<a "))
+        #expect(html.contains("href=\"/docs\""))
+        #expect(!html.contains("disabled=\"disabled\""))
+    }
+
+    @MainActor
     @Test("A button carries a bordered default appearance, not bare text")
     func buttonCarriesDefaultAppearance() {
         // A native backend's button looks like a button because the platform
