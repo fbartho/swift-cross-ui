@@ -109,6 +109,23 @@ public final class StaticHTMLBackend:
             }
             return children[0].wrapsRawFragment
         }
+        /// Whether this widget would emit an element that exists only to hold
+        /// its children — nothing an author asked for is riding on it.
+        ///
+        /// Used to decide whether a wrapper may be dropped. Committed geometry
+        /// is not consulted — every widget has some — but a frame the author
+        /// *declared* counts, which ``Container/isStructuralWrapper`` answers
+        /// for the one widget type that can carry one.
+        var carriesNoAuthoredIntent: Bool {
+            if let container = self as? Container, !container.isStructuralWrapper {
+                return false
+            }
+            return explicitElement == nil && authorAttributes.isEmpty && href == nil
+                && rawFragment == nil && referencedIdentifier == nil && labelledBy == nil
+                && cornerRadius == 0 && !awaitsTapEnlivening && isEnabled
+                && !isSpacer && !isDivider && declaredAspectRatio == nil
+        }
+
         /// Whether ``View/disabled(_:)`` was in scope when this widget was
         /// updated.
         ///
@@ -204,6 +221,12 @@ public final class StaticHTMLBackend:
         /// text style and therefore the document's heading structure.
         public var declaredFont: Font?
         public var color: SchemePair?
+        /// Whether ``color`` came from ``SwiftCrossUI/View/foregroundColor(_:)``
+        /// rather than from the scheme's default.
+        ///
+        /// ``color`` is always populated — the emitter writes a color on every
+        /// run of text — so it can't answer whether the author chose one.
+        public var hasDeclaredColor = false
         /// The alignment of lines relative to each other, from
         /// ``SwiftCrossUI/View/multilineTextAlignment(_:)``.
         public var textAlignment: HorizontalAlignment = .leading
@@ -240,6 +263,35 @@ public final class StaticHTMLBackend:
                 characterWidth * label.count + horizontalPadding * 2,
                 Int(font.lineHeight) + verticalPadding * 2
             )
+        }
+    }
+
+    /// A button whose label is an arbitrary view, used by
+    /// ``SwiftCrossUI/Button``.
+    ///
+    /// Unlike every other control this backend emits, a button owns a child
+    /// subtree rather than a string, so the emitter renders its label by
+    /// walking that subtree instead of escaping a stored value.
+    public class ViewLabelButton: Widget {
+        /// The widget rendered inside the button.
+        public var label: Widget
+
+        /// The style resolved from the environment by
+        /// ``SwiftCrossUI/View/buttonStyle(_:)``, falling back to
+        /// ``StaticHTMLBackend/defaultButtonStyle()``.
+        public var buttonStyle: ButtonStyle = .bordered
+        /// The appearance requested by ``SwiftCrossUI/View/htmlButtonStyle(_:)``.
+        public var style: HTMLButtonStyle = .automatic
+
+        /// Creates a button wrapping the given label widget.
+        ///
+        /// - Parameter label: The widget to render inside the button.
+        public init(label: Widget) {
+            self.label = label
+        }
+
+        public override func getChildren() -> [Widget] {
+            [label]
         }
     }
 
@@ -758,6 +810,7 @@ public final class StaticHTMLBackend:
             forResolved: environment.suggestedForegroundColor.resolve(in: environment),
             existing: textView.color
         )
+        textView.hasDeclaredColor = environment.foregroundColor != nil
         textView.textAlignment = environment.multilineTextAlignment
         textView.lineLimit = environment.lineLimitSettings
         textView.isTextSelectionEnabled = environment.isTextSelectionEnabled
@@ -779,6 +832,40 @@ public final class StaticHTMLBackend:
         button.font = environment.resolvedFont
         button.style = environment.htmlButtonStyle
         button.captureIntent(from: environment)
+    }
+
+    public func createButton(wrapping widget: Widget) -> Widget {
+        ViewLabelButton(label: widget)
+    }
+
+    public func updateButton(
+        _ button: Widget,
+        environment: EnvironmentValues,
+        action: @escaping () -> Void
+    ) {
+        let button = button as! ViewLabelButton
+        button.buttonStyle = environment.resolvedButtonStyle
+        button.style = HTMLButtonStyle(
+            resolving: environment.buttonStyle,
+            html: environment.htmlButtonStyle
+        )
+        button.captureIntent(from: environment)
+    }
+
+    public func buttonPadding(in environment: EnvironmentValues) -> SIMD2<Int> {
+        let style = HTMLButtonStyle(
+            resolving: environment.buttonStyle,
+            html: environment.htmlButtonStyle
+        )
+        return style.padding(forFont: environment.resolvedFont)
+    }
+
+    public func defaultButtonStyle() -> ButtonStyle {
+        // The emitted default is a bordered button (`.scui-btn-automatic`
+        // carries a border and a background), so the style the core resolves
+        // for an unstyled button has to say the same thing — the layout
+        // system sizes labels against it.
+        .bordered
     }
 
     /// Folds a color resolved in this pass's scheme into a scheme pair.

@@ -11,9 +11,9 @@ import SwiftCrossUI
 /// ``SwiftCrossUI/View/htmlTag(_:)`` and ``SwiftCrossUI/View/href(_:)`` — only
 /// affects StaticHTMLBackend, so a view hierarchy carrying it stays portable.
 ///
-/// Core has no `ButtonStyle` concept, so there is nothing here to bridge to.
-/// Should one arrive, this becomes its static-tier translation rather than a
-/// competing spelling.
+/// Core's ``SwiftCrossUI/ButtonStyle`` covers three of these cases and takes
+/// precedence wherever an author set it; see
+/// ``HTMLButtonStyle/init(resolving:html:)``.
 public enum HTMLButtonStyle: String, Hashable, Sendable, CaseIterable {
     /// The backend's default: a bordered button.
     ///
@@ -47,6 +47,58 @@ public enum HTMLButtonStyle: String, Hashable, Sendable, CaseIterable {
     public var className: String {
         "scui-btn-\(rawValue.lowercased())"
     }
+
+    /// The style to emit for a button, given both spellings in scope.
+    ///
+    /// ``SwiftCrossUI/View/buttonStyle(_:)`` wins wherever an author set it,
+    /// because it is the portable spelling and an author reaching for it is
+    /// styling every backend at once. It carries only three cases, so
+    /// ``SwiftCrossUI/View/htmlButtonStyle(_:)`` stays the way to ask for the
+    /// static tier's own appearances (``borderedProminent``, notably) and
+    /// applies wherever the portable one is silent.
+    ///
+    /// - Parameters:
+    ///   - core: The style set by ``SwiftCrossUI/View/buttonStyle(_:)``, or
+    ///     `nil` where the author set none.
+    ///   - html: The style set by ``SwiftCrossUI/View/htmlButtonStyle(_:)``.
+    init(resolving core: ButtonStyle?, html: HTMLButtonStyle) {
+        switch core?.kind {
+            case .bordered: self = .bordered
+            case .plain: self = .plain
+            case .borderless: self = .borderless
+            case nil: self = html
+        }
+    }
+
+    /// The total padding the emitted CSS adds around a button's label.
+    ///
+    /// The layout system sizes a button as label + padding, so what this
+    /// returns has to agree with the `.scui-btn-*` rules the browser will
+    /// apply, or the build-host estimate and the rendered box disagree. Those
+    /// rules are written in `em`, which resolves against the button's own font
+    /// size — hence the font parameter rather than a constant.
+    ///
+    /// - Parameter font: The font resolved for the button.
+    /// - Returns: The total horizontal and vertical padding, in points.
+    func padding(forFont font: Font.Resolved?) -> SIMD2<Int> {
+        guard self != .plain else {
+            // `.scui-btn-plain` zeroes the padding the shared rule sets.
+            return .zero
+        }
+        let em = font.map { Double($0.pointSize) } ?? Self.fallbackEm
+        return SIMD2(
+            Int((Self.horizontalPaddingEm * 2 * em).rounded()),
+            Int((Self.verticalPaddingEm * 2 * em).rounded())
+        )
+    }
+
+    /// The horizontal padding on one side, matching the emitted CSS.
+    static let horizontalPaddingEm = 0.8
+    /// The vertical padding on one side, matching the emitted CSS.
+    static let verticalPaddingEm = 0.3
+    /// The em size assumed when no font resolved, matching the reset's root
+    /// font size.
+    private static let fallbackEm = 16.0
 }
 
 extension EnvironmentValues {
