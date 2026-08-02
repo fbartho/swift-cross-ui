@@ -701,7 +701,10 @@ struct StaticHTMLBackendTests {
         let infiniteRule = Self.internedRule(containing: "align-self:stretch", in: infinite)
         #expect(infiniteRule?.contains("align-self:stretch") == true)
         #expect(infiniteRule?.contains("flex-grow:1") == true)
-        #expect(infinite.contains("max-width:") == false)
+        // No interned max-width. The document-wide cap declares its own
+        // `max-width: 100%` on every element, which is a different rule and
+        // is why this looks at the element's own class rather than the page.
+        #expect(infiniteRule?.contains("max-width") != true)
 
         #expect(!unframed.contains("align-self:stretch"))
         #expect(!unframed.contains("flex-grow:"))
@@ -2237,8 +2240,12 @@ struct StaticHTMLBackendTests {
         // merely stretched to fill — see the Divider stretch test above.
         #expect(html.contains("width:320px"))
         #expect(html.contains("height:4px"))
-        #expect(!html.contains("min-width"))
-        #expect(!html.contains("min-height"))
+        // Read from the element's own interned rule rather than the page: the
+        // document-wide cap declares `min-width: 0` on everything, which is a
+        // different rule and not what this is asking about.
+        let rule = Self.internedRule(containing: "width:320px", in: html)
+        #expect(rule?.contains("min-width") != true)
+        #expect(rule?.contains("min-height") != true)
     }
 
     @MainActor

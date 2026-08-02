@@ -77,29 +77,34 @@ struct StaticHTMLTableTests {
     }
 
     @MainActor
-    @Test("The scroll box and its ancestors are capped so overflow-x can engage")
+    @Test("Every element is capped, so a table's overflow-x can engage")
     func scrollBoxAncestorsAreCapped() {
         // overflow-x only scrolls a box narrower than its content, and every
         // ancestor between the scroll box and the viewport is shrink-to-fit
-        // here — so without these caps a wide table grew the whole chain to
+        // here — so without the cap a wide table grew the whole chain to
         // max-content and overflowed the page instead of scrolling (measured
         // in Chrome: a 1021px table at a 480px viewport took the document's
         // scroll width to 775px, with the wrapper never scrolling).
         let html = Self.renderTable()
 
         #expect(html.contains("data-scui-tablescroll"))
-        let rule = Self.rule(containing: "div:has([data-scui-tablescroll])", in: html)
-        #expect(rule != nil)
+        let rule = Self.rule(containing: "#root, #root *", in: html)
+        #expect(rule?.contains("max-width: 100%") == true)
+        #expect(rule?.contains("min-width: 0") == true)
         // Zero specificity, so an interned class still outranks it.
         #expect(rule?.contains(":where(") == true)
     }
 
     @MainActor
-    @Test("A document with no table carries none of the table stylesheet")
-    func tableStylesheetIsConditional() {
+    @Test("The cap applies to a document with no table in it")
+    func documentCapIsUnconditional() {
+        // The cap answers "a child may not widen the page past the viewport",
+        // which is not a question about tables — an author-declared frame
+        // wider than a phone asks it too. A table only made it visible first.
         let html = Self.renderSplitView()
 
         #expect(!html.contains("data-scui-tablescroll"))
+        #expect(Self.rule(containing: "#root, #root *", in: html) != nil)
     }
 
     @MainActor

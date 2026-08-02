@@ -67,9 +67,6 @@ public struct HTMLEmitter {
     /// Collected during emission so the renderer can report a declared slot
     /// whose items would otherwise be silently dropped.
     private(set) var encounteredSlots: Set<String> = []
-    /// Whether a table reached the document, and therefore whether
-    /// ``tableStylesheet`` has anything to say.
-    private(set) var emittedTable = false
     /// The document's heading outline, collected in document order as
     /// ``HeadingMap`` derives each heading element.
     ///
@@ -1636,37 +1633,35 @@ public struct HTMLEmitter {
 
     /// The marker attribute a table's scroll box carries.
     ///
-    /// Exists so ``tableStylesheet`` can find the box and its ancestors from
-    /// the stylesheet; the interned class can't do that job, since the rules
-    /// below have to reach elements this emitter never styled.
+    /// The box is the one element in the document whose content is allowed to
+    /// exceed it, so it needs to be findable from outside the interned
+    /// classes — see ``documentStylesheet``.
     static let tableScrollMarker = "data-scui-tablescroll"
 
-    /// The rules that let a table's scroll box actually scroll.
+    /// The rule that keeps a child from widening the page past the viewport.
     ///
-    /// `overflow-x` only scrolls a box narrower than its content, but every
-    /// ancestor between the scroll box and the viewport is shrink-to-fit in
-    /// this emitter's output, so a wide table grows the whole chain to
-    /// max-content and overflows the page instead (measured: a table needing
-    /// 1021px at a 480px viewport took the document's scroll width to 775px
-    /// with no scrolling anywhere). These rules cap that chain.
+    /// Every box in this emitter's output is shrink-to-fit, so content wider
+    /// than the space available grows its whole ancestor chain to
+    /// `max-content` and takes the document with it: a table needing 1021px
+    /// at a 480px viewport took the document's scroll width to 775px with
+    /// nothing scrolling anywhere. Capping every element against its
+    /// containing block is what stops that, and `min-width:0` is what lets it
+    /// apply at all — a flex item's automatic minimum size would otherwise
+    /// floor the box at its content.
     ///
-    /// Scoped through `:has()` to the scroll box's own ancestors rather than
-    /// applied to every element: the same cap across the whole tree would
-    /// change the sizing of subtrees that deliberately exceed their parent,
-    /// which is a different question from this one.
+    /// This does not forbid horizontal scrolling; it decides where it lives.
+    /// A table's scroll box still scrolls, because `overflow-x` only needs
+    /// the box to be narrower than its own content — which this cap is what
+    /// finally makes true. Deliberate overflow survives; accidental overflow
+    /// does not.
     ///
-    /// Empty unless a table actually rendered.
-    public var tableStylesheet: String {
-        guard emittedTable else {
-            return ""
-        }
-        return """
-            :where(#root div:has([\(Self.tableScrollMarker)]), #root [\(Self.tableScrollMarker)]) {
-              min-width: 0;
-              max-width: 100%;
-              box-sizing: border-box;
-            }
-            """
+    /// The selector reaches every element rather than just `div`: measured at
+    /// 480px, a `div`-scoped form left `<header>`, `<nav>`, and an
+    /// author-declared `width:720px` frame overflowing to 744px. Zero
+    /// specificity (`:where`), so an interned class or a registered
+    /// contribution still outranks it — the same contract the reset holds.
+    public var documentStylesheet: String {
+        ":where(#root, #root *) { min-width: 0; max-width: 100%; box-sizing: border-box; }"
     }
 
     /// Which half of a split view a pane is.
@@ -1811,20 +1806,11 @@ public struct HTMLEmitter {
         indent: String,
         indentLevel: Int
     ) -> String {
-        emittedTable = true
         var wrapperStyle = Style()
+        // The box this scrolls is capped against its containing block by
+        // ``documentStylesheet``, which is what makes it narrower than a wide
+        // table and so lets `overflow-x` engage at all.
         wrapperStyle.set("auto", for: "overflow-x")
-        // overflow-x only scrolls a box that's actually narrower than its
-        // content, and a block box in this emitter's shrink-to-fit ancestor
-        // chain sizes to max-content instead — measured at a 480px viewport,
-        // a table needing 1021px grew every ancestor to match and overflowed
-        // the page rather than scrolling. max-width caps the box against its
-        // containing block, min-width:0 defeats the automatic minimum size a
-        // flex ancestor would otherwise floor it at, and border-box keeps a
-        // padded ancestor's own box inside that cap.
-        wrapperStyle.set("100%", for: "max-width")
-        wrapperStyle.set("0", for: "min-width")
-        wrapperStyle.set("border-box", for: "box-sizing")
         var tableStyle = Style()
         // A table's default `border-collapse` leaves a gap between adjacent
         // cell borders; collapsed is what makes ruling lines meet. width:100%
