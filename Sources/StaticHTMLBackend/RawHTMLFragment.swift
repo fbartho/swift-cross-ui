@@ -39,6 +39,33 @@ extension EnvironmentValues {
     @Entry public var htmlRawFragmentRequest: HTMLRawFragmentRequest?
 }
 
+/// How a ``RawHTMLFragment`` renders under a backend other than
+/// StaticHTMLBackend.
+///
+/// A non-web backend has no way to execute the markup a fragment carries, so
+/// there's nothing to render it *as* — this only chooses whether the source
+/// itself is visible, for the sake of noticing a fragment is there while
+/// building or debugging a cross-platform tree.
+public enum RawFragmentNativeDisplay: Hashable, Sendable {
+    /// The fragment's markup, shown verbatim as preformatted monospaced text.
+    case source
+    /// The fragment renders as nothing, taking no space.
+    case hidden
+}
+
+extension EnvironmentValues {
+    /// How a ``RawHTMLFragment`` displays under a non-web backend.
+    ///
+    /// Set at the app root with `.environment(\.rawFragmentNativeDisplay,
+    /// .hidden)` to flip every fragment in the tree at once. A fragment's own
+    /// `nativeDisplay` constructor parameter, when non-`nil`, overrides this
+    /// for that one instance.
+    ///
+    /// StaticHTMLBackend never consults this value — the web path always
+    /// splices the fragment's markup regardless of what's set here.
+    @Entry public var rawFragmentNativeDisplay: RawFragmentNativeDisplay = .source
+}
+
 /// A view whose payload is written into the document verbatim.
 ///
 /// The escape hatch for markup this backend has no view vocabulary for — an
@@ -69,37 +96,78 @@ extension EnvironmentValues {
 /// absolutely-positioned subtree it is still a lie, and surrounding geometry
 /// will be computed as though the fragment weren't there.
 ///
-/// Under any other backend this renders nothing at all, so a cross-platform
-/// tree using one needs an author-provided native alternative alongside it.
+/// Under any other backend this renders its source as preformatted text by
+/// default — see ``SwiftCrossUI/EnvironmentValues/rawFragmentNativeDisplay``
+/// to hide it instead, either app-wide or per instance.
 public struct RawHTMLFragment: View {
+    @Environment(\.rawFragmentNativeDisplay) var environmentNativeDisplay
+
     /// The markup to splice.
     public var html: String
 
+    /// Overrides ``SwiftCrossUI/EnvironmentValues/rawFragmentNativeDisplay``
+    /// for this instance. `nil` (the default) follows the environment.
+    public var nativeDisplay: RawFragmentNativeDisplay?
+
     /// Creates a fragment.
     ///
-    /// - Parameter html: The markup to write into the document verbatim. See
-    ///   the type's security stance: this is never escaped.
-    public init(_ html: String) {
+    /// - Parameters:
+    ///   - html: The markup to write into the document verbatim. See the
+    ///     type's security stance: this is never escaped.
+    ///   - nativeDisplay: Overrides how this instance displays under a
+    ///     non-web backend. `nil` follows
+    ///     ``SwiftCrossUI/EnvironmentValues/rawFragmentNativeDisplay``.
+    public init(_ html: String, nativeDisplay: RawFragmentNativeDisplay? = nil) {
         self.html = html
+        self.nativeDisplay = nativeDisplay
     }
 
     /// Creates a fragment from a string builder.
     ///
-    /// - Parameter html: A closure returning the markup to splice.
-    public init(@_implicitSelfCapture html: () -> String) {
-        self.init(html())
+    /// - Parameters:
+    ///   - nativeDisplay: Overrides how this instance displays under a
+    ///     non-web backend. `nil` follows
+    ///     ``SwiftCrossUI/EnvironmentValues/rawFragmentNativeDisplay``.
+    ///   - html: A closure returning the markup to splice.
+    public init(
+        nativeDisplay: RawFragmentNativeDisplay? = nil,
+        @_implicitSelfCapture html: () -> String
+    ) {
+        self.init(html(), nativeDisplay: nativeDisplay)
     }
 
     public var body: some View {
-        // The payload rides the environment down to the one widget this view
-        // produces, which is the same path .htmlTag() uses to get an element
-        // name to a widget without the backend protocol knowing about it. The
-        // marker below is what the emitter matches on.
-        SwiftCrossUI.Color.clear
-            .frame(width: 0, height: 0)
-            .transformEnvironment(\.htmlRawFragmentRequest) { request in
-                request = HTMLRawFragmentRequest(html: html, enclosing: request)
-            }
+        // The payload rides the environment down to the one widget each
+        // branch produces, which is the same path .htmlTag() uses to get an
+        // element name to a widget without the backend protocol knowing
+        // about it. StaticHTMLBackend's emitter matches on this and replaces
+        // that widget entirely, so what a branch renders is irrelevant to
+        // the web path — only a non-web backend, which never reads this
+        // environment value, ever shows it. Both branches apply the
+        // transform themselves, rather than sharing one application over a
+        // switch, so each keeps producing a single childless widget for the
+        // emitter to find; a shared wrapper would interpose a container.
+        switch nativeDisplay ?? environmentNativeDisplay {
+            case .source:
+                Text(html)
+                    .font(.system(size: 13).monospaced())
+                    .transformEnvironment(\.htmlRawFragmentRequest) { request in
+                        request = HTMLRawFragmentRequest(html: html, enclosing: request)
+                    }
+            case .hidden:
+                // Color.clear rather than EmptyView: only a widget that sets
+                // a color captures the pending raw-fragment request on
+                // StaticHTMLBackend (see StaticHTMLBackend.setColor),
+                // and this leaf has to carry that request regardless of
+                // which native display mode is in effect — the web path
+                // never consults nativeDisplay, so both branches must stay
+                // spliceable.
+                SwiftCrossUI.Color.clear
+                    .frame(width: 0, height: 0)
+                    .transformEnvironment(\.htmlRawFragmentRequest) { request in
+                        request = HTMLRawFragmentRequest(html: html, enclosing: request)
+                    }
+        }
     }
 }
 

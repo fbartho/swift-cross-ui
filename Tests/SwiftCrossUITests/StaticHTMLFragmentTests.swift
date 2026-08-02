@@ -262,16 +262,15 @@ struct StaticHTMLFragmentTests {
         "A raw fragment's wrapper chain emits display:contents, so it doesn't overlap flex siblings"
     )
     func rawFragmentWrapperDoesNotOverlapFlexSiblings() {
-        // RawHTMLFragment's leaf carries a real 0x0 committed size
-        // (`.frame(width: 0, height: 0)`), which every ancestor wrapper on
-        // the way to it (the view's own boundary, .transformEnvironment)
-        // also honestly reports. That's harmless in block flow — the
-        // browser sizes the real content when it parses it — but inside
-        // this backend's flex-based stacks a width:0;height:0 flex item
-        // doesn't push siblings aside, so the spliced content would
-        // visually overlap the next sibling. display:contents on
-        // every wrapper in the chain removes them from layout entirely, so
-        // the fragment's real content becomes a genuine flex item instead.
+        // Whatever committed size RawHTMLFragment's leaf reports, every
+        // ancestor wrapper on the way to it (the view's own boundary,
+        // .transformEnvironment, and the EitherView/TupleView1 the
+        // display-mode switch in its body introduces) also honestly reports
+        // it. A width:0;height:0 flex item doesn't push siblings aside, so
+        // the spliced content would visually overlap the next sibling if any
+        // of those wrappers kept a real CSS box. display:contents on every
+        // wrapper in the chain removes them from layout entirely, so the
+        // fragment's real content becomes a genuine flex item instead.
         let html = StaticHTMLRenderer.render(
             VStack {
                 Text("Before")
@@ -282,13 +281,114 @@ struct StaticHTMLFragmentTests {
         ).html
 
         // Every div between the VStack and the spliced <p> is present in
-        // markup (StrictFrameView, EnvironmentModifier, RawHTMLFragment),
-        // but none of them should carry a width/height declaration derived
-        // from the leaf's committed 0x0 — display:contents replaces it.
-        #expect(html.contains("data-scui=\"StrictFrameView\""))
+        // markup (EitherView, TupleView1, EnvironmentModifier,
+        // RawHTMLFragment), but none of them should carry a width/height
+        // declaration derived from the leaf's committed size —
+        // display:contents replaces it.
+        #expect(html.contains("data-scui=\"EitherView\""))
         #expect(html.contains("display:contents"))
         #expect(!html.contains("width:0px"))
         #expect(!html.contains("height:0px"))
+    }
+
+    @Test("Under StaticHTMLBackend, nativeDisplay never gates the splice")
+    func nativeDisplayNeverGatesTheWebPath() {
+        // The flag exists for backends that can't execute the markup at
+        // all — StaticHTMLBackend can, so it always splices regardless of
+        // what nativeDisplay says, both from the environment and from the
+        // constructor override.
+        let hiddenByEnvironment = StaticHTMLRenderer.render(
+            RawHTMLFragment("<hr id=\"marker\">")
+                .environment(\.rawFragmentNativeDisplay, .hidden),
+            context: "Env hidden"
+        ).html
+        #expect(hiddenByEnvironment.contains("<hr id=\"marker\">"))
+
+        let hiddenByConstructor = StaticHTMLRenderer.render(
+            RawHTMLFragment("<hr id=\"marker\">", nativeDisplay: .hidden),
+            context: "Constructor hidden"
+        ).html
+        #expect(hiddenByConstructor.contains("<hr id=\"marker\">"))
+    }
+
+    // MARK: - Native display
+
+    @Test("Under a non-web backend, .source is the default and reports a real size")
+    func nativeDisplaySourceIsTheDefault() {
+        // Nothing here reads htmlRawFragmentRequest, so the view actually
+        // rendered is what the layout system sees: Text(html), which has a
+        // real, non-zero size — unlike the web path's zero-size leaf.
+        let backend = DummyBackend()
+        let window = backend.createWindow(withDefaultSize: nil, id: "window")
+        let environment = EnvironmentValues(backend: backend).with(\.window, window)
+
+        let node = ViewGraphNode(
+            for: RawHTMLFragment("<p>Some markup</p>"),
+            backend: backend,
+            environment: environment
+        )
+        let result = node.computeLayout(proposedSize: .unspecified, environment: environment)
+        _ = node.commit()
+
+        #expect(result.size != .zero)
+    }
+
+    @Test("Under a non-web backend, .hidden collapses to zero size")
+    func nativeDisplayHiddenCollapsesEntirely() {
+        let backend = DummyBackend()
+        let window = backend.createWindow(withDefaultSize: nil, id: "window")
+        let environment = EnvironmentValues(backend: backend).with(\.window, window)
+
+        let node = ViewGraphNode(
+            for: RawHTMLFragment("<p>Some markup</p>", nativeDisplay: .hidden),
+            backend: backend,
+            environment: environment
+        )
+        let result = node.computeLayout(proposedSize: .unspecified, environment: environment)
+        _ = node.commit()
+
+        #expect(result.size == .zero)
+    }
+
+    @Test("The environment value flips every fragment's native display at once")
+    func nativeDisplayEnvironmentValueAppliesWithNoConstructorOverride() {
+        let backend = DummyBackend()
+        let window = backend.createWindow(withDefaultSize: nil, id: "window")
+        let environment = EnvironmentValues(backend: backend)
+            .with(\.window, window)
+            .with(\.rawFragmentNativeDisplay, .hidden)
+
+        let node = ViewGraphNode(
+            for: RawHTMLFragment("<p>Some markup</p>"),
+            backend: backend,
+            environment: environment
+        )
+        let result = node.computeLayout(proposedSize: .unspecified, environment: environment)
+        _ = node.commit()
+
+        #expect(result.size == .zero)
+    }
+
+    @Test("The constructor's nativeDisplay overrides the environment")
+    func nativeDisplayConstructorOverridesEnvironment() {
+        let backend = DummyBackend()
+        let window = backend.createWindow(withDefaultSize: nil, id: "window")
+        // The environment says .hidden; the instance asks for .source and
+        // should win, since a nil-checked per-instance override beats the
+        // ambient default it would otherwise follow.
+        let environment = EnvironmentValues(backend: backend)
+            .with(\.window, window)
+            .with(\.rawFragmentNativeDisplay, .hidden)
+
+        let node = ViewGraphNode(
+            for: RawHTMLFragment("<p>Some markup</p>", nativeDisplay: .source),
+            backend: backend,
+            environment: environment
+        )
+        let result = node.computeLayout(proposedSize: .unspecified, environment: environment)
+        _ = node.commit()
+
+        #expect(result.size != .zero)
     }
 
     // MARK: - Comments
@@ -341,11 +441,15 @@ struct StaticHTMLFragmentTests {
         }
     }
 
-    @Test("A comment nests no deeper than a bare raw fragment")
+    @Test("A comment nests no deeper than RawHTMLFragment's own wrapper chain")
     func commentAddsNoWrapperLevel() {
         // HTMLComment sets the fragment request itself rather than nesting a
-        // RawHTMLFragment, which would add a fourth wrapper and indent the
+        // RawHTMLFragment, which would add another wrapper and indent the
         // comment one step further from the markup it annotates.
+        // RawHTMLFragment's own chain is one level deeper than HTMLComment's
+        // fixed one, from the EitherView/TupleView1 its display-mode switch
+        // introduces — that's intrinsic to RawHTMLFragment, not composition
+        // overhead, so the invariant under test is "no deeper", not "equal".
         func depth(of html: String) -> Int {
             html.components(separatedBy: "\n")
                 .first { $0.contains("<!--") || $0.contains("<p>Spliced</p>") }
@@ -369,7 +473,7 @@ struct StaticHTMLFragmentTests {
             context: "Fragment depth"
         ).html
 
-        #expect(depth(of: comment) == depth(of: fragment))
+        #expect(depth(of: comment) <= depth(of: fragment))
     }
 
     @Test("A payload containing the terminator can't break out of the comment")
