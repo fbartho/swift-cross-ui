@@ -59,6 +59,11 @@ public struct HTMLEmitter {
     /// instead.
     var assetStore: (any AssetStore)?
     var inlineAssetThreshold: Int?
+    /// Whether to write the `data-scui` attribute naming each element's view
+    /// type. See ``DocumentContext/emitsViewIdentity``, which sets it — and
+    /// which documents why the `data-scui-*` protocol markers are not
+    /// governed by it.
+    var emitsViewIdentity = true
     /// The custom slot names the document declared, for validating
     /// ``SlotComponent`` markers as they're encountered.
     var declaredSlots: Set<String> = []
@@ -1116,7 +1121,7 @@ public struct HTMLEmitter {
         if let labelledBy = widget.labelledBy {
             attributes["aria-labelledby"] = labelledBy
         }
-        if let tag = widget.tag {
+        if let tag = widget.tag, emitsViewIdentity {
             attributes["data-scui"] = tag
         }
         var classNames = extraClasses
@@ -1867,7 +1872,7 @@ public struct HTMLEmitter {
             table.authorAttributes.filter { $0.key != "class" && $0.key != "style" },
             internedClass: nil
         )
-        if let tag = table.tag {
+        if let tag = table.tag, emitsViewIdentity {
             attributes["data-scui"] = tag
         }
         // Absent a `class` op entirely, the interned table class reaches the

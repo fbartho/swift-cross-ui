@@ -55,6 +55,21 @@ public struct DocumentContext {
     /// backend, which is why it's a context member with no baked-in default
     /// beyond "don't".
     public var inlineAssetThreshold: Int?
+    /// Whether each element carries the `data-scui` attribute naming the view
+    /// type it came from.
+    ///
+    /// On by default: the attribute is what makes the emitted document
+    /// legible against the view tree that produced it, which is the whole of
+    /// how this backend is debugged, and it is also what the structural
+    /// guards in the test suite key on. Turning it off is a size decision for
+    /// a published site, taken by whoever publishes it.
+    ///
+    /// This governs the identity attribute only. The `data-scui-*` protocol
+    /// markers — `data-scui-enliven`, the head-item id, the table scroll
+    /// marker — are instructions to another tier rather than debug
+    /// information, so they are emitted regardless: a document that dropped
+    /// them would be silently un-enlivenable.
+    public var emitsViewIdentity: Bool
 
     /// Creates a document context.
     ///
@@ -67,6 +82,8 @@ public struct DocumentContext {
     ///   - assetStore: Where to publish image data, or `nil` to inline it.
     ///   - inlineAssetThreshold: The byte size at or below which an image is
     ///     inlined even when a store is configured.
+    ///   - emitsViewIdentity: Whether to write the `data-scui` attribute
+    ///     naming each element's view type.
     public init(
         title: String,
         headingMap: HeadingMap = .default,
@@ -74,7 +91,8 @@ public struct DocumentContext {
         items: [FragmentItem] = [],
         customSlots: Set<String> = [],
         assetStore: (any AssetStore)? = nil,
-        inlineAssetThreshold: Int? = nil
+        inlineAssetThreshold: Int? = nil,
+        emitsViewIdentity: Bool = true
     ) {
         self.title = title
         self.headingMap = headingMap
@@ -83,6 +101,7 @@ public struct DocumentContext {
         self.customSlots = customSlots
         self.assetStore = assetStore
         self.inlineAssetThreshold = inlineAssetThreshold
+        self.emitsViewIdentity = emitsViewIdentity
     }
 
     /// Adds an item to the page owner's own items.

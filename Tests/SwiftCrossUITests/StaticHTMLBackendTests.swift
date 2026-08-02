@@ -1136,6 +1136,28 @@ struct StaticHTMLBackendTests {
         #expect(html.contains("data-scui=\"Text\""))
     }
 
+    @MainActor
+    @Test("View identity can be turned off without taking the protocol markers")
+    func viewIdentityIsOptionalButMarkersAreNot() {
+        // The identity attribute is debug information — legibility against the
+        // view tree, and what the structural guards here key on — so a
+        // published site may decide it isn't worth the bytes. The `data-scui-*`
+        // markers are a different thing wearing a similar name: they instruct
+        // the tier that enlivens the document, so dropping them would leave a
+        // page silently un-enlivenable rather than merely smaller.
+        let view = Button("Press") {}
+        var context = DocumentContext(title: "No identity")
+        context.emitsViewIdentity = false
+        let plain = StaticHTMLRenderer.render(view, context: context).html
+        let identified = StaticHTMLRenderer.render(view, context: "With identity").html
+
+        #expect(!plain.contains("data-scui=\""))
+        #expect(identified.contains("data-scui=\""))
+        // The marker rides through either way, and so does what it implies.
+        #expect(plain.contains("data-scui-enliven=\"js\""))
+        #expect(plain.contains("disabled"))
+    }
+
     /// Reads one attribute's value off the element whose markup contains
     /// `marker` (e.g. the text content), for tests that need to check an
     /// attribute alongside other attributes without over-anchoring on exact

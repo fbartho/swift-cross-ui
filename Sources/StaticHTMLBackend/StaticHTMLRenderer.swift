@@ -75,6 +75,7 @@ public enum StaticHTMLRenderer {
         emitter.registry = registry
         emitter.assetStore = context.assetStore
         emitter.inlineAssetThreshold = context.inlineAssetThreshold
+        emitter.emitsViewIdentity = context.emitsViewIdentity
         emitter.declaredSlots = context.customSlots
 
         // A custom slot is emitted from inside the body, where a SlotComponent
