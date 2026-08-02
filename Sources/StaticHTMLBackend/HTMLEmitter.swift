@@ -436,9 +436,6 @@ public struct HTMLEmitter {
                 )
 
             case let image as StaticHTMLBackend.ImageView:
-                // <img> is a void element, so it's the one place a data URL
-                // can carry the picture itself rather than a path to it: the
-                // static tier has no server to host a separate file against.
                 // PNG round-trips the source's RGBA losslessly, which matters
                 // here since there's no author-chosen quality/format to defer
                 // to.
@@ -450,8 +447,7 @@ public struct HTMLEmitter {
                             height: image.pixelHeight,
                             bytes: image.rgbaData
                         ).encodeToPNG()
-                        controlAttributes["src"] =
-                            "data:image/png;base64,\(Data(png).base64EncodedString())"
+                        controlAttributes["src"] = source(forEncodedImage: png)
                     } catch {
                         // Encoding a well-formed in-memory RGBA buffer to PNG
                         // isn't expected to fail; if it does, a broken image
@@ -645,6 +641,38 @@ public struct HTMLEmitter {
 
         let body = isRawInner ? "\(inner)\(indent)" : inner
         return "\(indent)<\(element.name)\(renderedAttributes)>\(body)</\(element.name)>"
+    }
+
+    /// Decides how an encoded image reaches the document: as a published file,
+    /// or inlined.
+    ///
+    /// Publishing is the policy. A data URL carries the image on every page
+    /// that shows it, uncached, at roughly a third more bytes than the file —
+    /// so it's the fallback for renders with nowhere to publish to (tests,
+    /// previews, anything that has to be self-contained) rather than the
+    /// default.
+    ///
+    /// Small images invert that arithmetic: an icon costs more as a request
+    /// than as bytes, so anything at or under the configured threshold stays
+    /// inline even when a store exists.
+    ///
+    /// - Parameter png: The encoded image.
+    /// - Returns: The value for the element's `src`.
+    private func source(forEncodedImage png: [UInt8]) -> String {
+        func inlined() -> String {
+            "data:image/png;base64,\(Data(png).base64EncodedString())"
+        }
+
+        guard let assetStore else {
+            return inlined()
+        }
+        if let inlineAssetThreshold, png.count <= inlineAssetThreshold {
+            return inlined()
+        }
+        // A store that couldn't write still has to yield a rendering page, so a
+        // failed publish degrades to the inline path rather than to a missing
+        // image.
+        return assetStore.publish(png, fileExtension: "png") ?? inlined()
     }
 
     /// Emits a container's children, styling the container to arrange them.
