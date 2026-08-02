@@ -43,6 +43,8 @@ public struct HTMLEmitter {
     public var interner = StyleInterner()
     /// The palette that turns scheme-varying colors into custom properties.
     public var palette = ColorPalette()
+    /// The type scale that turns declared text styles into custom properties.
+    public var typeScale = TypeScale()
     /// The registry the emitter registers built-in machinery into, and that
     /// view-tree contributions have already been registered into.
     ///
@@ -233,9 +235,21 @@ public struct HTMLEmitter {
             case let text as StaticHTMLBackend.TextView:
                 element = .span
                 if let font = text.font {
-                    style.set("\(Int(font.pointSize))px", for: "font-size")
-                    style.set("\(Int(font.lineHeight))px", for: "line-height")
-                    style.set(Self.cssWeight(font.weight), for: "font-weight")
+                    // A bare text style rides the type scale's custom
+                    // properties, so its size responds to viewport width and
+                    // every element sharing that style collapses into one
+                    // interned class. Anything else — an explicit point size,
+                    // or a style carrying a modifier — keeps literal pixels.
+                    if let textStyle = Self.textStyle(for: text.declaredFont) {
+                        let values = typeScale.values(for: textStyle)
+                        style.set(values.fontSize, for: "font-size")
+                        style.set(values.lineHeight, for: "line-height")
+                        style.set(values.weight, for: "font-weight")
+                    } else {
+                        style.set("\(Int(font.pointSize))px", for: "font-size")
+                        style.set("\(Int(font.lineHeight))px", for: "line-height")
+                        style.set(Self.cssWeight(font.weight), for: "font-weight")
+                    }
                     if font.isItalic {
                         style.set("italic", for: "font-style")
                     }
@@ -1211,6 +1225,49 @@ public struct HTMLEmitter {
             ? String(Int(value))
             : String(value)
     }
+
+    /// Recovers the text style a declared font names, if it names one plainly.
+    ///
+    /// ``Font/Resolved`` keeps no record of where its metrics came from, so
+    /// the only thing that can say "this element is Body" is the un-resolved
+    /// font the author declared. A font is attributable when it's equal to one
+    /// of the bare text-style constants.
+    ///
+    /// **A font carrying any modifier is deliberately not attributable.**
+    /// `.font(.body.weight(.black))`, `.italic()`, and `.scaled(by:)` all
+    /// compare unequal to `.body`, so they fall through to literal pixel
+    /// values instead of riding the type scale's custom properties. That's the
+    /// designed behaviour, not an oversight: a modified font's metrics are the
+    /// author's arithmetic on top of a style, and the responsive tables have
+    /// no entry that reproduces them — publishing it as `var(--scui-fs-body)`
+    /// would silently discard the modifier at every width. Explicit-size fonts
+    /// (`Font.system(size: 13)`) are excluded by the same rule, which is what
+    /// keeps them literal.
+    ///
+    /// Widening this to cover modified fonts would mean decomposing a `Font`
+    /// into style-plus-overlay, which needs `@_spi(Backends)` access the type
+    /// doesn't currently offer.
+    ///
+    /// - Parameter font: The un-resolved font the author declared.
+    /// - Returns: The text style, or `nil` if the font isn't a bare style.
+    nonisolated static func textStyle(for font: Font?) -> Font.TextStyle? {
+        guard let font else {
+            return nil
+        }
+        return Self.bareTextStyleFonts[font]
+    }
+
+    /// Every bare text-style constant, keyed by the font itself.
+    ///
+    /// Built from ``SwiftCrossUI/Font/TextStyle/allCases`` so a text style
+    /// added upstream can't quietly go unattributed here.
+    private nonisolated static let bareTextStyleFonts: [Font: Font.TextStyle] = {
+        var fonts: [Font: Font.TextStyle] = [:]
+        for style in Font.TextStyle.allCases {
+            fonts[Font.system(style)] = style
+        }
+        return fonts
+    }()
 
     /// Maps a resolved font weight to its CSS numeric equivalent.
     nonisolated static func cssWeight(_ weight: Font.Weight) -> String {

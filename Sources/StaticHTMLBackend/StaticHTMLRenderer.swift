@@ -196,13 +196,21 @@ public enum StaticHTMLRenderer {
         let reset = head.contributed.filter { $0.key == .reset }
         let headContributions = head.contributed.filter { $0.key != .reset }
 
+        // Custom-property definitions lead the block: the interned classes
+        // below reference them with var(…), and the type scale's @media
+        // override has to be able to re-point those references at a narrower
+        // viewport without the class bodies changing at all.
         let palette = emitter.palette.stylesheet
+        let typeScale = emitter.typeScale.stylesheet
+        let properties = [palette, typeScale]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
         let baseline = ([reset.map { $0.rendered(indent: "") }.joined(separator: "\n")]
             + [
-                palette.isEmpty && emitter.interner.stylesheet.isEmpty
+                properties.isEmpty && emitter.interner.stylesheet.isEmpty
                     ? "" : """
                         <style>
-                        \(palette.isEmpty ? "" : palette + "\n")\(emitter.interner.stylesheet)
+                        \(properties.isEmpty ? "" : properties + "\n")\(emitter.interner.stylesheet)
                         </style>
                         """
             ])
