@@ -492,6 +492,50 @@ public struct HTMLEmitter {
                 // such rule, so it stays undecorated without declaring it.
                 inner = Self.escape(button.label)
 
+            case let button as StaticHTMLBackend.ViewLabelButton:
+                // Same emission matrix as the string-label case above — the
+                // tier-activation reasoning is identical and documented there.
+                // What differs is the label: this button owns a child subtree
+                // rather than a string, so the label is emitted by walking it.
+                if let href = widget.href {
+                    element = .custom("a")
+                    controlAttributes["href"] = href
+                    controlAttributes["data-scui-enliven"] = "js"
+                } else {
+                    element = .custom("button")
+                    controlAttributes["type"] = "button"
+                    controlAttributes["data-scui-enliven"] = "js"
+                }
+                extraClasses.append(button.style.className)
+                style.set("inline-flex", for: "display")
+                style.set("center", for: "align-items")
+                style.set("center", for: "justify-content")
+                style.set("border-box", for: "box-sizing")
+                if let text = Self.plainTextLabel(of: button.label) {
+                    // A button whose label is just text puts that text
+                    // directly inside the control, the way the string-label
+                    // case does. Emitting the subtree would nest a styled
+                    // span in a layout div for a single run of characters,
+                    // and `<button><div><span>` describes structure the
+                    // author never wrote.
+                    //
+                    // Deliberately narrow: only a lone, unstyled Text
+                    // qualifies. Anything else — a styled label, an icon
+                    // beside a word, a stack — keeps its subtree, because
+                    // deciding in general which wrappers carry no meaning is
+                    // the elision design's question, not this one's.
+                    inner = Self.escape(text)
+                } else {
+                    inner = emitChildren(
+                        [(button.label, .zero)],
+                        placement: .flow,
+                        indent: indent,
+                        indentLevel: indentLevel,
+                        childContentModel: childModel
+                    )
+                    isRawInner = true
+                }
+
             case let checkbox as StaticHTMLBackend.Checkbox:
                 // Bindings are dead without a runtime (uniform-application
                 // consequence of the tier-activation principle): a checkbox
@@ -2064,6 +2108,45 @@ public struct HTMLEmitter {
             case .bold: "700"
             case .heavy: "800"
             case .black: "900"
+        }
+    }
+
+    /// The text of a button label that is nothing but an unstyled run of
+    /// characters, or `nil` where the label needs its subtree emitted.
+    ///
+    /// `Button("Press")` expands to a `Text` under whatever wrappers the view
+    /// builder produced, and putting the characters straight inside the
+    /// control keeps that case free of elements standing for nothing. The test
+    /// is deliberately strict — any styling, attribute, tag, href or sibling
+    /// disqualifies the label, because a wrapper carrying one of those is
+    /// carrying something the reader would lose.
+    ///
+    /// - Parameter label: The button's label widget.
+    /// - Returns: The text to place inside the control, or `nil`.
+    private static func plainTextLabel(of label: StaticHTMLBackend.Widget) -> String? {
+        var current = label
+        while true {
+            guard current.carriesNoAuthoredIntent else {
+                return nil
+            }
+            if let text = current as? StaticHTMLBackend.TextView {
+                // A styled run has to keep the span that carries the style.
+                // `.body` is the environment's default rather than a declared
+                // font, and the control inherits it either way, so a label
+                // carrying it is still an unstyled one.
+                guard
+                    text.declaredFont == .body, !text.hasDeclaredColor, text.lineLimit == nil,
+                    !text.isTextSelectionEnabled, text.textAlignment == .leading
+                else {
+                    return nil
+                }
+                return text.content
+            }
+            let children = current.getChildren()
+            guard children.count == 1 else {
+                return nil
+            }
+            current = children[0]
         }
     }
 
