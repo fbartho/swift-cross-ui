@@ -13,6 +13,15 @@ import SwiftCrossUI
 /// The page owner has the final say by construction: its items emit after every
 /// contribution the view tree made, so a stylesheet registered here overrides
 /// one a component asked for.
+///
+/// ## String literal shorthand
+///
+/// The common case — a page that needs a title and nothing else this type
+/// offers — can skip the initializer entirely: ``DocumentContext`` conforms to
+/// `ExpressibleByStringLiteral`, so a bare string is usable anywhere a context
+/// is expected. `StaticHTMLRenderer.render(view, context: "My Page")` is
+/// exactly `DocumentContext(title: "My Page")`; reach for the initializer
+/// itself as soon as the document needs to carry anything more.
 @MainActor
 public struct DocumentContext {
     /// The document's title.
@@ -101,6 +110,25 @@ public struct DocumentContext {
         var copy = self
         copy.customSlots.insert(name)
         return copy
+    }
+}
+
+// ExpressibleByStringLiteral's requirement is nonisolated, but every member
+// this initializer touches (self.init(title:)) is @MainActor, same as the
+// type itself — isolating the conformance is the compiler-suggested fix
+// rather than a workaround, since a string literal is only ever constructed
+// at a Swift call site, never off-actor at runtime.
+extension DocumentContext: @MainActor ExpressibleByStringLiteral {
+    /// Creates a context carrying only a title, from a string literal.
+    ///
+    /// See the type's "String literal shorthand" doc section — this exists so
+    /// the title-only case reads as a bare string at the call site rather
+    /// than requiring the full initializer for what's otherwise a single
+    /// value.
+    ///
+    /// - Parameter value: The document's title.
+    public init(stringLiteral value: String) {
+        self.init(title: value)
     }
 }
 

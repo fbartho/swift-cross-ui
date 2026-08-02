@@ -115,7 +115,7 @@ struct GeometrySelectorTests {
             WidthCase(600..<900) { Text("Medium") }
             WidthCase(900...) { Text("Wide") }
         }
-        let html = StaticHTMLRenderer.render(view, title: "Test").html
+        let html = StaticHTMLRenderer.render(view, context: "Test").html
 
         // All three branches are present in the static-tier DOM.
         #expect(html.contains("Narrow"))
@@ -143,7 +143,7 @@ struct GeometrySelectorTests {
             WidthCase(600..<900) { Text("Medium") }
             WidthCase(900...) { Text("Wide") }
         }
-        let html = StaticHTMLRenderer.render(view, title: "Test").html
+        let html = StaticHTMLRenderer.render(view, context: "Test").html
 
         #expect(html.contains("@media not (max-width: 599.98px)"))
         #expect(html.contains("@media not ((min-width: 600px) and (max-width: 899.98px))"))
@@ -176,7 +176,7 @@ struct GeometrySelectorTests {
             WidthCase(900...) { Text("Wide") }
             GeometryFallback { Text("Middle") }
         }
-        let html = StaticHTMLRenderer.render(view, title: "Test").html
+        let html = StaticHTMLRenderer.render(view, context: "Test").html
 
         #expect(html.contains("Middle"))
 
@@ -225,7 +225,7 @@ struct GeometrySelectorTests {
                 WidthCase(600...) { Text("Wide") }
             }
         }
-        let html = StaticHTMLRenderer.render(view, title: "Test").html
+        let html = StaticHTMLRenderer.render(view, context: "Test").html
 
         guard let internedRange = html.range(of: "scui-"),
               let mediaRange = html.range(of: "@media")
@@ -244,7 +244,7 @@ struct GeometrySelectorTests {
             Text("Panel")
         }
         .container("sidebar")
-        let html = StaticHTMLRenderer.render(view, title: "Test").html
+        let html = StaticHTMLRenderer.render(view, context: "Test").html
 
         #expect(html.contains("container-type: inline-size"))
         #expect(html.contains("container-name: sidebar"))
@@ -261,7 +261,7 @@ struct GeometrySelectorTests {
             }
         }
         .container("sidebar")
-        let html = StaticHTMLRenderer.render(view, title: "Test").html
+        let html = StaticHTMLRenderer.render(view, context: "Test").html
 
         #expect(html.contains("@container sidebar not (max-width: 399.98px)"))
         #expect(html.contains("@container sidebar not (min-width: 400px)"))
@@ -288,7 +288,7 @@ struct GeometrySelectorTests {
             WidthCase(900...) { Text("Wide") }
             GeometryFallback { Text("Fallback") }
         }
-        let html = StaticHTMLRenderer.render(view, title: "Test").html
+        let html = StaticHTMLRenderer.render(view, context: "Test").html
 
         // Inside the 600..<900 gap, BOTH ranged branches must be hidden —
         // not just the fallback's own hide-rules under their at-rules, but

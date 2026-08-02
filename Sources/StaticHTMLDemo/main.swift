@@ -68,7 +68,7 @@ let outputPath =
 let result = MainActor.assumeIsolated {
     StaticHTMLRenderer.render(
         DemoPage(),
-        title: "SwiftCrossUI Static HTML",
+        context: "SwiftCrossUI Static HTML",
         size: SIMD2(800, 600)
     )
 }

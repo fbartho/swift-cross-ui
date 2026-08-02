@@ -16,7 +16,7 @@ struct StaticHTMLBackendTests {
         // that wrapper, every heading would compute to the browser's default
         // h1 size instead of the declared text style.
         let view = Text("Big Heading").font(.largeTitle)
-        let html = StaticHTMLRenderer.render(view, title: "Specificity").html
+        let html = StaticHTMLRenderer.render(view, context: "Specificity").html
 
         // The reset selector carries zero specificity of its own, so it
         // never wins a cascade tie against a heading's interned class.
@@ -42,7 +42,7 @@ struct StaticHTMLBackendTests {
             Text("Code block").background(Color.gray)
         }
         .htmlTag(.article)
-        let html = StaticHTMLRenderer.render(view, title: "Background sibling").html
+        let html = StaticHTMLRenderer.render(view, context: "Background sibling").html
 
         #expect(html.contains("<article"))
         #expect(html.contains("<h1"))
@@ -60,7 +60,7 @@ struct StaticHTMLBackendTests {
         // the same MainActor executor assumption regardless of whether
         // the task body itself ever runs.
         let view = Text("Has an async task hook").task {}
-        let html = StaticHTMLRenderer.render(view, title: "Task").html
+        let html = StaticHTMLRenderer.render(view, context: "Task").html
 
         #expect(html.contains("Has an async task hook"))
     }
@@ -69,7 +69,7 @@ struct StaticHTMLBackendTests {
     @Test("A view using .onChange doesn't crash the one-shot render")
     func onChangeModifierDoesNotCrash() {
         let view = Text("Has an onChange hook").onChange(of: 1) {}
-        let html = StaticHTMLRenderer.render(view, title: "OnChange").html
+        let html = StaticHTMLRenderer.render(view, context: "OnChange").html
 
         #expect(html.contains("Has an onChange hook"))
     }
@@ -198,7 +198,7 @@ struct StaticHTMLBackendTests {
             Text("Section").font(.title)
             Text("Body")
         }
-        let html = StaticHTMLRenderer.render(view, title: "Headings").html
+        let html = StaticHTMLRenderer.render(view, context: "Headings").html
 
         #expect(html.contains(">Title</h1>"))
         #expect(html.contains(">Section</h2>"))
@@ -209,7 +209,7 @@ struct StaticHTMLBackendTests {
     @Test("An explicit tag overrides a derived heading")
     func explicitTagOverridesDerivedHeading() {
         let view = Text("Title").font(.largeTitle).htmlTag(.p)
-        let html = StaticHTMLRenderer.render(view, title: "Override").html
+        let html = StaticHTMLRenderer.render(view, context: "Override").html
 
         #expect(html.contains(">Title</p>"))
         #expect(!html.contains("<h1"))
@@ -223,7 +223,7 @@ struct StaticHTMLBackendTests {
             Text("Two")
         }
         .htmlTag(.nav)
-        let html = StaticHTMLRenderer.render(view, title: "Nav").html
+        let html = StaticHTMLRenderer.render(view, context: "Nav").html
 
         // The request is in scope for both children, but describes one element.
         #expect(html.components(separatedBy: "<nav").count - 1 == 1)
@@ -243,7 +243,7 @@ struct StaticHTMLBackendTests {
             .htmlTag(.nav)
         }
         .htmlTag(.header)
-        let html = StaticHTMLRenderer.render(view, title: "Mixed").html
+        let html = StaticHTMLRenderer.render(view, context: "Mixed").html
 
         // The header belongs to the stack the author put it on, even though
         // one child claimed a tag of its own.
@@ -272,7 +272,7 @@ struct StaticHTMLBackendTests {
             }
         }
         .htmlTag(.article)
-        let html = StaticHTMLRenderer.render(view, title: "Optional sibling").html
+        let html = StaticHTMLRenderer.render(view, context: "Optional sibling").html
 
         #expect(html.components(separatedBy: "<article").count - 1 == 1)
         // The tag landed on the VStack, so Title is free to become the
@@ -292,7 +292,7 @@ struct StaticHTMLBackendTests {
             Text("Solo")
         }
         .htmlTag(.aside)
-        let html = StaticHTMLRenderer.render(view, title: "Tagged group").html
+        let html = StaticHTMLRenderer.render(view, context: "Tagged group").html
 
         #expect(html.contains("<aside"))
         #expect(html.contains(">Solo</aside>"))
@@ -310,7 +310,7 @@ struct StaticHTMLBackendTests {
             .htmlTag(.nav)
         }
         .htmlTag(.header)
-        let html = StaticHTMLRenderer.render(view, title: "Headings").html
+        let html = StaticHTMLRenderer.render(view, context: "Headings").html
 
         // The heading is derived on the leaf; the container's tag must not
         // land on that leaf and displace it.
@@ -337,7 +337,7 @@ struct StaticHTMLBackendTests {
             .htmlTag(.article)
         }
         .htmlTag(.section)
-        let html = StaticHTMLRenderer.render(view, title: "Nested").html
+        let html = StaticHTMLRenderer.render(view, context: "Nested").html
 
         #expect(html.components(separatedBy: "<section").count - 1 == 1)
         #expect(html.components(separatedBy: "<article").count - 1 == 2)
@@ -354,7 +354,7 @@ struct StaticHTMLBackendTests {
             Text("Two").htmlAttributes(["id": "inner"])
         }
         .htmlAttributes(["id": "outer"])
-        let html = StaticHTMLRenderer.render(view, title: "Attributes").html
+        let html = StaticHTMLRenderer.render(view, context: "Attributes").html
 
         #expect(html.components(separatedBy: "id=\"outer\"").count - 1 == 1)
         #expect(html.components(separatedBy: "id=\"inner\"").count - 1 == 1)
@@ -368,7 +368,7 @@ struct StaticHTMLBackendTests {
         let view = Text("Both").htmlAttributes(["data-outer": "o"]).htmlAttributes([
             "data-inner": "i"
         ])
-        let html = StaticHTMLRenderer.render(view, title: "Merge").html
+        let html = StaticHTMLRenderer.render(view, context: "Merge").html
 
         #expect(html.contains("data-outer=\"o\""))
         #expect(html.contains("data-inner=\"i\""))
@@ -384,7 +384,7 @@ struct StaticHTMLBackendTests {
         let view = Text("Conflict")
             .htmlAttributes(["id": "closer-to-content"])
             .htmlAttributes(["id": "farther-from-content"])
-        let html = StaticHTMLRenderer.render(view, title: "Merge").html
+        let html = StaticHTMLRenderer.render(view, context: "Merge").html
 
         #expect(html.contains("id=\"closer-to-content\""))
         #expect(!html.contains("id=\"farther-from-content\""))
@@ -396,7 +396,7 @@ struct StaticHTMLBackendTests {
         let view = Text("Guarded")
             .htmlAttributes(["style": "color:red", "data-real": "kept-inner"])
             .htmlAttributes(["class": "mine", "data-other": "kept-outer"])
-        let html = StaticHTMLRenderer.render(view, title: "Merge").html
+        let html = StaticHTMLRenderer.render(view, context: "Merge").html
 
         #expect(!html.contains("color:red"))
         #expect(!html.contains("class=\"mine\""))
@@ -415,7 +415,7 @@ struct StaticHTMLBackendTests {
             .htmlAttributes(["data-content": "innermost"])
             .htmlAttributes(["data-component": "middle"])
             .htmlAttributes(["data-marker": "outermost"])
-        let html = StaticHTMLRenderer.render(view, title: "Merge").html
+        let html = StaticHTMLRenderer.render(view, context: "Merge").html
 
         #expect(html.contains("data-content=\"innermost\""))
         #expect(html.contains("data-component=\"middle\""))
@@ -427,13 +427,13 @@ struct StaticHTMLBackendTests {
     func rejectsInvalidRawStringTags() {
         let valid = StaticHTMLRenderer.render(
             Text("Grouped").htmlTag("hgroup"),
-            title: "Raw"
+            context: "Raw"
         ).html
         #expect(valid.contains("<hgroup"))
 
         let invalid = StaticHTMLRenderer.render(
             Text("Grouped").htmlTag("not a tag"),
-            title: "Raw"
+            context: "Raw"
         ).html
         #expect(!invalid.contains("not a tag"))
         #expect(invalid.contains(">Grouped</span>"))
@@ -443,7 +443,7 @@ struct StaticHTMLBackendTests {
     @Test("Author attributes are emitted and escaped")
     func emitsAuthorAttributes() {
         let view = Text("Labelled").htmlAttributes(["aria-label": "A \"quoted\" label"])
-        let html = StaticHTMLRenderer.render(view, title: "Attributes").html
+        let html = StaticHTMLRenderer.render(view, context: "Attributes").html
 
         #expect(html.contains("aria-label=\"A &quot;quoted&quot; label\""))
     }
@@ -454,7 +454,7 @@ struct StaticHTMLBackendTests {
         let view = Color.red
             .htmlTag(.nav)
             .htmlAttributes(["aria-hidden": "true"])
-        let html = StaticHTMLRenderer.render(view, title: "Color intent").html
+        let html = StaticHTMLRenderer.render(view, context: "Color intent").html
 
         #expect(html.contains("<nav"))
         #expect(html.contains("aria-hidden=\"true\""))
@@ -467,7 +467,7 @@ struct StaticHTMLBackendTests {
             .frame(width: 400, height: 267)
             .htmlTag(.custom("img"))
             .htmlAttributes(["src": "/photo.jpg", "alt": "A photo"])
-        let html = StaticHTMLRenderer.render(view, title: "Image with frame").html
+        let html = StaticHTMLRenderer.render(view, context: "Image with frame").html
 
         #expect(html.contains("<img"))
         #expect(html.contains("src=\"/photo.jpg\""))
@@ -496,7 +496,7 @@ struct StaticHTMLBackendTests {
         // wearing the tag.
         let view = Text("Flexible")
             .frame(minWidth: 100, maxWidth: 300, minHeight: 50, maxHeight: 200)
-        let html = StaticHTMLRenderer.render(view, title: "Flexible frame").html
+        let html = StaticHTMLRenderer.render(view, context: "Flexible frame").html
 
         let frameRule = Self.internedRule(containing: "min-width:100px", in: html)
         #expect(frameRule?.contains("min-width:100px") == true)
@@ -514,7 +514,7 @@ struct StaticHTMLBackendTests {
     func flexibleFrameOmitsUnconstrainedAxis() {
         let view = Text("Flexible")
             .frame(minWidth: 100)
-        let html = StaticHTMLRenderer.render(view, title: "Partially flexible frame").html
+        let html = StaticHTMLRenderer.render(view, context: "Partially flexible frame").html
 
         let frameRule = Self.internedRule(containing: "min-width:100px", in: html)
         #expect(frameRule?.contains("min-width:100px") == true)
@@ -533,15 +533,15 @@ struct StaticHTMLBackendTests {
         // ``HTMLEmitter/applyInfiniteStretch(in:)``.
         let finite = StaticHTMLRenderer.render(
             Text("Panel").frame(maxWidth: 400),
-            title: "Finite maxWidth"
+            context: "Finite maxWidth"
         ).html
         let infinite = StaticHTMLRenderer.render(
             Text("Panel").frame(maxWidth: .infinity),
-            title: "Infinite maxWidth"
+            context: "Infinite maxWidth"
         ).html
         let unframed = StaticHTMLRenderer.render(
             Text("Panel"),
-            title: "No frame"
+            context: "No frame"
         ).html
 
         let finiteRule = Self.internedRule(containing: "max-width:400px", in: finite)
@@ -569,7 +569,7 @@ struct StaticHTMLBackendTests {
                 Text("Narrow")
                 Text("Wide").frame(maxWidth: .infinity)
             },
-            title: "Stretch child"
+            context: "Stretch child"
         ).html
 
         #expect(html.contains("align-items:flex-start"))
@@ -583,7 +583,7 @@ struct StaticHTMLBackendTests {
         let view = Text("")
             .htmlTag(.custom("img"))
             .htmlAttributes(["src": "/photo.jpg", "alt": "A photo"])
-        let html = StaticHTMLRenderer.render(view, title: "Image without frame").html
+        let html = StaticHTMLRenderer.render(view, context: "Image without frame").html
 
         #expect(html.contains("<img"))
         #expect(html.contains("src=\"/photo.jpg\""))
@@ -617,7 +617,7 @@ struct StaticHTMLBackendTests {
         )
         let html = StaticHTMLRenderer.render(
             SwiftCrossUI.Image(source),
-            title: "Image view"
+            context: "Image view"
         ).html
 
         #expect(html.contains("<img"))
@@ -652,7 +652,7 @@ struct StaticHTMLBackendTests {
             height: 1,
             pixels: [RGBA(0, 0, 0, 255)]
         )
-        let html = StaticHTMLRenderer.render(SwiftCrossUI.Image(source), title: "No alt").html
+        let html = StaticHTMLRenderer.render(SwiftCrossUI.Image(source), context: "No alt").html
 
         // No accessibilityLabel modifier exists in SwiftCrossUI to source
         // this from, so an explicit empty alt — marking the image
@@ -671,7 +671,7 @@ struct StaticHTMLBackendTests {
         )
         let html = StaticHTMLRenderer.render(
             SwiftCrossUI.Image(source).htmlAttributes(["alt": "A black square"]),
-            title: "Explicit alt"
+            context: "Explicit alt"
         ).html
 
         #expect(html.contains("alt=\"A black square\""))
@@ -688,7 +688,7 @@ struct StaticHTMLBackendTests {
         )
         let html = StaticHTMLRenderer.render(
             SwiftCrossUI.Image(source).resizable().frame(width: 200, height: 150),
-            title: "Resized image"
+            context: "Resized image"
         ).html
 
         let imgRule = Self.styleRule(forElementContaining: "<img", in: html)
@@ -747,7 +747,7 @@ struct StaticHTMLBackendTests {
             "data-scui": "Fake",
             "id": "kept",
         ])
-        let html = StaticHTMLRenderer.render(view, title: "Reserved").html
+        let html = StaticHTMLRenderer.render(view, context: "Reserved").html
 
         #expect(!html.contains("color:red"))
         #expect(!html.contains("class=\"mine\""))
@@ -760,7 +760,7 @@ struct StaticHTMLBackendTests {
     @Test("Text content is escaped rather than emitted as markup")
     func escapesTextContent() {
         let view = Text("<script>alert('x')</script>")
-        let html = StaticHTMLRenderer.render(view, title: "Escaping").html
+        let html = StaticHTMLRenderer.render(view, context: "Escaping").html
 
         #expect(!html.contains("<script>"))
         #expect(html.contains("&lt;script&gt;"))
@@ -775,7 +775,7 @@ struct StaticHTMLBackendTests {
             Button("Press") {}
             Color.blue.frame(width: 100, height: 10)
         }
-        let result = StaticHTMLRenderer.render(view, title: "Invariance")
+        let result = StaticHTMLRenderer.render(view, context: "Invariance")
 
         #expect(result.geometryMismatches.isEmpty)
     }
@@ -783,7 +783,7 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("Foreground colors resolve differently per scheme")
     func emitsPerSchemeForegroundColors() {
-        let html = StaticHTMLRenderer.render(Text("Adaptive"), title: "Colors").html
+        let html = StaticHTMLRenderer.render(Text("Adaptive"), context: "Colors").html
 
         // The default foreground is black in light mode and white in dark, so
         // it has to become a custom property rather than a literal.
@@ -799,7 +799,7 @@ struct StaticHTMLBackendTests {
             Text("One")
             Text("Two")
         }
-        let html = StaticHTMLRenderer.render(view, title: "No inline styles").html
+        let html = StaticHTMLRenderer.render(view, context: "No inline styles").html
 
         #expect(!html.contains("<span style="))
         #expect(!html.contains("<div style="))
@@ -809,7 +809,7 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("Widgets keep the view type name the core stamps on them")
     func retainsViewTypeNames() {
-        let html = StaticHTMLRenderer.render(Text("Tagged"), title: "Tags").html
+        let html = StaticHTMLRenderer.render(Text("Tagged"), context: "Tags").html
 
         #expect(html.contains("data-scui=\"Text\""))
     }
@@ -822,7 +822,7 @@ struct StaticHTMLBackendTests {
         // <button disabled>, not the old <a role="button" href="#">, which
         // used to look reachable to a keyboard, crawler, or assistive
         // technology exactly like a working control would.
-        let html = StaticHTMLRenderer.render(Button("Press") {}, title: "Buttons").html
+        let html = StaticHTMLRenderer.render(Button("Press") {}, context: "Buttons").html
 
         #expect(html.contains("<button "))
         #expect(html.contains("type=\"button\""))
@@ -847,7 +847,7 @@ struct StaticHTMLBackendTests {
         // gate on it in the first place.
         let html = StaticHTMLRenderer.render(
             Button("Go") {}.href("/docs"),
-            title: "Href-only button"
+            context: "Href-only button"
         ).html
 
         #expect(html.contains("<a "))
@@ -869,7 +869,7 @@ struct StaticHTMLBackendTests {
         // Button case in HTMLEmitter.
         let html = StaticHTMLRenderer.render(
             Button("Track & go") { }.href("/docs"),
-            title: "Href+action button"
+            context: "Href+action button"
         ).html
 
         #expect(html.contains("<a "))
@@ -891,7 +891,7 @@ struct StaticHTMLBackendTests {
         // said this control shouldn't respond regardless of tier.
         let html = StaticHTMLRenderer.render(
             Button("Disabled action") {}.disabled(true),
-            title: "Disabled button"
+            context: "Disabled button"
         ).html
 
         #expect(html.contains("aria-disabled=\"true\""))
@@ -904,7 +904,7 @@ struct StaticHTMLBackendTests {
     func disabledHrefButtonLosesHref() {
         let html = StaticHTMLRenderer.render(
             Button("Disabled link") {}.href("/docs").disabled(true),
-            title: "Disabled href button"
+            context: "Disabled href button"
         ).html
 
         #expect(html.contains("aria-disabled=\"true\""))
@@ -923,7 +923,7 @@ struct StaticHTMLBackendTests {
         // The checked/aria-checked *display* is still real.
         let html = StaticHTMLRenderer.render(
             Toggle("Subscribe", isOn: Self.box(true)).toggleStyle(.checkbox),
-            title: "Checkbox"
+            context: "Checkbox"
         ).html
 
         #expect(html.contains("<input"))
@@ -943,7 +943,7 @@ struct StaticHTMLBackendTests {
         // consequence as Checkbox above: no runtime, so no working binding.
         let html = StaticHTMLRenderer.render(
             Toggle("Enable notifications", isOn: Self.box(true)),
-            title: "Toggle"
+            context: "Toggle"
         ).html
 
         #expect(html.contains("Enable notifications"))
@@ -957,7 +957,7 @@ struct StaticHTMLBackendTests {
     func emitsSliderAsRangeInput() {
         let html = StaticHTMLRenderer.render(
             Slider(value: Self.box(0.4), in: 0.0...1.0),
-            title: "Slider"
+            context: "Slider"
         ).html
 
         #expect(html.contains("<input"))
@@ -974,7 +974,7 @@ struct StaticHTMLBackendTests {
     func emitsTextFieldWithValueAndPlaceholder() {
         let html = StaticHTMLRenderer.render(
             TextField("Your name", text: Self.box("Ada Lovelace")),
-            title: "TextField"
+            context: "TextField"
         ).html
 
         #expect(html.contains("<input"))
@@ -990,7 +990,7 @@ struct StaticHTMLBackendTests {
     func emitsSecureFieldAsPasswordInput() {
         let html = StaticHTMLRenderer.render(
             SecureField("Password", text: Self.box("hunter2")),
-            title: "SecureField"
+            context: "SecureField"
         ).html
 
         #expect(html.contains("type=\"password\""))
@@ -1002,7 +1002,7 @@ struct StaticHTMLBackendTests {
     func disabledTextFieldCarriesDisabledSemantics() {
         let html = StaticHTMLRenderer.render(
             TextField("Disabled field", text: Self.box("read only")).disabled(true),
-            title: "Disabled text field"
+            context: "Disabled text field"
         ).html
 
         #expect(html.contains("disabled=\"disabled\""))
@@ -1022,7 +1022,7 @@ struct StaticHTMLBackendTests {
 
         let result = StaticHTMLRenderer.render(
             Text(long),
-            title: "Wrapping",
+            context: "Wrapping",
             size: SIMD2(400, 50)
         )
 
@@ -1040,7 +1040,7 @@ struct StaticHTMLBackendTests {
 
         let result = StaticHTMLRenderer.render(
             view,
-            title: "Overflow",
+            context: "Overflow",
             size: SIMD2(400, 40)
         )
 
@@ -1053,7 +1053,7 @@ struct StaticHTMLBackendTests {
         let long = String(repeating: "word ", count: 60)
         let html = StaticHTMLRenderer.render(
             Text(long),
-            title: "Flow",
+            context: "Flow",
             size: SIMD2(400, 200)
         ).html
 
@@ -1076,7 +1076,7 @@ struct StaticHTMLBackendTests {
         // for the opt-in path.
         let html = StaticHTMLRenderer.render(
             Text("Body"),
-            title: "Reflow",
+            context: "Reflow",
             size: SIMD2(800, 600)
         ).html
 
@@ -1094,7 +1094,7 @@ struct StaticHTMLBackendTests {
                 Text("One")
                 Text("Two")
             },
-            title: "VStack"
+            context: "VStack"
         ).html
 
         #expect(vertical.contains("flex-direction:column"))
@@ -1106,7 +1106,7 @@ struct StaticHTMLBackendTests {
                 Text("One")
                 Text("Two")
             },
-            title: "HStack"
+            context: "HStack"
         ).html
 
         #expect(horizontal.contains("flex-direction:row"))
@@ -1126,7 +1126,7 @@ struct StaticHTMLBackendTests {
                 Text("Header")
                 Text("Panel").frame(maxWidth: 400)
             },
-            title: "Centered panel",
+            context: "Centered panel",
             size: SIMD2(1400, 900)
         ).html
 
@@ -1151,14 +1151,14 @@ struct StaticHTMLBackendTests {
         // default .leading, is what keeps that from happening again: a
         // .center Text and a Text with no alignment declared must not share
         // a class just because .leading happens to be the CSS default too.
-        let leading = StaticHTMLRenderer.render(Text("Leading"), title: "Leading").html
+        let leading = StaticHTMLRenderer.render(Text("Leading"), context: "Leading").html
         let centered = StaticHTMLRenderer.render(
             Text("Centered").multilineTextAlignment(.center),
-            title: "Centered"
+            context: "Centered"
         ).html
         let trailing = StaticHTMLRenderer.render(
             Text("Trailing").multilineTextAlignment(.trailing),
-            title: "Trailing"
+            context: "Trailing"
         ).html
 
         #expect(leading.contains("text-align:left"))
@@ -1184,10 +1184,10 @@ struct StaticHTMLBackendTests {
         // enabled case is asserted to emit anything — the disabled default
         // is what needs the CSS override, not the enabled opt-in, so no
         // rule for the default case is the correct absence, not a gap.
-        let unselectable = StaticHTMLRenderer.render(Text("Locked"), title: "Locked").html
+        let unselectable = StaticHTMLRenderer.render(Text("Locked"), context: "Locked").html
         let selectable = StaticHTMLRenderer.render(
             Text("Selectable").textSelectionEnabled(true),
-            title: "Selectable"
+            context: "Selectable"
         ).html
 
         #expect(unselectable.contains("user-select:none"))
@@ -1205,15 +1205,15 @@ struct StaticHTMLBackendTests {
         // it deterministically.
         let clampedOnly = StaticHTMLRenderer.render(
             Text("Some text").lineLimit(2).font(.headline),
-            title: "Clamped"
+            context: "Clamped"
         ).html
         let reserving = StaticHTMLRenderer.render(
             Text("Some text").lineLimit(3, reservesSpace: true).font(.headline),
-            title: "Reserving"
+            context: "Reserving"
         ).html
         let unlimited = StaticHTMLRenderer.render(
             Text("Some text").font(.headline),
-            title: "Unlimited"
+            context: "Unlimited"
         ).html
 
         let clampedRule = Self.styleRule(forElementContaining: "<span", in: clampedOnly)
@@ -1246,7 +1246,7 @@ struct StaticHTMLBackendTests {
                 Spacer()
                 Text("Trailing")
             },
-            title: "Spacer"
+            context: "Spacer"
         ).html
 
         let spacerRule = Self.styleRule(forElementContaining: "data-scui=\"Spacer\"", in: html)
@@ -1281,7 +1281,7 @@ struct StaticHTMLBackendTests {
                 Text("Long trailing label text").layoutPriority(1)
             }
             .frame(width: 260),
-            title: "Squeezed priority"
+            context: "Squeezed priority"
         ).html
 
         let lowRule = Self.styleRule(forElementContaining: "<span", in: squeezed)
@@ -1319,7 +1319,7 @@ struct StaticHTMLBackendTests {
                 Text("One")
                 Text("Two")
             },
-            title: "Uniform priority"
+            context: "Uniform priority"
         ).html
         #expect(!uniform.contains("flex-shrink"))
     }
@@ -1361,7 +1361,7 @@ struct StaticHTMLBackendTests {
                 Divider()
                 Text("Below")
             },
-            title: "Divider"
+            context: "Divider"
         ).html
 
         #expect(!html.contains("min-width:800px"))
@@ -1408,7 +1408,7 @@ struct StaticHTMLBackendTests {
         // mechanism the Divider test above relies on.
         let html = StaticHTMLRenderer.render(
             Color.blue.aspectRatio(2.0, contentMode: .fit).frame(width: 300),
-            title: "AspectRatio"
+            context: "AspectRatio"
         ).html
 
         let leafRule = Self.styleRule(
@@ -1425,7 +1425,7 @@ struct StaticHTMLBackendTests {
     func emitsPaddingAsCSSPadding() {
         let html = StaticHTMLRenderer.render(
             Text("Inset").padding(24),
-            title: "Padding"
+            context: "Padding"
         ).html
 
         #expect(html.contains("padding:24px 24px 24px 24px"))
@@ -1438,7 +1438,7 @@ struct StaticHTMLBackendTests {
         let html = StaticHTMLRenderer.render(
             Text("Text long enough that it has to wrap inside the frame it was given.")
                 .frame(width: 300),
-            title: "Frame"
+            context: "Frame"
         ).html
 
         // A declared frame is the only way an author pins geometry, so it's
@@ -1466,7 +1466,7 @@ struct StaticHTMLBackendTests {
                 Color.blue.frame(width: 200, height: 60)
                 Text("Overlaid")
             },
-            title: "ZStack"
+            context: "ZStack"
         ).html
 
         // Flow has no rule that puts one element on top of another.
@@ -1479,7 +1479,7 @@ struct StaticHTMLBackendTests {
                 Text("One")
                 Text("Two")
             },
-            title: "Flow"
+            context: "Flow"
         ).html
         #expect(!sideBySide.contains("position:absolute"))
     }
@@ -1489,7 +1489,7 @@ struct StaticHTMLBackendTests {
     func keepsExplicitSizeForContentWithoutIntrinsicSize() {
         let html = StaticHTMLRenderer.render(
             Color.blue.frame(width: 320, height: 4),
-            title: "Frame"
+            context: "Frame"
         ).html
 
         // A rectangle has nothing inside it to derive a height from, so

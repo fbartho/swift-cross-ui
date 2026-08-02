@@ -157,34 +157,6 @@ public enum StaticHTMLRenderer {
         return metadata
     }
 
-    /// Renders a view to a complete HTML document with a default context.
-    ///
-    /// The shorthand for the common case: a page that needs a title and
-    /// nothing else the ``DocumentContext`` offers. Reach for
-    /// ``render(_:context:size:)`` as soon as the document needs to carry
-    /// anything of its own.
-    ///
-    /// - Parameters:
-    ///   - view: The view to render.
-    ///   - title: The document's title.
-    ///   - size: The size to lay the view out against.
-    ///   - headingMap: The mapping used to derive headings from declared text
-    ///     styles.
-    /// - Returns: The rendered document along with anything notable observed
-    ///   while producing it.
-    public static func render(
-        _ view: some View,
-        title: String,
-        size: SIMD2<Int> = SIMD2(800, 600),
-        headingMap: HeadingMap = .default
-    ) -> RenderResult {
-        render(
-            view,
-            context: DocumentContext(title: title, headingMap: headingMap),
-            size: size
-        )
-    }
-
     /// Assembles the document around an emitted body.
     ///
     /// Source order follows the progressive-enhancement design: the head

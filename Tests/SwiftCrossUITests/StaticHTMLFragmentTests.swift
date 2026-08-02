@@ -118,7 +118,7 @@ struct StaticHTMLFragmentTests {
             Text("Hello")
                 .htmlHeadItem(.stylesheet(href: "/css/widget.css"))
         }
-        let html = StaticHTMLRenderer.render(view, title: "Contribution").html
+        let html = StaticHTMLRenderer.render(view, context: "Contribution").html
         #expect(html.contains("<link rel=\"stylesheet\" href=\"/css/widget.css\""))
     }
 
@@ -129,7 +129,7 @@ struct StaticHTMLFragmentTests {
                 Text("Row").htmlHeadItem(.stylesheet(href: "/css/row.css"))
             }
         }
-        let html = StaticHTMLRenderer.render(view, title: "Dedupe").html
+        let html = StaticHTMLRenderer.render(view, context: "Dedupe").html
         // Counting tags, not URL occurrences: each emitted tag names the URL
         // twice, once as the href and once inside the cross-tier marker.
         #expect(html.components(separatedBy: "href=\"/css/row.css\"").count == 2)
@@ -138,7 +138,7 @@ struct StaticHTMLFragmentTests {
     @Test("Contributions targeting bodyEnd land after the content, not in the head")
     func bodyEndContributionsLandAfterContent() throws {
         let view = Text("Hi").htmlHeadItem(.script(src: "/js/late.js"), slot: .bodyEnd)
-        let html = StaticHTMLRenderer.render(view, title: "Tail").html
+        let html = StaticHTMLRenderer.render(view, context: "Tail").html
 
         let scriptIndex = try #require(html.range(of: "/js/late.js")).lowerBound
         let rootIndex = try #require(html.range(of: "<div id=\"root\">")).lowerBound
@@ -159,7 +159,7 @@ struct StaticHTMLFragmentTests {
             }
         }
 
-        let html = StaticHTMLRenderer.render(Highlighted(), title: "Sugar").html
+        let html = StaticHTMLRenderer.render(Highlighted(), context: "Sugar").html
         #expect(html.contains("/css/highlight.css"))
     }
 
@@ -192,7 +192,7 @@ struct StaticHTMLFragmentTests {
         // display:none gates depend on it), which only holds if contributions
         // come after the interned block.
         let view = Text("Hi").font(.title).htmlHeadItem(.style(".override { font-size: 99px }"))
-        let html = StaticHTMLRenderer.render(view, title: "Cascade").html
+        let html = StaticHTMLRenderer.render(view, context: "Cascade").html
 
         let interned = try #require(html.range(of: ".scui-0 {")).lowerBound
         let registered = try #require(html.range(of: ".override { font-size: 99px }")).lowerBound
@@ -202,7 +202,7 @@ struct StaticHTMLFragmentTests {
     @Test("The reset emits before the interned stylesheet, so classes outrank it")
     func resetPrecedesInternedStyles() throws {
         let view = Text("Hi").font(.title)
-        let html = StaticHTMLRenderer.render(view, title: "Reset order").html
+        let html = StaticHTMLRenderer.render(view, context: "Reset order").html
 
         let reset = try #require(html.range(of: "data-scui-head-id=\"id:scui-reset\"")).lowerBound
         let interned = try #require(html.range(of: ".scui-0 {")).lowerBound
@@ -213,7 +213,7 @@ struct StaticHTMLFragmentTests {
 
     @Test("The reset is present by default")
     func resetIsPresentByDefault() {
-        let html = StaticHTMLRenderer.render(Text("Hi"), title: "Default").html
+        let html = StaticHTMLRenderer.render(Text("Hi"), context: "Default").html
         #expect(html.contains("data-scui-head-id=\"id:scui-reset\""))
         #expect(html.contains("appearance: none"))
     }
@@ -241,7 +241,7 @@ struct StaticHTMLFragmentTests {
             RawHTMLFragment("<figure class=\"x\"><em>&amp;</em></figure>")
             Text("After")
         }
-        let html = StaticHTMLRenderer.render(view, title: "Raw").html
+        let html = StaticHTMLRenderer.render(view, context: "Raw").html
         #expect(html.contains("<figure class=\"x\"><em>&amp;</em></figure>"))
     }
 
@@ -249,7 +249,7 @@ struct StaticHTMLFragmentTests {
     func rawFragmentEmitsNoWrapper() {
         let html = StaticHTMLRenderer.render(
             RawHTMLFragment("<hr id=\"marker\">"),
-            title: "Raw"
+            context: "Raw"
         ).html
         // The zero-size leaf the view produces exists only to carry the
         // payload; emitting a box around it would leave a stray div.
@@ -297,7 +297,7 @@ struct StaticHTMLFragmentTests {
     func inlinesWithoutAStore() {
         let html = StaticHTMLRenderer.render(
             Self.testImage(),
-            title: "Inline"
+            context: "Inline"
         ).html
         #expect(html.contains("src=\"data:image/png;base64,"))
     }
@@ -371,13 +371,13 @@ struct StaticHTMLFragmentTests {
     func altTextIsAuthorSupplied() {
         let labelled = StaticHTMLRenderer.render(
             Self.testImage().htmlAttributes(["alt": "A red square"]),
-            title: "Alt"
+            context: "Alt"
         ).html
         #expect(labelled.contains("alt=\"A red square\""))
 
         // Absent an author label the image is marked decorative rather than
         // left for assistive tech to guess at.
-        let bare = StaticHTMLRenderer.render(Self.testImage(), title: "Alt").html
+        let bare = StaticHTMLRenderer.render(Self.testImage(), context: "Alt").html
         #expect(bare.contains("alt=\"\""))
     }
 
@@ -467,7 +467,7 @@ struct StaticHTMLFragmentTests {
             Text("Subsection").font(.title2)
             Text("Body")
         }
-        let info = StaticHTMLRenderer.render(view, title: "Outline").documentInfo
+        let info = StaticHTMLRenderer.render(view, context: "Outline").documentInfo
 
         #expect(
             info.headings == [
@@ -484,7 +484,7 @@ struct StaticHTMLFragmentTests {
             Text("Real heading").font(.largeTitle)
             Text("Not a heading").font(.title).htmlTag(.p)
         }
-        let info = StaticHTMLRenderer.render(view, title: "Override").documentInfo
+        let info = StaticHTMLRenderer.render(view, context: "Override").documentInfo
 
         #expect(info.headings == [DocumentInfo.Heading(level: 1, text: "Real heading")])
     }
@@ -511,13 +511,13 @@ struct StaticHTMLFragmentTests {
 
     @Test("Title flows through from the document context unchanged")
     func documentInfoTitleFlowsThrough() {
-        let info = StaticHTMLRenderer.render(Text("Body"), title: "A Specific Title").documentInfo
+        let info = StaticHTMLRenderer.render(Text("Body"), context: "A Specific Title").documentInfo
         #expect(info.title == "A Specific Title")
     }
 
     @Test("A page with no headings or metadata yields an empty outline and empty metadata")
     func documentInfoEmptyPageShape() {
-        let info = StaticHTMLRenderer.render(Text("Just body text"), title: "Plain").documentInfo
+        let info = StaticHTMLRenderer.render(Text("Just body text"), context: "Plain").documentInfo
 
         #expect(info.title == "Plain")
         #expect(info.headings.isEmpty)
