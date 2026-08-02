@@ -1442,23 +1442,14 @@ struct StaticHTMLBackendTests {
         "A bare Color hairline under .frame(maxWidth: .infinity) stretches like Divider, without Divider's marker"
     )
     func infiniteFrameColorStretchesWithoutDividerMarker() {
-        // Task #55: the fix above (dividerStretchesWithoutOverflowing) only
-        // reaches a leaf whose ancestor set widget.isDivider — a real
-        // Divider() view. A hand-built hairline rule using the identical
-        // shape (`Color.frame(maxWidth: .infinity, maxHeight:)`, exactly
-        // what PageLayout/DesignSystemPage's `Theme.border` declares) has no
-        // such marker, so it used to fall through to the generic rectangle
-        // path and get a min-width pinned to the build host's committed
-        // width — 800px in the repro, overflowing any narrower viewport and,
-        // because nothing downstream carried max-width:100%, dragging an
-        // unrelated sibling paragraph's ancestor chain wide enough to stop
-        // it wrapping too.
-        //
-        // The fix widens `stretchesUndeclaredAxis` to fire whenever a
-        // container's OWN declaration leaves this axis open while the other
-        // is capped at .infinity — not just when inherited from a Divider
-        // ancestor — so this leaf gets the same align-self:stretch treatment
-        // Divider already had, with no min-width floor.
+        // A hand-built hairline (`Color.frame(maxWidth: .infinity,
+        // maxHeight:)`, the shape `PageLayout`/`DesignSystemPage` use for
+        // `Theme.border`) carries the same "stretch to fill" intent as
+        // Divider but has no `isDivider` marker. It must still avoid a
+        // min-width floor pinned to the build host's committed width — that
+        // floor overflows any narrower render width, and (since nothing
+        // downstream carries max-width:100%) drags every ancestor it shares
+        // with unrelated siblings wide enough to block their own wrapping.
         let html = StaticHTMLRenderer.render(
             VStack {
                 Text("Above")

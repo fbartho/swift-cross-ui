@@ -827,19 +827,15 @@ public struct HTMLEmitter {
             }
         }
 
-        // `stretchesUndeclaredAxis` started life as a Divider-only signal
-        // (see the case below), but `.frame(maxWidth: .infinity)` carries the
-        // identical "stretch to fill, don't float free at your own committed
-        // size" intent on its own — a `Color` hairline built by hand
-        // (`Color.gray.frame(maxWidth: .infinity, maxHeight: 1)`, the same
-        // shape `Divider` itself composes down to) asks for exactly this and
-        // has no `isDivider` marker to inherit it from. Widening the signal
-        // to any frame whose OWN declaration leaves this axis open while
-        // capping the other at `.infinity` catches that case without
-        // touching Divider's existing path (`isDivider` still ORs in below,
-        // so nothing that worked before loses the signal). A *finite*
-        // maxWidth/maxHeight doesn't qualify — that's a real ceiling the
-        // pinned committed size should still floor up to, not a stretch.
+        // A container whose own declaration leaves this axis open while
+        // capping the other at `.infinity` (a hand-built `Color` hairline
+        // via `.frame(maxWidth: .infinity, maxHeight:)`, not just a
+        // `Divider`) also needs `stretchesUndeclaredAxis`: without it, a
+        // leaf on that axis gets its build-host committed size pinned as a
+        // min-width floor (below, in the rectangle case), which overflows
+        // any narrower render width. A *finite* maxWidth/maxHeight doesn't
+        // qualify — that's a real ceiling the pinned size should still floor
+        // up to, not a stretch.
         let declaresInfiniteStretch =
             (container.declaredMaxWidth == .infinity && container.declaredWidth == nil)
                 || (container.declaredMaxHeight == .infinity && container.declaredHeight == nil)
