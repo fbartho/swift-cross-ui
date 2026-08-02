@@ -137,6 +137,17 @@ extension GeometrySelector {
     /// it leaves room for later composition (conjunction/disjunction/negation,
     /// per the ratified design) and later kinds (print, reduced motion, …)
     /// without an API break to existing callers.
+    ///
+    /// Task #26 shipped the MEASURING-tier half of three of those future
+    /// kinds early, as plain environment values rather than `Condition`
+    /// cases: ``EnvironmentValues/reducedMotion``,
+    /// ``EnvironmentValues/pointerCapability``, and
+    /// ``EnvironmentValues/printActive``. Each documents its own CSS half
+    /// (`@media (prefers-reduced-motion: …)`, `@media (pointer: …)`,
+    /// `@media print`) and its static-tier default. When `.reducedMotion` /
+    /// `.pointerCapability` / `.print` cases land here, their measuring-tier
+    /// arms read those same environment values rather than duplicating the
+    /// "what can the static tier honestly know" reasoning a second time.
     public enum Condition: Hashable, Sendable {
         /// Active when the viewport's width falls in `range`.
         ///

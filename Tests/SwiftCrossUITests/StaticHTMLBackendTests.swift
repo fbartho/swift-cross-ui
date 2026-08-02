@@ -1432,6 +1432,37 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test(
+        "Responsive environment values default honestly for a one-shot build-host render"
+    )
+    func responsiveEnvironmentValuesCarryDocumentedStaticDefaults() {
+        // Task #26: reducedMotion, pointerCapability, and printActive are
+        // the MEASURING-tier halves of future GeometrySelector.Condition
+        // cases — populated where a runtime CAN know them, which
+        // StaticHTMLBackend never can (it's always a one-shot build-host
+        // render with no reader to ask). This locks in the documented
+        // defaults rather than leaving them to accidental drift: .fine
+        // (not .coarse) for pointer capability specifically, since a wrong
+        // .coarse default would suppress desktop-density layouts, the
+        // costlier mistake of the two.
+        struct EnvironmentProbe: View {
+            @Environment(\.reducedMotion) var reducedMotion
+            @Environment(\.pointerCapability) var pointerCapability
+            @Environment(\.printActive) var printActive
+
+            var body: some View {
+                Text("\(reducedMotion) \(pointerCapability) \(printActive)")
+            }
+        }
+
+        let html = StaticHTMLRenderer.render(EnvironmentProbe(), context: "ResponsiveEnv").html
+
+        #expect(html.contains("noPreference"))
+        #expect(html.contains("fine"))
+        #expect(html.contains("false"))
+    }
+
+    @MainActor
     @Test("Padding becomes CSS padding rather than an offset child")
     func emitsPaddingAsCSSPadding() {
         let html = StaticHTMLRenderer.render(
