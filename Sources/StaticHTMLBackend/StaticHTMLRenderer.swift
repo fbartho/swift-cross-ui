@@ -39,9 +39,86 @@ public enum StaticHTMLRenderer {
     ///
     /// - Parameters:
     ///   - view: The view to render.
-    ///   - title: The document's title.
+    ///   - context: What the page owner has to say about the document —
+    ///     its title, the items it carries, where its assets go.
     ///   - size: The size to lay the view out against. Only the width is a
     ///     constraint; see the note on height in ``layOut(_:size:colorScheme:)``.
+    /// - Returns: The rendered document along with anything notable observed
+    ///   while producing it.
+    public static func render(
+        _ view: some View,
+        context: DocumentContext,
+        size: SIMD2<Int> = SIMD2(800, 600)
+    ) -> RenderResult {
+        // One registry spans both layout passes. The passes are structurally
+        // identical, so the second one re-registers exactly what the first did
+        // and dedupe absorbs it — sharing the registry rather than discarding
+        // one is what keeps a contribution's first-appearance order meaningful.
+        let registry = HTMLFragmentRegistry()
+
+        let light = layOut(view, size: size, colorScheme: .light, registry: registry)
+        let dark = layOut(view, size: size, colorScheme: .dark, registry: registry)
+
+        let mismatches = geometryMismatches(between: light.widget, and: dark.widget)
+        mergeColors(from: dark.widget, into: light.widget)
+        resolveIntent(in: light.widget)
+
+        var emitter = HTMLEmitter(headingMap: context.headingMap)
+        emitter.registry = registry
+        emitter.assetStore = context.assetStore
+        emitter.inlineAssetThreshold = context.inlineAssetThreshold
+        emitter.declaredSlots = context.customSlots
+
+        // A custom slot is emitted from inside the body, where a SlotComponent
+        // sits, so its items have to be registered before the body runs — the
+        // marker reads the registry as the emitter reaches it. Head and
+        // bodyEnd items are drained after the body instead (see below), which
+        // is what gives contributions their first-appearance position ahead of
+        // the page owner's.
+        func isCustomSlot(_ item: FragmentItem) -> Bool {
+            if case .custom = item.slot { true } else { false }
+        }
+        let documentItems = context.items.filter { !isCustomSlot($0) }
+        for item in context.items where isCustomSlot(item) {
+            registry.register(item)
+        }
+
+        // Emitting the body first is what makes built-in machinery conditional:
+        // the emitter registers a construct's assets as it emits that
+        // construct, so a page with no stacks carries no stack script. Draining
+        // the registry before the body ran would collect only what the view
+        // tree contributed.
+        let body = emitter.emit(light.widget, at: .zero, placement: .flow, indentLevel: 1)
+
+        // The reset registers last so that a page owner's item under the
+        // reserved key already holds the slot and this one dedupes away. See
+        // HTMLFragmentRegistry.resetItem().
+        for item in documentItems {
+            registry.register(item)
+        }
+        registry.register(HTMLFragmentRegistry.resetItem())
+
+        let html = document(
+            body: body,
+            context: context,
+            registry: registry,
+            emitter: emitter
+        )
+
+        return RenderResult(html: html, size: light.size, geometryMismatches: mismatches)
+    }
+
+    /// Renders a view to a complete HTML document with a default context.
+    ///
+    /// The shorthand for the common case: a page that needs a title and
+    /// nothing else the ``DocumentContext`` offers. Reach for
+    /// ``render(_:context:size:)`` as soon as the document needs to carry
+    /// anything of its own.
+    ///
+    /// - Parameters:
+    ///   - view: The view to render.
+    ///   - title: The document's title.
+    ///   - size: The size to lay the view out against.
     ///   - headingMap: The mapping used to derive headings from declared text
     ///     styles.
     /// - Returns: The rendered document along with anything notable observed
@@ -52,76 +129,89 @@ public enum StaticHTMLRenderer {
         size: SIMD2<Int> = SIMD2(800, 600),
         headingMap: HeadingMap = .default
     ) -> RenderResult {
-        let light = layOut(view, size: size, colorScheme: .light)
-        let dark = layOut(view, size: size, colorScheme: .dark)
+        render(
+            view,
+            context: DocumentContext(title: title, headingMap: headingMap),
+            size: size
+        )
+    }
 
-        let mismatches = geometryMismatches(between: light.widget, and: dark.widget)
-        mergeColors(from: dark.widget, into: light.widget)
-        resolveIntent(in: light.widget)
+    /// Assembles the document around an emitted body.
+    ///
+    /// Source order follows the progressive-enhancement design: the head
+    /// carries only what first paint needs, and everything else rides at the
+    /// end of the body, where it costs nothing before the content is readable.
+    private static func document(
+        body: String,
+        context: DocumentContext,
+        registry: HTMLFragmentRegistry,
+        emitter: HTMLEmitter
+    ) -> String {
+        // Contributions come first within a slot and the page owner's items
+        // last, so the page owner overrides anything a component asked for.
+        // Splitting them here rather than relying on registration order keeps
+        // that guarantee independent of when the renderer happened to drain
+        // each source.
+        let ownerKeys = Set(context.items.map(\.key))
+        func partition(_ slot: FragmentItem.Slot) -> (contributed: [FragmentItem], owned: [FragmentItem]) {
+            let items = registry.items(in: slot)
+            return (
+                items.filter { !ownerKeys.contains($0.key) },
+                items.filter { ownerKeys.contains($0.key) }
+            )
+        }
 
-        var emitter = HTMLEmitter(headingMap: headingMap)
-        let body = emitter.emit(light.widget, at: .zero, placement: .flow, indentLevel: 1)
+        let head = partition(.head)
+        let tail = partition(.bodyEnd)
+
+        // The reset is a head contribution, but it has to precede the interned
+        // stylesheet rather than follow the other contributions: a registered
+        // .style is expected to be able to override an interned property (the
+        // future geometry selectors' display:none gates depend on winning that
+        // tie on source order), which only holds if contributions come after
+        // the interned block, and the reset comes before it.
+        let reset = head.contributed.filter { $0.key == .reset }
+        let headContributions = head.contributed.filter { $0.key != .reset }
 
         let palette = emitter.palette.stylesheet
-        let html = """
+        let baseline = ([reset.map { $0.rendered(indent: "") }.joined(separator: "\n")]
+            + [
+                palette.isEmpty && emitter.interner.stylesheet.isEmpty
+                    ? "" : """
+                        <style>
+                        \(palette.isEmpty ? "" : palette + "\n")\(emitter.interner.stylesheet)
+                        </style>
+                        """
+            ])
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+
+        let headItems = (headContributions + head.owned)
+            .map { $0.rendered(indent: "") }
+            .joined(separator: "\n")
+        let tailItems = (tail.contributed + tail.owned)
+            .map { $0.rendered(indent: "") }
+            .joined(separator: "\n")
+
+        let headBlock = [baseline, headItems].filter { !$0.isEmpty }.joined(separator: "\n")
+        let tailBlock = tailItems.isEmpty ? "" : "\n" + tailItems
+
+        return """
             <!DOCTYPE html>
-            <html lang="en">
+            <html lang="\(HTMLEmitter.escape(context.language))">
             <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <title>\(HTMLEmitter.escape(title))</title>
-            <style>
-            :root { color-scheme: light dark; }
-            body { margin: 0; font-family: -apple-system, system-ui, sans-serif; }
-            /* Font sizing and weight come from the declared text styles the
-               layout system resolved, so the user agent's heading defaults
-               would only fight them. Margins likewise: spacing between
-               elements is the stacks' gap, not the browser's.
-
-               The whole selector is wrapped in :where(), not just the tag
-               list, so the block carries zero specificity. #root on its own
-               is an id selector — (1,0,0) — which would otherwise outrank
-               every interned class (0,1,0) and make a heading's declared
-               font-size lose to this reset instead of the other way around. */
-            :where(#root h1, #root h2, #root h3, #root h4, #root h5, #root h6, #root p) {
-              margin: 0;
-              font-size: inherit;
-              font-weight: inherit;
-            }
-            :where(#root a) { color: inherit; }
-            /* The tier-activation principle (task #29) means Button now emits
-               a real button element for its floor-disabled, action-only row,
-               rather than the link-with-a-button-role this backend used to
-               fall back to. A real button drags in UA chrome (its own font,
-               border, background, padding) that the interned class for its
-               declared style has to fight otherwise. Kept minimal and
-               specifically scoped to button/input, the same low-specificity
-               :where() shape as the rest of this reset, so it doesn't need
-               to win a specificity fight against anything: appearance:none
-               only strips the platform's own decoration, everything else
-               (color, spacing, sizing) is still this backend's interned
-               class to set. */
-            :where(#root button, #root input) {
-              margin: 0;
-              padding: 0;
-              border: none;
-              background: none;
-              font: inherit;
-              color: inherit;
-              appearance: none;
-            }
-            \(palette.isEmpty ? "" : palette + "\n")\(emitter.interner.stylesheet)
-            </style>
+            <title>\(HTMLEmitter.escape(context.title))</title>
+            \(headBlock)
             </head>
             <body>
             <div id="root">
             \(body)
-            </div>
+            </div>\(tailBlock)
             </body>
             </html>
             """
-
-        return RenderResult(html: html, size: light.size, geometryMismatches: mismatches)
     }
 
     /// Lays out a view in a single color scheme.
@@ -140,13 +230,15 @@ public enum StaticHTMLRenderer {
     private static func layOut(
         _ view: some View,
         size: SIMD2<Int>,
-        colorScheme: ColorScheme
+        colorScheme: ColorScheme,
+        registry: HTMLFragmentRegistry
     ) -> (widget: StaticHTMLBackend.Widget, size: SIMD2<Int>) {
         let backend = StaticHTMLBackend(colorScheme: colorScheme)
         let window = backend.createWindow(withDefaultSize: size, id: "static-html")
         let environment = EnvironmentValues(backend: backend)
             .with(\.window, window)
             .with(\.colorScheme, colorScheme)
+            .with(\.htmlFragmentRegistry, registry)
 
         let node = ViewGraphNode(for: view, backend: backend, environment: environment)
         let layout = node.computeLayout(
@@ -170,6 +262,8 @@ public enum StaticHTMLRenderer {
     /// though containers never see an environment. See the seam note in
     /// ``StaticHTMLBackend/Widget/pendingTagRequest``.
     private static func resolveIntent(in root: StaticHTMLBackend.Widget) {
+        resolveRawFragments(in: root)
+
         let coverage = hoistRequests(in: root)
         // A request covering the whole tree has no ancestor left to hoist to,
         // so it belongs to the root.
@@ -181,6 +275,23 @@ public enum StaticHTMLRenderer {
         }
         if let href = coverage.href {
             assign(href, to: coverage)
+        }
+    }
+
+    /// Assigns each raw-fragment request to the leaf that carries it.
+    ///
+    /// Unlike a tag request, this one never hoists. ``RawHTMLFragment`` puts
+    /// the request in scope for exactly one zero-size leaf of its own making,
+    /// so the leaf reporting it *is* the view the author wrote — there's no
+    /// ambiguity about which element the payload replaces, and hoisting it to
+    /// an ancestor would swallow that ancestor's real content.
+    private static func resolveRawFragments(in widget: StaticHTMLBackend.Widget) {
+        let children = widget.getChildren()
+        if children.isEmpty {
+            widget.rawFragment = widget.pendingRawFragmentRequest
+        }
+        for child in children {
+            resolveRawFragments(in: child)
         }
     }
 
