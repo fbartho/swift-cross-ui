@@ -691,8 +691,10 @@ public enum StaticHTMLRenderer {
     /// - Parameter request: The innermost request in the chain to merge.
     /// - Returns: Every key from every request in the chain, each key's
     ///   value taken from the innermost request that set it.
-    private static func mergedAttributes(from request: HTMLAttributesRequest) -> [String: String] {
-        var merged: [String: String] = [:]
+    private static func mergedAttributes(
+        from request: HTMLAttributesRequest
+    ) -> [String: HTMLAttributeOp] {
+        var merged: [String: HTMLAttributeOp] = [:]
         var current: HTMLAttributesRequest? = request
         while let node = current {
             merged.merge(node.attributes) { keepInner, _ in keepInner }

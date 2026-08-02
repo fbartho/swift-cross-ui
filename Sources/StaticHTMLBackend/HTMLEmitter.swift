@@ -672,8 +672,8 @@ public struct HTMLEmitter {
                 // A shape is decorative unless the author says otherwise; an
                 // unlabelled graphic would otherwise be announced as an
                 // unnamed image.
-                if path.authorAttributes["role"] == nil
-                    && path.authorAttributes["aria-label"] == nil
+                if Self.scalarAuthorAttribute(path.authorAttributes, "role") == nil
+                    && Self.scalarAuthorAttribute(path.authorAttributes, "aria-label") == nil
                 {
                     controlAttributes["aria-hidden"] = "true"
                 }
@@ -801,7 +801,10 @@ public struct HTMLEmitter {
                 // still required: it's what marks the image decorative
                 // rather than leaving assistive tech to read the filename
                 // out of a missing attribute.
-                controlAttributes["alt"] = image.authorAttributes["alt"] ?? ""
+                controlAttributes["alt"] = Self.scalarAuthorAttribute(
+                    image.authorAttributes,
+                    "alt"
+                ) ?? ""
                 // The size the layout system committed is the one the
                 // browser should honor directly, the same reasoning as the
                 // inheritedFrame branch below: a void element sizes itself
@@ -980,14 +983,16 @@ public struct HTMLEmitter {
             }
         }
 
-        var attributes: [String: String] = [:]
+        // `class` and `style` resolve against a backend-owned starting point
+        // (the interned style class; nothing, for `style`) rather than being
+        // merged like every other attribute, so they're excluded here and
+        // handled separately below.
+        var attributes: [String: String] = Self.resolveAuthorAttributes(
+            widget.authorAttributes.filter { $0.key != "class" && $0.key != "style" },
+            internedClass: nil
+        )
         // Author attributes are merged first so that backend-owned ones
         // overwrite them rather than the other way around.
-        for (name, value) in widget.authorAttributes
-            where HTMLElement.isValidName(name) && !Self.reservedAttributes.contains(name)
-        {
-            attributes[name] = value
-        }
         for (name, value) in controlAttributes {
             attributes[name] = value
         }
@@ -1076,8 +1081,34 @@ public struct HTMLEmitter {
         if let interned = interner.className(for: style) {
             classNames.append(interned)
         }
-        if !classNames.isEmpty {
-            attributes["class"] = classNames.joined(separator: " ")
+        // An author `class` op applies against the backend's own class list
+        // rather than overwriting it — see ``View/htmlAttributes(_:)``'s doc
+        // comment. `resolveAuthorAttributes` only knows how to start a
+        // token list from a single interned class, so a button style's
+        // `extraClasses` are folded into that starting point by hand here
+        // instead. Absent a `class` op entirely, the backend's own class
+        // list reaches the element unchanged — the classOp check, not a
+        // `??` on the resolution, is what tells "no op" apart from "an op
+        // that resolved to empty" (e.g. a lone `.remove` of the only class).
+        let startingClass = classNames.isEmpty ? nil : classNames.joined(separator: " ")
+        let className: String?
+        if let classOp = widget.authorAttributes["class"] {
+            className = Self.resolveAuthorAttributes(
+                ["class": classOp],
+                internedClass: startingClass
+            )["class"]
+        } else {
+            className = startingClass
+        }
+        if let className {
+            attributes["class"] = className
+        }
+        let styleResolution = Self.resolveAuthorAttributes(
+            widget.authorAttributes.filter { $0.key == "style" },
+            internedClass: nil
+        )
+        if let inlineStyle = styleResolution["style"] {
+            attributes["style"] = inlineStyle
         }
 
         let renderedAttributes =
@@ -1635,17 +1666,41 @@ public struct HTMLEmitter {
             }
             .joined(separator: "\n")
 
-        var attributes: [String: String] = [:]
-        for (name, value) in table.authorAttributes
-            where HTMLElement.isValidName(name) && !Self.reservedAttributes.contains(name)
-        {
-            attributes[name] = value
-        }
+        // `class` and `style` resolve against a backend-owned starting point
+        // (the interned table style class; nothing, for `style`) rather than
+        // being merged like every other attribute — see the equivalent split
+        // in the general widget emission path above.
+        var attributes: [String: String] = Self.resolveAuthorAttributes(
+            table.authorAttributes.filter { $0.key != "class" && $0.key != "style" },
+            internedClass: nil
+        )
         if let tag = table.tag {
             attributes["data-scui"] = tag
         }
-        if let className = interner.className(for: tableStyle) {
-            attributes["class"] = className
+        // Absent a `class` op entirely, the interned table class reaches the
+        // element unchanged — see the identical distinction in the general
+        // widget emission path above (a class op resolving to empty, e.g. a
+        // lone `.remove`, is different from no op at all, and must not fall
+        // back).
+        let internedTableClass = interner.className(for: tableStyle)
+        let tableClassName: String?
+        if let classOp = table.authorAttributes["class"] {
+            tableClassName = Self.resolveAuthorAttributes(
+                ["class": classOp],
+                internedClass: internedTableClass
+            )["class"]
+        } else {
+            tableClassName = internedTableClass
+        }
+        if let tableClassName {
+            attributes["class"] = tableClassName
+        }
+        let tableStyleResolution = Self.resolveAuthorAttributes(
+            table.authorAttributes.filter { $0.key == "style" },
+            internedClass: nil
+        )
+        if let inlineStyle = tableStyleResolution["style"] {
+            attributes["style"] = inlineStyle
         }
         let renderedAttributes =
             attributes
@@ -1977,12 +2032,124 @@ public struct HTMLEmitter {
         }
     }
 
-    /// Attributes that the backend owns and authors may not overwrite.
+    /// Resolves author attribute operations to their final string values,
+    /// applying a `class` op against the backend's own class-list starting
+    /// point rather than overwriting it. `style` op resolution starts from
+    /// nothing, since this backend never writes `style` itself — its own
+    /// styling always goes through interned classes.
     ///
-    /// `style` is absent from the emitted markup entirely (styling goes
-    /// through interned classes), so letting an author set it would reintroduce
-    /// exactly the inline styling this backend avoids.
-    nonisolated static let reservedAttributes: Set<String> = ["style", "class", "data-scui"]
+    /// Every other key resolves independently of what the backend does with
+    /// it — a scalar `.set` produces its string outright; a token-list
+    /// `.add`/`.remove`/`.replace` on some other token-list attribute (e.g.
+    /// `aria-labelledby`) starts from an empty token list, since the backend
+    /// doesn't pre-populate those. Backend-derived values for the same key
+    /// (`id`, `aria-labelledby` from a label association, `data-scui`, …)
+    /// are applied by the caller afterward and win regardless — see the
+    /// merge order at each call site.
+    ///
+    /// A `class` key with no matching op in `authorAttributes` produces no
+    /// entry here at all — callers that need `internedClass` to still reach
+    /// the element when the author supplied no `class` op handle that
+    /// fallback themselves, since only the caller knows whether an op was
+    /// actually present (an op that resolves to an empty token list, e.g. a
+    /// lone `.remove` of the only class, is a real "no class" outcome and
+    /// must not fall back).
+    ///
+    /// - Parameters:
+    ///   - authorAttributes: The merged author attribute operations for one
+    ///     element.
+    ///   - internedClass: The class name the backend interned for this
+    ///     element's own styling, if any — the starting token a `class` op
+    ///     applies against.
+    /// - Returns: Resolved scalar values, keyed by attribute name. Empty
+    ///   token lists and empty `style` bodies are omitted rather than
+    ///   emitted as empty strings.
+    nonisolated static func resolveAuthorAttributes(
+        _ authorAttributes: [String: HTMLAttributeOp],
+        internedClass: String?
+    ) -> [String: String] {
+        var resolved: [String: String] = [:]
+        for (name, op) in authorAttributes where HTMLElement.isValidName(name) {
+            switch op {
+                case .set(let value):
+                    resolved[name] = value
+                case .add, .remove, .replace:
+                    var tokens =
+                        name == "class"
+                            ? (internedClass.map { [$0] } ?? [])
+                            : []
+                    apply(op, toTokens: &tokens)
+                    if !tokens.isEmpty {
+                        resolved[name] = tokens.joined(separator: " ")
+                    }
+                case .setProperty, .removeProperty:
+                    var style = Style()
+                    apply(op, toStyle: &style)
+                    if !style.isEmpty {
+                        resolved[name] = style.cssBody
+                    }
+            }
+        }
+        return resolved
+    }
+
+    /// Applies a token-list operation (`.add`/`.remove`/`.replace`) to a
+    /// token list, in place. Any other case is a no-op — callers only pass
+    /// the three token-list cases.
+    private nonisolated static func apply(_ op: HTMLAttributeOp, toTokens tokens: inout [String]) {
+        switch op {
+            case .add(let token):
+                if !tokens.contains(token) {
+                    tokens.append(token)
+                }
+            case .remove(let token):
+                tokens.removeAll { $0 == token }
+            case .replace(let token, let replacement):
+                if let index = tokens.firstIndex(of: token) {
+                    tokens[index] = replacement
+                }
+            case .set, .setProperty, .removeProperty:
+                break
+        }
+    }
+
+    /// Applies a property-map operation (`.setProperty`/`.removeProperty`)
+    /// to a style, in place. Any other case is a no-op — callers only pass
+    /// the two property-map cases.
+    private nonisolated static func apply(_ op: HTMLAttributeOp, toStyle style: inout Style) {
+        switch op {
+            case .setProperty(let property, let value):
+                style.set(value, for: property)
+            case .removeProperty(let property):
+                style.set(nil, for: property)
+            case .set, .add, .remove, .replace:
+                break
+        }
+    }
+
+    /// Reads the scalar string an author attribute op resolves to, for the
+    /// few read sites that need to inspect one author-supplied value
+    /// directly (e.g. checking whether `role` or `alt` was author-set)
+    /// rather than emitting the whole set.
+    ///
+    /// Only `.set` (including the `ExpressibleByStringLiteral` shorthand)
+    /// has a single scalar value; every other case describes an edit against
+    /// a starting point this accessor doesn't have, so it returns `nil`
+    /// rather than guessing.
+    ///
+    /// - Parameters:
+    ///   - authorAttributes: The widget's merged author attribute operations.
+    ///   - name: The attribute name to read.
+    /// - Returns: The scalar value, if the author set one with `.set`.
+    nonisolated static func scalarAuthorAttribute(
+        _ authorAttributes: [String: HTMLAttributeOp],
+        _ name: String
+    ) -> String? {
+        guard case .set(let value) = authorAttributes[name] else {
+            return nil
+        }
+        return value
+    }
 
     /// Element names that support the native `disabled` attribute.
     ///

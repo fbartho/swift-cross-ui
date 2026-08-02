@@ -40,7 +40,7 @@ extension View {
                 + "query would resolve against whichever wrapper the emitter "
                 + "happened to produce, not the container you meant."
         )
-        return htmlAttributes([containerMarkerAttribute: name])
+        return htmlAttributes([containerMarkerAttribute: .set(name)])
             .htmlHeadItem(
                 .style(
                     """

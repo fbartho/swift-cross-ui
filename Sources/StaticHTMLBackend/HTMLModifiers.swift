@@ -36,6 +36,51 @@ public final class HTMLTagRequest: Sendable {
     }
 }
 
+/// An operation on one HTML attribute, shaped after that attribute's own
+/// grammar rather than treating every attribute as an opaque string.
+///
+/// The case an author reaches for follows the DOM API that manipulates the
+/// matching attribute grammar:
+///
+/// - Token-list attributes (`class`, `rel`, ID-list ARIA attributes like
+///   `aria-labelledby`) take ``add(_:)``, ``remove(_:)``, and
+///   ``replace(_:with:)``, mirroring `classList`. `remove` and `replace`
+///   apply even to a token the backend itself put there — `class`'s interned
+///   token included — because a deliberate author op is deliberate; nothing
+///   here special-cases "backend tokens are exempt."
+/// - The property-map attribute (`style`) takes ``setProperty(_:value:)`` and
+///   ``removeProperty(_:)``, mirroring `CSSStyleDeclaration`, and merges
+///   per-declaration rather than replacing the whole attribute.
+/// - Every other attribute is scalar: plain string literals are `set`/replace
+///   per `setAttribute`, available via `ExpressibleByStringLiteral` so
+///   `"value"` still works directly in an attributes dictionary.
+///
+/// There's no static `toggle` — a toggle needs something to toggle against,
+/// and nothing here defines that pair statically. A dynamic tier can grow
+/// one on the same attribute names later without this type changing shape.
+public enum HTMLAttributeOp: Sendable, ExpressibleByStringLiteral {
+    /// Sets the attribute to this exact string, replacing any existing
+    /// value — the scalar case, and the only one a plain string literal
+    /// produces.
+    case set(String)
+    /// Appends a token to a token-list attribute, if not already present.
+    case add(String)
+    /// Removes a token from a token-list attribute.
+    case remove(String)
+    /// Replaces one token with another in a token-list attribute. A no-op if
+    /// the original token isn't present.
+    case replace(String, with: String)
+    /// Sets one CSS declaration within the `style` attribute, replacing any
+    /// existing value for that property.
+    case setProperty(String, value: String)
+    /// Removes one CSS declaration from the `style` attribute.
+    case removeProperty(String)
+
+    public init(stringLiteral value: String) {
+        self = .set(value)
+    }
+}
+
 /// A request to add attributes to one view's element.
 ///
 /// Resolved by identity, for the same reason as ``HTMLTagRequest`` — but
@@ -50,8 +95,8 @@ public final class HTMLTagRequest: Sendable {
 /// perform that merge; the field exists on this type only to make the chain
 /// walkable, not because outer requests are meant to be discarded.
 public final class HTMLAttributesRequest: Sendable {
-    /// The requested attributes.
-    public let attributes: [String: String]
+    /// The requested attribute operations.
+    public let attributes: [String: HTMLAttributeOp]
     /// The request this one was applied inside, if any — see the type's doc
     /// comment: this is *not* a shadowed-and-discarded predecessor the way
     /// it is for ``HTMLTagRequest``, it's the next entry a merge walks to.
@@ -60,10 +105,13 @@ public final class HTMLAttributesRequest: Sendable {
     /// Creates a request.
     ///
     /// - Parameters:
-    ///   - attributes: The attributes to add.
+    ///   - attributes: The attribute operations to apply.
     ///   - enclosing: The request already in scope, which this one is
     ///     layered onto (not shadowing — see the type's doc comment).
-    public init(attributes: [String: String], enclosing: HTMLAttributesRequest? = nil) {
+    public init(
+        attributes: [String: HTMLAttributeOp],
+        enclosing: HTMLAttributesRequest? = nil
+    ) {
         self.attributes = attributes
         self.enclosing = enclosing
     }
@@ -147,10 +195,45 @@ extension View {
 
     /// Adds HTML attributes to this view's element.
     ///
-    /// Author attributes win over backend-derived ones, except for `style`,
-    /// `class`, and `data-scui`, which the backend owns — style interning and
-    /// the type-name attribute would both break if authors could overwrite
-    /// them. Values are escaped when emitted.
+    /// Every attribute is writable, including `class`, `style`, and the
+    /// `data-scui` namespace — see the caveats on each below. The operation
+    /// an author reaches for follows the attribute's own grammar; see
+    /// ``HTMLAttributeOp``. A plain string, e.g. `["aria-label": "Primary"]`,
+    /// is shorthand for `.set(_:)` and works for any scalar attribute.
+    /// Values are escaped when emitted.
+    ///
+    /// `class` is token-list: `.add(_:)`/`.remove(_:)`/`.replace(_:with:)`
+    /// operate on the element's class list the way `classList` does,
+    /// including the class the backend interned for this element's own
+    /// styling — `.add(_:)` appends an author token after it, and
+    /// `.remove(_:)`/`.replace(_:with:)` reach it too, deliberately: a
+    /// backend-owned token isn't exempt from an explicit author op. `.set(_:)`
+    /// replaces the class list wholesale, backend token included.
+    ///
+    /// `style` is scalar or property-map, author-owned either way. This
+    /// backend never writes `style` itself — its own styling always goes
+    /// through interned classes — so an author's `style` ops are the only
+    /// source of an inline `style` attribute (same precedent as
+    /// `RawHTMLFragment`'s raw markup). `.setProperty(_:value:)` and
+    /// `.removeProperty(_:)` merge per CSS declaration; `.set(_:)` replaces
+    /// the whole attribute with a raw string. **Caveat:** values set this way
+    /// bypass the backend's color-scheme swap and any tier-level CSS choice
+    /// for the same property — an inline `color` won't follow the reader's
+    /// system appearance the way the backend's own styling does.
+    ///
+    /// `data-scui-*` is the backend's build↔runtime protocol namespace —
+    /// **private API**. It's writable with no precondition or ceremony
+    /// (e.g. a user-space component steering another component's behavior
+    /// through the same channel the backend uses), but nothing about it is
+    /// contractually stable: names, values, and presence can change without
+    /// notice as the backend's own emission logic evolves.
+    ///
+    /// Every other attribute is scalar: an author's `.set(_:)`/string
+    /// literal always wins the final value once merged, but a
+    /// backend-derived value applied after author-attribute merging (e.g.
+    /// `id` from a referenced identifier, `aria-labelledby` from a label
+    /// association) still overwrites it — see the emission order in
+    /// `HTMLEmitter`.
     ///
     /// Stacking this modifier is legal and merges: `.htmlAttributes(["a":
     /// "1"]).htmlAttributes(["b": "2"])` resolves to both `a` and `b` on the
@@ -161,9 +244,10 @@ extension View {
     /// simply replaces the earlier one; see ``HTMLAttributesRequest``'s doc
     /// comment for why attributes are the case that merges.
     ///
-    /// - Parameter attributes: The attributes to add, keyed by name.
+    /// - Parameter attributes: The attribute operations to apply, keyed by
+    ///   name.
     /// - Returns: The view, carrying the requested attributes.
-    public func htmlAttributes(_ attributes: [String: String]) -> some View {
+    public func htmlAttributes(_ attributes: [String: HTMLAttributeOp]) -> some View {
         transformEnvironment(\.htmlAttributesRequest) { request in
             request = HTMLAttributesRequest(attributes: attributes, enclosing: request)
         }

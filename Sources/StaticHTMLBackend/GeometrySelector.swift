@@ -261,7 +261,7 @@ public struct GeometrySelector: View {
         return VStack(spacing: 0) {
             ForEach(branches) { branch in
                 branch.content
-                    .htmlAttributes([branchMarkerAttribute: markerValue(for: branch)])
+                    .htmlAttributes([branchMarkerAttribute: .set(markerValue(for: branch))])
             }
         }
         .frame(maxWidth: .infinity)

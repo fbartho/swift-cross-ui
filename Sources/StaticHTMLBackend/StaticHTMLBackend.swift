@@ -57,8 +57,8 @@ public final class StaticHTMLBackend:
         /// Resolved from ``pendingTagRequest`` once the whole tree is built;
         /// see ``StaticHTMLRenderer``.
         public var explicitElement: HTMLElement?
-        /// Attributes requested via ``View/htmlAttributes(_:)``.
-        public var authorAttributes: [String: String] = [:]
+        /// Attribute operations requested via ``View/htmlAttributes(_:)``.
+        public var authorAttributes: [String: HTMLAttributeOp] = [:]
         /// The tag request that was in scope when this widget was updated.
         ///
         /// A request is in scope for every descendant of the modified view, so

@@ -536,15 +536,23 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("Reserved keys still strip after merging stacked .htmlAttributes calls")
-    func stackedAttributesReservedKeysStillStripped() {
+    @Test("class and style ops resolve like any other key across stacked .htmlAttributes calls")
+    func stackedAttributesResolveClassAndStyleOps() {
+        // The second call is outer, so on a key both set the first (closer
+        // to the content) wins — same innermost-wins-per-key rule as any
+        // other attribute; see the threeDeepAttributesStackResolvesFully
+        // test above. "style" isn't set by both, so no conflict there.
         let view = Text("Guarded")
-            .htmlAttributes(["style": "color:red", "data-real": "kept-inner"])
-            .htmlAttributes(["class": "mine", "data-other": "kept-outer"])
+            .htmlAttributes([
+                "style": .setProperty("color", value: "red"),
+                "data-real": "kept-inner"
+            ])
+            .htmlAttributes(["class": .add("mine"), "data-other": "kept-outer"])
         let html = StaticHTMLRenderer.render(view, context: "Merge").html
 
-        #expect(!html.contains("color:red"))
-        #expect(!html.contains("class=\"mine\""))
+        #expect(html.contains("style=\"color:red\""))
+        let classAttribute = Self.attributeValue("class", onElementContaining: "Guarded", in: html)
+        #expect(classAttribute?.hasSuffix(" mine") == true)
         #expect(html.contains("data-real=\"kept-inner\""))
         #expect(html.contains("data-other=\"kept-outer\""))
     }
@@ -1019,21 +1027,105 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("Authors can't overwrite the attributes the backend owns")
-    func ignoresReservedAuthorAttributes() {
-        let view = Text("Styled").htmlAttributes([
-            "style": "color:red",
-            "class": "mine",
-            "data-scui": "Fake",
-            "id": "kept",
-        ])
-        let html = StaticHTMLRenderer.render(view, context: "Reserved").html
+    @Test("A .add class op appends an author token after the interned class")
+    func classAddAppendsAfterInternedClass() {
+        let view = Text("Styled").htmlAttributes(["class": .add("hero")])
+        let html = StaticHTMLRenderer.render(view, context: "Class add").html
 
-        #expect(!html.contains("color:red"))
-        #expect(!html.contains("class=\"mine\""))
-        #expect(!html.contains("data-scui=\"Fake\""))
-        // Attributes the backend doesn't own still come through.
-        #expect(html.contains("id=\"kept\""))
+        let classAttribute = Self.attributeValue("class", onElementContaining: "Styled", in: html)
+        #expect(classAttribute?.hasPrefix("scui-") == true)
+        #expect(classAttribute?.hasSuffix(" hero") == true)
+    }
+
+    @MainActor
+    @Test("A .remove class op reaches the interned class too — deliberate is deliberate")
+    func classRemoveReachesInternedClass() {
+        // Text renders as its own element (a span/heading here, not a
+        // wrapper), so the class it's given is exactly the one style
+        // interning assigns it — "scui-0" for the first, and only, style
+        // interned in this document.
+        let view = Text("Styled").htmlAttributes(["class": .remove("scui-0")])
+        let html = StaticHTMLRenderer.render(view, context: "Class remove").html
+
+        let classAttribute = Self.attributeValue("class", onElementContaining: "Styled", in: html)
+        #expect(classAttribute == nil)
+    }
+
+    @MainActor
+    @Test("A .set class op replaces the class list wholesale, interned class included")
+    func classSetReplacesWholesale() {
+        let view = Text("Styled").htmlAttributes(["class": .set("mine")])
+        let html = StaticHTMLRenderer.render(view, context: "Class set").html
+
+        // Checked on the Text element specifically — an ancestor wrapper
+        // (EnvironmentModifier's VStack) has its own unrelated interned
+        // class, which a document-wide `!contains("class=\"scui-")` would
+        // also (wrongly) flag.
+        let classAttribute = Self.attributeValue("class", onElementContaining: "Styled", in: html)
+        #expect(classAttribute == "mine")
+    }
+
+    @MainActor
+    @Test("style is author-owned: setProperty/removeProperty merge per declaration")
+    func stylePropertyOpsMergePerDeclaration() {
+        let view = Text("Styled").htmlAttributes([
+            "style": .setProperty("view-transition-name", value: "hero")
+        ])
+        let html = StaticHTMLRenderer.render(view, context: "Style setProperty").html
+
+        #expect(html.contains("style=\"view-transition-name:hero\""))
+        // The backend's own styling still goes through interned classes —
+        // an author style op doesn't replace that mechanism.
+        #expect(html.contains("class=\"scui-"))
+    }
+
+    @MainActor
+    @Test("A .set style op writes the raw string directly, bypassing the backend")
+    func styleSetWritesRawString() {
+        let view = Text("Styled").htmlAttributes(["style": .set("color:red")])
+        let html = StaticHTMLRenderer.render(view, context: "Style set").html
+
+        #expect(html.contains("style=\"color:red\""))
+    }
+
+    @MainActor
+    @Test("A data-scui-* key outside the backend's own tag is writable, no ceremony")
+    func dataScuiNamespaceIsWritable() {
+        // `data-scui` itself always carries the widget's type name (Text,
+        // here) once the backend stamps `widget.tag` — see the emission
+        // order note above `attributes["data-scui"] = tag`, unchanged by
+        // this task. What's newly writable is the rest of the namespace: an
+        // author or user-space component can steer another component
+        // through any other `data-scui-*` key, since nothing reserves or
+        // strips it anymore.
+        let view = Text("Styled").htmlAttributes(["data-scui-my-flag": "on"])
+        let html = StaticHTMLRenderer.render(view, context: "data-scui-* writable").html
+
+        #expect(html.contains("data-scui-my-flag=\"on\""))
+        #expect(html.contains("data-scui=\"Text\""))
+    }
+
+    /// Reads one attribute's value off the element whose markup contains
+    /// `marker` (e.g. the text content), for tests that need to check an
+    /// attribute alongside other attributes without over-anchoring on exact
+    /// attribute order.
+    private static func attributeValue(
+        _ name: String,
+        onElementContaining marker: String,
+        in html: String
+    ) -> String? {
+        guard let line = html.split(separator: "\n").first(where: { $0.contains(marker) })
+        else {
+            return nil
+        }
+        guard let range = line.range(of: "\(name)=\"") else {
+            return nil
+        }
+        let rest = line[range.upperBound...]
+        guard let end = rest.firstIndex(of: "\"") else {
+            return nil
+        }
+        return String(rest[rest.startIndex..<end])
     }
 
     @MainActor
