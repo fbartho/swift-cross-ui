@@ -98,6 +98,62 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A .background() backdrop paints behind the foreground, not over it")
+    func backgroundBackdropPaintsBehindForeground() {
+        // Task #58: the #53 backdrop is positioned (inset:0) while the
+        // foreground stayed in normal flow, and a positioned element paints
+        // above unpositioned in-flow siblings regardless of tree order (CSS
+        // 2.1 Appendix E, step 8 vs steps 4 and 7). Every geometry assertion
+        // in the #53 test still passed while the rendered page was blank,
+        // which is why this asserts paint order specifically.
+        //
+        // Browser-verified with elementFromPoint over the text (see
+        // Scripts/check-paint-order.mjs): before the fix the hit was the
+        // backdrop Color div, after it the Text span.
+        let html = StaticHTMLRenderer.render(
+            Text("Panel").background(Color.gray),
+            context: "Background paint order",
+            size: SIMD2(1400, 900)
+        ).html
+
+        let backdropRule = Self.internedRule(containing: "background-color:", in: html)
+        #expect(backdropRule?.contains("z-index:-1") == true)
+
+        // Without a stacking context on the wrapper, z-index:-1 escapes past
+        // this subtree and lands behind the ancestors' backgrounds instead
+        // of just behind the foreground.
+        let wrapperRule = Self.internedRule(containing: "position:relative", in: html)
+        #expect(wrapperRule?.contains("isolation:isolate") == true)
+    }
+
+    @MainActor
+    @Test("A ZStack's top layer still paints last, since both layers stay positioned")
+    func zStackTopLayerPaintsLast() {
+        // The overlap-pin path (both children position:absolute, no z-index)
+        // is untouched by task #58's backdrop fix: equal-level positioned
+        // siblings paint in tree order, so the last child wins. Asserted so
+        // a future z-index added to that path can't silently invert it.
+        let html = StaticHTMLRenderer.render(
+            ZStack {
+                Color.gray.frame(width: 300, height: 100)
+                Text("Top layer")
+            },
+            context: "ZStack paint order",
+            size: SIMD2(1400, 900)
+        ).html
+
+        let backdropIndex = html.range(of: "data-scui=\"Color\"")?.lowerBound
+        let textIndex = html.range(of: "data-scui=\"Text\"")?.lowerBound
+        #expect(backdropIndex != nil)
+        #expect(textIndex != nil)
+        if let backdropIndex, let textIndex {
+            #expect(backdropIndex < textIndex)
+        }
+        #expect(Self.internedRule(containing: "background-color:", in: html)?
+            .contains("z-index") != true)
+    }
+
+    @MainActor
     @Test("A view using .task doesn't crash the one-shot render")
     func taskModifierDoesNotCrash() {
         // .task routes through .onChange(of:initial:) internally
