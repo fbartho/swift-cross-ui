@@ -1235,11 +1235,10 @@ struct StaticHTMLBackendTests {
         // Sweep finding G7: Spacer's committed Container widget carried no
         // class at all — no flex-grow, no flex-basis — so in a flex row it
         // collapsed and its siblings sat adjacent instead of pushed apart.
-        // Spacer has no dedicated Widget subclass, so this is keyed off the
-        // view-type tag the core stamps on every widget (see
-        // ViewGraphNode.init), which is also what the real
-        // layoutPriority(-infinity) signal (never reaching the backend) is
-        // standing in for here.
+        // Spacer has no dedicated Widget subclass, so recognising it here
+        // relies on ``BackendFeatures/Widgets/describeSpacer(of:)`` (task
+        // #32), which is also what the real layoutPriority(-infinity)
+        // signal (never reaching the backend) is standing in for here.
         let html = StaticHTMLRenderer.render(
             HStack {
                 Text("Leading")
@@ -1334,8 +1333,10 @@ struct StaticHTMLBackendTests {
         // render width — min-width:800px in the sweep's probe — which
         // overflows any narrower viewport.
         //
-        // The fix chains flex stretch from the Divider tag down to the leaf,
-        // three wrappers deep (Divider → StrictFrameView → Color), because
+        // The fix chains flex stretch from the widget
+        // ``BackendFeatures/Widgets/describeDivider(of:)`` marks down to the
+        // leaf, three wrappers deep (Divider → StrictFrameView → Color),
+        // because
         // flex's stretch only applies on the CROSS axis of whichever flex
         // container is doing the stretching:
         //   - Divider's own wrapper gets align-self:stretch against the
@@ -1389,23 +1390,29 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("aspectRatio's effect is real committed geometry, not a CSS aspect-ratio declaration")
-    func aspectRatioAffectsCommittedGeometryOnly() {
-        // Sweep finding G9 expected literal CSS aspect-ratio: output.
-        // Investigation showed aspectRatio() is a pure layout-proposal
-        // transform (AspectRatioModifier.computeLayout reshapes what's
-        // proposed to the child; commit() only forwards) — it has no
-        // widget of its own and nothing persists past the layout pass for
-        // a browser to re-derive at another width. The committed size it
-        // produces is therefore the correct and complete translation, the
-        // same "committed geometry is correct given an explicit frame"
-        // reasoning already established for GeometryReader/ScrollView. This
-        // test documents that as the intended behavior rather than a gap:
-        // 300x150 (2:1 at width:300) round-trips exactly. The leaf's own
-        // tag is "AspectRatioView", not "Color" — Color's widget class
-        // (Rectangle) is reused, but the view-type tag the core stamps on
-        // every widget reflects the outermost composing view, same
-        // mechanism the Divider test above relies on.
+    @Test(
+        "aspectRatio emits CSS aspect-ratio so the undeclared axis scales proportionally under reflow"
+    )
+    func aspectRatioEmitsProportionalCSS() {
+        // Sweep finding G9 originally expected literal CSS aspect-ratio:
+        // output; task #22's investigation found AspectRatioModifier is a
+        // pure layout-proposal transform with no widget of its own, and
+        // documented the committed 300x150 size (2:1 at width:300) as the
+        // correct and complete translation — matching the "committed
+        // geometry is correct given an explicit frame" reasoning already
+        // established for GeometryReader/ScrollView.
+        //
+        // Task #32 supersedes that: under this emitter's reflow philosophy
+        // (everything else here re-derives from declared intent at every
+        // width, not just the one the build host proposed), a declared
+        // ratio on flexible-width content has to scale proportionally in
+        // the browser too, or it silently stops being 2:1 the moment the
+        // reader resizes. ``BackendFeatures/Widgets/describeAspectRatio(of:ratio:contentMode:)``
+        // carries the author's ratio to the backend for exactly this case;
+        // AspectRatioView.commit calls it with `nil` when the view instead
+        // adopted its child's own ideal ratio (no explicit value given),
+        // since that's a layout-computed value with nothing safe to
+        // re-derive — this test only covers the explicit-ratio path.
         let html = StaticHTMLRenderer.render(
             Color.blue.aspectRatio(2.0, contentMode: .fit).frame(width: 300),
             context: "AspectRatio"
@@ -1415,9 +1422,13 @@ struct StaticHTMLBackendTests {
             forElementContaining: "data-scui=\"AspectRatioView\"",
             in: html
         )
-        #expect(leafRule?.contains("min-height:150px") == true)
         #expect(leafRule?.contains("width:300px") == true)
-        #expect(!html.contains("aspect-ratio:"))
+        #expect(leafRule?.contains("aspect-ratio:2") == true)
+        // The baked cross-axis floor from #22 is gone: a min-height here
+        // would win the intrinsic-size negotiation over aspect-ratio at
+        // some widths and silently reintroduce the fixed-ratio-only bug
+        // this test now guards against.
+        #expect(leafRule?.contains("min-height:") != true)
     }
 
     @MainActor

@@ -137,5 +137,11 @@ struct AspectRatioView<Child: View>: TypeSafeView {
         backend: Backend
     ) {
         _ = children.child0.commit()
+        // Only an author-declared ratio is safe to hand a backend: the
+        // `nil` case adopts the child's own ideal ratio, which requires
+        // running layout again to measure (see computeAspectRatio() above)
+        // and isn't something a backend re-expressing this at another width
+        // can recover on its own.
+        backend.describeAspectRatio(of: widget, ratio: aspectRatio, contentMode: contentMode)
     }
 }

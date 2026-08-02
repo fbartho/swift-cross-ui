@@ -131,9 +131,10 @@ public struct HTMLEmitter {
     ///     axis (Divider, specifically) should be filled by this widget's
     ///     subtree rather than floored to committed size. Threaded down
     ///     explicitly because the leaf that finally acts on it is several
-    ///     levels below whichever ancestor actually carried the "Divider"
-    ///     tag — see the widget.tag == "Divider" check at the top of this
-    ///     function, and the matching flex/align-self handling in
+    ///     levels below whichever ancestor actually was marked — see the
+    ///     widget.isDivider check at the top of this function (set by
+    ///     ``BackendFeatures/Widgets/describeDivider(of:)``), and the
+    ///     matching flex/align-self handling in
     ///     ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
     ///   - flexShrinkWeight: A layout-priority-derived shrink resistance for
     ///     this widget specifically, when it's a direct child of a stack
@@ -197,7 +198,7 @@ public struct HTMLEmitter {
         if widget.cornerRadius > 0 {
             style.set("\(widget.cornerRadius)px", for: "border-radius")
         }
-        if widget.tag == "Divider" {
+        if widget.isDivider {
             // Divider's documented behaviour is to expand along the minor
             // axis of its containing stack, but the flex model this emitter
             // otherwise relies on centers cross-axis children by default
@@ -440,12 +441,25 @@ public struct HTMLEmitter {
                 // to stretch it at this one render width, an arbitrary value
                 // with no relationship worth preserving, so this axis is left
                 // with no width declaration of its own and inherits the
-                // flex stretch entirely. A Rectangle reached through
-                // .aspectRatio(), by contrast, has a *meaningful* committed
-                // value on its undeclared axis — the proportional height
-                // the ratio computed — so it stays a floor like any other
-                // unframed leaf; treating it as a flex-stretch target would
-                // silently discard the ratio.
+                // flex stretch entirely.
+                //
+                // An author-declared aspect ratio (``declaredAspectRatio``)
+                // is the third case: unlike Divider's stretch, the undeclared
+                // axis isn't left to a flex ancestor's default — CSS
+                // aspect-ratio derives it directly from whichever axis IS
+                // declared, so it stays correct under reflow at any width,
+                // not just the one the build host happened to propose. This
+                // supersedes the "committed geometry is the correct and
+                // complete translation" interim documented at #22: that
+                // reasoning covered a fixed frame (``AspectRatioModifier``
+                // reshaping proposals is exact for one width), but the
+                // reflow philosophy this emitter otherwise follows means a
+                // ratio declared on flexible-width content must scale
+                // proportionally in the browser, not bake the one committed
+                // outcome as a floor.
+                if let ratio = rectangle.declaredAspectRatio {
+                    style.set(Self.formatNumber(ratio), for: "aspect-ratio")
+                }
                 Self.pin(
                     size: rectangle.size,
                     in: &style,
@@ -453,6 +467,7 @@ public struct HTMLEmitter {
                     declaredWidth: inheritedFrame?.width,
                     declaredHeight: inheritedFrame?.height,
                     hasEnclosingFrame: stretchesUndeclaredAxis
+                        || rectangle.declaredAspectRatio != nil
                 )
 
             case let image as StaticHTMLBackend.ImageView:
@@ -497,38 +512,37 @@ public struct HTMLEmitter {
                     style.set("\(image.size.y)px", for: "height")
                 }
 
-            case let container as StaticHTMLBackend.Container where container.tag == "Spacer":
+            case let container as StaticHTMLBackend.Container where container.isSpacer:
                 // Spacer has no dedicated Widget subclass of its own — it's a
-                // plain empty Container — so the view-type tag the core
-                // already stamps on every widget (see ViewGraphNode.init) is
-                // the only signal available to recognise it here. Its
-                // layoutPriority(-infinity) preference, which is what tells
-                // the layout system to shrink it first, is consumed entirely
-                // inside LayoutSystem and never reaches the backend, so
-                // there's no geometry-based way to infer "this is a spacer"
-                // after the fact. flex:1 1 0% reproduces the same
+                // plain empty Container, marked by
+                // ``BackendFeatures/Widgets/describeSpacer(of:)`` rather than
+                // by type. Its layoutPriority(-infinity) preference, which is
+                // what tells the layout system to shrink it first, is
+                // consumed entirely inside LayoutSystem and never reaches the
+                // backend, so there's no geometry-based way to infer "this is
+                // a spacer" after the fact. flex:1 1 0% reproduces the same
                 // greedy-but-shrinkable behaviour in the flex model: it grows
                 // to fill leftover space and yields before any sibling with a
                 // real minimum content size would be squeezed.
                 style.set("1 1 0%", for: "flex")
 
             case let container as StaticHTMLBackend.Container:
-                // The stretch signal outlives whichever ancestor actually
-                // carried the "Divider" tag: Divider composes as
-                // `Divider(Container) → StrictFrameView(Container) →
-                // Color(Rectangle)`, so a wrapper two levels down from the
-                // tag still needs to know it's inside a Divider when it
-                // constructs its own InheritedFrame for its single child.
-                // widget.tag == "Divider" starts the signal; the incoming
-                // stretchesUndeclaredAxis parameter (already threaded down
-                // by an ancestor's own emit call) keeps it alive past that
-                // point.
+                // The stretch signal outlives the specific widget
+                // ``BackendFeatures/Widgets/describeDivider(of:)`` marked:
+                // Divider composes as `Divider(Container) →
+                // StrictFrameView(Container) → Color(Rectangle)`, so a
+                // wrapper two levels down from the marked widget still needs
+                // to know it's inside a Divider when it constructs its own
+                // InheritedFrame for its single child. widget.isDivider
+                // starts the signal; the incoming stretchesUndeclaredAxis
+                // parameter (already threaded down by an ancestor's own emit
+                // call) keeps it alive past that point.
                 inner = emitChildren(
                     of: container,
                     style: &style,
                     indent: indent,
                     indentLevel: indentLevel,
-                    stretchesUndeclaredAxis: widget.tag == "Divider" || stretchesUndeclaredAxis
+                    stretchesUndeclaredAxis: widget.isDivider || stretchesUndeclaredAxis
                 )
                 isRawInner = true
 

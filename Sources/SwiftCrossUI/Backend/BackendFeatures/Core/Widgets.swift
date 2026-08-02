@@ -160,6 +160,59 @@ extension BackendFeatures {
             idealHeight: Double?,
             maxHeight: Double?
         )
+
+        /// Tells the backend that a container's proposed size was reshaped to
+        /// maintain an author-declared aspect ratio, as with
+        /// ``SwiftCrossUI/View/aspectRatio(_:contentMode:)``.
+        ///
+        /// The default implementation does nothing. As with
+        /// ``describeFrame(of:width:height:)``, this is for backends that
+        /// re-express a layout rather than placing widgets themselves: the
+        /// committed size already reflects the ratio at the one width the
+        /// layout system happened to propose, but only the author's
+        /// declared ratio — not that one committed outcome — is a value a
+        /// backend can safely re-derive at another width.
+        ///
+        /// - Parameters:
+        ///   - widget: The container whose proposed size was reshaped.
+        ///   - ratio: The aspect ratio the author declared. `nil` when the
+        ///     view instead adopted its child's own ideal ratio (the
+        ///     ``SwiftCrossUI/View/aspectRatio(contentMode:)`` overload with
+        ///     no explicit value) — a backend that can't measure a child's
+        ///     ideal ratio without running layout again has nothing safe to
+        ///     re-derive in that case.
+        ///   - contentMode: Whether the ratio should be filled or fitted
+        ///     within the proposed size.
+        func describeAspectRatio(of widget: Widget, ratio: Double?, contentMode: ContentMode)
+
+        /// Tells the backend that a container is standing in for a
+        /// ``SwiftCrossUI/Spacer``.
+        ///
+        /// The default implementation does nothing. As with
+        /// ``describeStackLayout(of:orientation:alignment:spacing:)``, this
+        /// is for backends that re-express a layout rather than placing
+        /// widgets themselves: a spacer's `layoutPriority(-infinity)`
+        /// preference (what tells the layout system to shrink it before any
+        /// sibling) is consumed entirely inside the layout system and
+        /// leaves no trace in committed geometry, so a backend needing to
+        /// reproduce "grows to fill, yields first" in its own space-
+        /// distribution model has no other way to recognise the widget.
+        ///
+        /// - Parameter widget: The container standing in for the spacer.
+        func describeSpacer(of widget: Widget)
+
+        /// Tells the backend that a container is standing in for a
+        /// ``SwiftCrossUI/Divider``.
+        ///
+        /// The default implementation does nothing, for the same reason as
+        /// ``describeSpacer(of:)``: a divider's "always expands along the
+        /// containing stack's minor axis, whatever the stack's own
+        /// alignment says" contract is enforced by the layout system and
+        /// leaves no trace in committed geometry once laid out at a single
+        /// width.
+        ///
+        /// - Parameter widget: The container standing in for the divider.
+        func describeDivider(of widget: Widget)
     }
 }
 
@@ -207,5 +260,20 @@ extension BackendFeatures.Widgets {
     ) {
         // As above: the committed size already says everything most backends
         // need to know.
+    }
+
+    public func describeAspectRatio(of widget: Widget, ratio: Double?, contentMode: ContentMode) {
+        // As above: the committed size already says everything most backends
+        // need to know.
+    }
+
+    public func describeSpacer(of widget: Widget) {
+        // As above: a backend that positions children itself already has
+        // the spacer's effect baked into its committed size.
+    }
+
+    public func describeDivider(of widget: Widget) {
+        // As above: a backend that positions children itself already has
+        // the divider's effect baked into its committed size.
     }
 }

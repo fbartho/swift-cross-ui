@@ -98,6 +98,30 @@ public final class StaticHTMLBackend:
         /// the button case in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``
         /// for the emission matrix this drives.
         public var href: String?
+        /// The aspect ratio declared via
+        /// ``SwiftCrossUI/View/aspectRatio(_:contentMode:)``, from
+        /// ``BackendFeatures/Widgets/describeAspectRatio(of:ratio:contentMode:)``.
+        ///
+        /// `nil` covers two different things the emitter can't tell apart
+        /// and doesn't need to: the modifier was never applied, or it was
+        /// applied with no explicit ratio (adopting the child's own ideal
+        /// ratio) — a value only the layout system could compute, not
+        /// something safe to re-derive at another width. Either way, this
+        /// widget's undeclared cross axis falls back to committed geometry
+        /// like any other unframed leaf.
+        public var declaredAspectRatio: Double?
+        /// Whether this widget is standing in for a ``SwiftCrossUI/Spacer``,
+        /// from ``BackendFeatures/Widgets/describeSpacer(of:)``.
+        ///
+        /// Replaces matching on the debug ``tag`` string: that tag is
+        /// stamped generically on every widget for debugging and isn't a
+        /// contract views can rely on, whereas this is set deliberately by
+        /// `Spacer` itself.
+        public var isSpacer = false
+        /// Whether this widget is standing in for a ``SwiftCrossUI/Divider``,
+        /// from ``BackendFeatures/Widgets/describeDivider(of:)``. See
+        /// ``isSpacer`` for why this replaces a ``tag`` string match.
+        public var isDivider = false
 
         public var naturalSize: SIMD2<Int> {
             .zero
@@ -485,6 +509,18 @@ public final class StaticHTMLBackend:
         container.declaredMaxWidth = maxWidth
         container.declaredMinHeight = minHeight
         container.declaredMaxHeight = maxHeight
+    }
+
+    public func describeAspectRatio(of widget: Widget, ratio: Double?, contentMode: ContentMode) {
+        widget.declaredAspectRatio = ratio
+    }
+
+    public func describeSpacer(of widget: Widget) {
+        widget.isSpacer = true
+    }
+
+    public func describeDivider(of widget: Widget) {
+        widget.isDivider = true
     }
 
     public func createScrollContainer(for child: Widget) -> Widget {

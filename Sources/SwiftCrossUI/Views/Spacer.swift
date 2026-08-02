@@ -47,6 +47,10 @@ public struct Spacer: ElementaryView, View {
         environment: EnvironmentValues,
         backend: Backend
     ) {
-        // Spacers are invisible so we don't have to update anything.
+        // Spacers are invisible, so there's nothing to update about their
+        // own appearance — but a backend re-expressing the layout still
+        // needs to know this widget is a spacer specifically, since nothing
+        // about its committed size says so on its own.
+        backend.describeSpacer(of: widget)
     }
 }
