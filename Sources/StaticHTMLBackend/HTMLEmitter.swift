@@ -124,6 +124,52 @@ public struct HTMLEmitter {
         public var height: Int?
     }
 
+    /// What the enclosing element is allowed to contain.
+    ///
+    /// Most HTML elements take flow content, so any wrapper the view tree
+    /// produced is legal inside them. A few restrict their children to
+    /// specific element names — `<ul>`/`<ol>` take only `<li>` — and there the
+    /// structural wrappers a `ForEach` body expands to would make the markup
+    /// invalid: the items stop being the list's children, so the list has no
+    /// items and each item has no list.
+    public enum ChildContentModel: Sendable {
+        /// Anything may appear here.
+        case flow
+        /// Only these element names may appear here, and a wrapper carrying
+        /// none of them is spliced away rather than emitted.
+        case only(Set<String>)
+
+        /// The content model that applies to a given element's children.
+        ///
+        /// - Parameter element: The element being emitted.
+        /// - Returns: What that element may contain.
+        static func forChildren(of element: HTMLElement) -> ChildContentModel {
+            switch element.name {
+                case "ul", "ol", "menu": .only(["li", "script", "template"])
+                default: .flow
+            }
+        }
+
+        /// Whether a widget's own element has to be spliced away to keep the
+        /// enclosing element's content model valid.
+        ///
+        /// Only a wrapper qualifies. A leaf carrying a disallowed element is
+        /// the author's own doing — a `Text` under a `ul` with no `.htmlTag`
+        /// on it, say — and dropping it would lose content, so it's emitted
+        /// as written and left for a validator to report.
+        func excludes(_ widget: StaticHTMLBackend.Widget, emitter: HTMLEmitter) -> Bool {
+            guard case .only(let allowed) = self else {
+                return false
+            }
+            let children = widget.getChildren()
+            guard !children.isEmpty else {
+                return false
+            }
+            let element = widget.explicitElement ?? .div
+            return !allowed.contains(element.name)
+        }
+    }
+
     /// Emits a widget and its descendants.
     ///
     /// - Parameters:
@@ -165,9 +211,28 @@ public struct HTMLEmitter {
         indentLevel: Int = 0,
         inheritedFrame: InheritedFrame? = nil,
         stretchesUndeclaredAxis: Bool = false,
-        flexShrinkWeight: Double? = nil
+        flexShrinkWeight: Double? = nil,
+        childContentModel: ChildContentModel = .flow
     ) -> String {
         let indent = String(repeating: "  ", count: indentLevel + 1)
+
+        // A list element may only contain list items, so a structural wrapper
+        // that would land between them has to go — not merely be hidden.
+        // display:contents removes a box from layout but leaves the element in
+        // the DOM, which is what an `<ul>`'s content model, and every
+        // assistive technology reading it, actually objects to. Splicing the
+        // wrapper's children into its place is the only fix that makes the
+        // emitted markup valid.
+        if childContentModel.excludes(widget, emitter: self) {
+            return emitChildren(
+                widget.getChildren().map { ($0, SIMD2<Int>.zero) },
+                placement: .flow,
+                indent: indent,
+                indentLevel: indentLevel - 1,
+                childContentModel: childContentModel
+            )
+            .trimmingCharacters(in: CharacterSet(charactersIn: "\n"))
+        }
 
         // A raw fragment or slot marker replaces the element entirely — the
         // zero-size leaf the view produced exists only to carry the payload
@@ -259,6 +324,14 @@ public struct HTMLEmitter {
         var role: String?
         var inner = ""
         var isRawInner = false
+        // The children are emitted inside the switch below, before `element`
+        // is finally resolved, so the model they're emitted under has to come
+        // from what's already known here. Only an explicit tag can introduce a
+        // restrictive model — nothing the switch derives on its own is a list
+        // element — so reading the request directly is enough, and it stays
+        // correct even where an explicit tag later overrides a derived one.
+        let childModel =
+            widget.explicitElement.map { ChildContentModel.forChildren(of: $0) } ?? .flow
         // Set when this widget's declared text style implied a heading
         // element — recorded provisionally, appended to `headings` after the
         // explicit-tag override below is resolved, so the outline agrees
@@ -728,7 +801,8 @@ public struct HTMLEmitter {
                     style: &style,
                     indent: indent,
                     indentLevel: indentLevel,
-                    stretchesUndeclaredAxis: widget.isDivider || stretchesUndeclaredAxis
+                    stretchesUndeclaredAxis: widget.isDivider || stretchesUndeclaredAxis,
+                    childContentModel: childModel
                 )
                 isRawInner = true
 
@@ -800,7 +874,8 @@ public struct HTMLEmitter {
                     [(scroll.child, .zero)],
                     placement: .flow,
                     indent: indent,
-                    indentLevel: indentLevel
+                    indentLevel: indentLevel,
+                    childContentModel: childModel
                 )
                 isRawInner = true
 
@@ -811,7 +886,8 @@ public struct HTMLEmitter {
                         children.map { ($0, SIMD2<Int>.zero) },
                         placement: .flow,
                         indent: indent,
-                        indentLevel: indentLevel
+                        indentLevel: indentLevel,
+                        childContentModel: childModel
                     )
                     isRawInner = true
                 }
@@ -922,6 +998,15 @@ public struct HTMLEmitter {
             attributes["aria-disabled"] = "true"
             attributes["tabindex"] = "-1"
         }
+        // Written before data-scui so an author attribute of the same name
+        // still loses to the backend, matching how every other backend-owned
+        // attribute is applied.
+        if let identifier = widget.referencedIdentifier {
+            attributes["id"] = identifier
+        }
+        if let labelledBy = widget.labelledBy {
+            attributes["aria-labelledby"] = labelledBy
+        }
         if let tag = widget.tag {
             attributes["data-scui"] = tag
         }
@@ -991,7 +1076,8 @@ public struct HTMLEmitter {
         style: inout Style,
         indent: String,
         indentLevel: Int,
-        stretchesUndeclaredAxis: Bool = false
+        stretchesUndeclaredAxis: Bool = false,
+        childContentModel: ChildContentModel = .flow
     ) -> String {
         // A wrapper on the way to a raw-fragment leaf carries its own
         // honestly-computed 0x0 committed size (the leaf really was told to
@@ -1013,7 +1099,8 @@ public struct HTMLEmitter {
                 container.children,
                 placement: .flow,
                 indent: indent,
-                indentLevel: indentLevel
+                indentLevel: indentLevel,
+                childContentModel: childContentModel
             )
         }
 
@@ -1186,7 +1273,8 @@ public struct HTMLEmitter {
                         indent: indent,
                         indentLevel: indentLevel,
                         inheritedFrame: inheritedFrame,
-                        stretchesUndeclaredAxis: stretchesUndeclaredAxis
+                        stretchesUndeclaredAxis: stretchesUndeclaredAxis,
+                        childContentModel: childContentModel
                     )
                 }
             }
@@ -1247,7 +1335,8 @@ public struct HTMLEmitter {
                     container.children,
                     placement: .flow,
                     indent: indent,
-                    indentLevel: indentLevel
+                    indentLevel: indentLevel,
+                    childContentModel: childContentModel
                 )
             }
 
@@ -1258,7 +1347,8 @@ public struct HTMLEmitter {
                 container.children,
                 placement: .absolute,
                 indent: indent,
-                indentLevel: indentLevel
+                indentLevel: indentLevel,
+                childContentModel: childContentModel
             )
         }
 
@@ -1294,7 +1384,8 @@ public struct HTMLEmitter {
             indent: indent,
             indentLevel: indentLevel,
             stretchesUndeclaredAxis: stretchesUndeclaredAxis,
-            flexShrinkWeights: flexShrinkWeights
+            flexShrinkWeights: flexShrinkWeights,
+            childContentModel: childContentModel
         )
     }
 
@@ -1598,7 +1689,8 @@ public struct HTMLEmitter {
         indentLevel: Int,
         inheritedFrame: InheritedFrame? = nil,
         stretchesUndeclaredAxis: Bool = false,
-        flexShrinkWeights: [Double]? = nil
+        flexShrinkWeights: [Double]? = nil,
+        childContentModel: ChildContentModel = .flow
     ) -> String {
         guard !children.isEmpty else {
             return ""
@@ -1613,7 +1705,8 @@ public struct HTMLEmitter {
                 indentLevel: indentLevel + 1,
                 inheritedFrame: inheritedFrame,
                 stretchesUndeclaredAxis: stretchesUndeclaredAxis,
-                flexShrinkWeight: flexShrinkWeights?[offset]
+                flexShrinkWeight: flexShrinkWeights?[offset],
+                childContentModel: childContentModel
             )
             output += "\n"
         }

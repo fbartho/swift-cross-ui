@@ -310,6 +310,68 @@ public enum StaticHTMLRenderer {
         if let href = coverage.href {
             assign(href, to: coverage)
         }
+
+        var identifierCounter = 0
+        associateLabels(in: root, counter: &identifierCounter)
+    }
+
+    /// Wires each unlabelled control to the text that names it.
+    ///
+    /// A control and its label are separate views: `Toggle` expands to an
+    /// `HStack { Text(label); ToggleSwitch() }` in user space, so by the time
+    /// the backend sees them they're siblings with nothing recording that one
+    /// names the other. Emitted as-is that leaves a control with no accessible
+    /// name at all — the same `Toggle` a native backend reports to the
+    /// accessibility tree as `AXCheckBox title="Include drafts"` arrives on
+    /// the web nameless.
+    ///
+    /// `aria-labelledby` rather than a wrapping `<label for>`: the label text
+    /// and the control are already siblings inside a stack whose flex layout
+    /// positions them, so introducing a `<label>` element around the pair
+    /// would insert a box into the middle of that layout. A reference wires
+    /// the two without changing the emitted structure at all.
+    ///
+    /// - Parameters:
+    ///   - widget: The subtree to walk.
+    ///   - counter: Source of unique `id` values across the document.
+    private static func associateLabels(
+        in widget: StaticHTMLBackend.Widget,
+        counter: inout Int
+    ) {
+        let children = widget.getChildren()
+
+        // The pairing has to be unambiguous to be worth making: exactly one
+        // text and exactly one control among the children. Anything else — two
+        // labels, two controls, a control alone — is a layout the author built
+        // for themselves, and guessing at it would attach a name that isn't
+        // the one they meant.
+        let texts = children.compactMap { $0 as? StaticHTMLBackend.TextView }
+        let controls = children.filter(isLabellableControl)
+        if texts.count == 1, controls.count == 1,
+           let label = texts.first, let control = controls.first,
+           control.labelledBy == nil, !label.content.isEmpty
+        {
+            let identifier = label.referencedIdentifier ?? "scui-label-\(counter)"
+            counter += 1
+            label.referencedIdentifier = identifier
+            control.labelledBy = identifier
+        }
+
+        for child in children {
+            associateLabels(in: child, counter: &counter)
+        }
+    }
+
+    /// Whether a widget is a control that needs an accessible name it can't
+    /// supply itself.
+    ///
+    /// A `ToggleButton` and a `Button` are excluded: their label is their own
+    /// text content, which already names them.
+    private static func isLabellableControl(_ widget: StaticHTMLBackend.Widget) -> Bool {
+        widget is StaticHTMLBackend.Checkbox
+            || widget is StaticHTMLBackend.Switch
+            || widget is StaticHTMLBackend.Slider
+            || widget is StaticHTMLBackend.TextField
     }
 
     /// Assigns each raw-fragment request to the leaf that carries it.

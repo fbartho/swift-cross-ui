@@ -127,6 +127,18 @@ public final class StaticHTMLBackend:
         /// the button case in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``
         /// for the emission matrix this drives.
         public var href: String?
+        /// The `id` this widget has to carry because something else refers to
+        /// it, from ``StaticHTMLRenderer``'s label-association pass.
+        ///
+        /// Only set where a reference exists. A control's label and the
+        /// control itself are separate views in the tree — `Toggle` builds an
+        /// `HStack { Text(label); Checkbox() }` in user space — so nothing
+        /// below the emitter knows they belong together; the pass that does
+        /// know writes this and ``labelledBy``.
+        public var referencedIdentifier: String?
+        /// The `id` of the element naming this control, emitted as
+        /// `aria-labelledby`.
+        public var labelledBy: String?
         /// The aspect ratio declared via
         /// ``SwiftCrossUI/View/aspectRatio(_:contentMode:)``, from
         /// ``BackendFeatures/Widgets/describeAspectRatio(of:ratio:contentMode:)``.

@@ -2252,3 +2252,246 @@ struct StaticHTMLBackendTests {
         #expect(html.contains(">Plain</a>"))
     }
 }
+
+@Suite("Testing accessibility semantics in the static HTML backend")
+struct StaticHTMLAccessibilityTests {
+    private final class Box<Value>: @unchecked Sendable {
+        var value: Value
+        init(_ value: Value) { self.value = value }
+    }
+
+    /// A binding backed by a mutable box, so controls that require one can be
+    /// constructed for a one-shot render without an owning `@State`.
+    private static func box<Value>(_ initial: Value) -> Binding<Value> {
+        let storage = Box(initial)
+        return Binding(get: { storage.value }, set: { storage.value = $0 })
+    }
+
+    /// The value of an attribute on the element carrying `marker`.
+    private static func attribute(
+        _ name: String,
+        onElementContaining marker: String,
+        in html: String
+    ) -> String? {
+        guard let elementRange = html.range(
+            of: "<[^>]*\\Q\(marker)\\E[^>]*>",
+            options: .regularExpression
+        )
+        else {
+            return nil
+        }
+        let element = String(html[elementRange])
+        guard let valueRange = element.range(
+            of: "\\Q\(name)=\"\\E[^\"]*",
+            options: .regularExpression
+        ) else {
+            return nil
+        }
+        return String(element[valueRange].dropFirst(name.count + 2))
+    }
+
+    @MainActor
+    @Test("A switch-style Toggle is named by the text beside it")
+    func switchToggleIsLabelledBySiblingText() {
+        // The sharpest datum from the accessibility spike: a native backend
+        // reports this same Toggle as a checkbox titled "Include drafts",
+        // while the web emitted a control with no accessible name at all.
+        // The label and the control are separate views — Toggle expands to an
+        // HStack of the two — so nothing below the emitter knows they belong
+        // together.
+        let html = StaticHTMLRenderer.render(
+            Toggle("Include drafts", isOn: Self.box(true)).toggleStyle(.switch),
+            context: "Switch toggle"
+        ).html
+
+        let labelledBy = Self.attribute(
+            "aria-labelledby",
+            onElementContaining: "data-scui=\"ToggleSwitch\"",
+            in: html
+        )
+        let labelIdentifier = Self.attribute(
+            "id",
+            onElementContaining: "data-scui=\"Text\"",
+            in: html
+        )
+        #expect(labelledBy != nil)
+        #expect(labelledBy == labelIdentifier)
+    }
+
+    @MainActor
+    @Test("A checkbox-style Toggle is named by the text beside it")
+    func checkboxToggleIsLabelledBySiblingText() {
+        let html = StaticHTMLRenderer.render(
+            Toggle("Include drafts", isOn: Self.box(true)).toggleStyle(.checkbox),
+            context: "Checkbox toggle"
+        ).html
+
+        let labelledBy = Self.attribute(
+            "aria-labelledby",
+            onElementContaining: "data-scui=\"Checkbox\"",
+            in: html
+        )
+        let labelIdentifier = Self.attribute(
+            "id",
+            onElementContaining: "data-scui=\"Text\"",
+            in: html
+        )
+        #expect(labelledBy != nil)
+        #expect(labelledBy == labelIdentifier)
+    }
+
+    @MainActor
+    @Test("A TextField beside a label is named by it")
+    func textFieldIsLabelledBySiblingText() {
+        // A placeholder is not a label: it disappears as soon as the reader
+        // types, so it can't be the control's accessible name.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Full name")
+                TextField("Your name", text: Self.box(""))
+            },
+            context: "Labelled text field"
+        ).html
+
+        let labelledBy = Self.attribute(
+            "aria-labelledby",
+            onElementContaining: "data-scui=\"TextField\"",
+            in: html
+        )
+        #expect(labelledBy != nil)
+        #expect(labelledBy == Self.attribute(
+            "id",
+            onElementContaining: "data-scui=\"Text\"",
+            in: html
+        ))
+    }
+
+    @MainActor
+    @Test("A button-style Toggle keeps its own text as its name")
+    func toggleButtonNeedsNoAssociation() {
+        // Its label is its own content, so a reference would be redundant.
+        let html = StaticHTMLRenderer.render(
+            Toggle("Include drafts", isOn: Self.box(true)).toggleStyle(.button),
+            context: "Button toggle"
+        ).html
+
+        #expect(html.contains(">Include drafts</button>"))
+        #expect(!html.contains("aria-labelledby"))
+    }
+
+    @MainActor
+    @Test("An ambiguous label/control grouping is left unwired")
+    func ambiguousGroupingIsNotGuessedAt() {
+        // Two controls and one text: which one the text names is the author's
+        // business, and attaching it to either would assert something the view
+        // tree never said.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Label")
+                TextField("a", text: Self.box(""))
+                TextField("b", text: Self.box(""))
+            },
+            context: "Ambiguous grouping"
+        ).html
+
+        #expect(!html.contains("aria-labelledby"))
+    }
+
+    @MainActor
+    @Test("Each association in a document gets its own identifier")
+    func associationIdentifiersAreUnique() {
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Toggle("First", isOn: Self.box(true)).toggleStyle(.checkbox)
+                Toggle("Second", isOn: Self.box(false)).toggleStyle(.checkbox)
+            },
+            context: "Two toggles"
+        ).html
+
+        // Distinct ids: one id shared by both would name both controls the
+        // same thing, and a duplicate id is invalid besides.
+        let identifiers = Set(
+            html.components(separatedBy: "id=\"scui-label-")
+                .dropFirst()
+                .compactMap { $0.components(separatedBy: "\"").first }
+        )
+        #expect(identifiers.count == 2)
+
+        let references = Set(
+            html.components(separatedBy: "aria-labelledby=\"")
+                .dropFirst()
+                .compactMap { $0.components(separatedBy: "\"").first }
+        )
+        #expect(references.count == 2)
+    }
+
+    @MainActor
+    @Test("List items are direct children of the list, not wrapped in divs")
+    func listItemsAreNotOrphaned() {
+        // ForEach's rows arrive under the structural wrappers its body expands
+        // to (TupleView, EnvironmentModifier), which between a <ul> and its
+        // <li> make every item an orphan and the list itself empty. Only
+        // removing the wrapper elements fixes it: display:contents would hide
+        // the boxes but leave the DOM — and the content model — unchanged.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                ForEach(["a", "b", "c"]) { item in
+                    Text(item).htmlTag(.custom("li"))
+                }
+            }.htmlTag(.custom("ul")),
+            context: "List"
+        ).html
+
+        #expect(html.contains("<ul"))
+        #expect(html.components(separatedBy: "<li").count == 4)
+        // No wrapper survives between the list and its items.
+        guard let listRange = html.range(of: "<ul[^>]*>", options: .regularExpression),
+              let firstItem = html.range(of: "<li")
+        else {
+            Issue.record("Expected a list containing items")
+            return
+        }
+        let between = html[listRange.upperBound..<firstItem.lowerBound]
+        #expect(!between.contains("<div"))
+    }
+
+    @MainActor
+    @Test("A wrapper outside a list keeps its element")
+    func wrappersOutsideListsAreUntouched() {
+        // The elision is scoped to elements whose content model demands it.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                ForEach(["a", "b"]) { item in
+                    Text(item)
+                }
+            },
+            context: "Plain stack"
+        ).html
+
+        #expect(html.contains("data-scui=\"TupleView1\""))
+    }
+
+    @MainActor
+    @Test("Eliding list wrappers leaves the ForEach stretch relay intact")
+    func listElisionPreservesStretchRelay() {
+        // The wrappers spliced away under a list are the same ones that carry
+        // the stretch relay in a flex stack. Nothing about the list case may
+        // reach the stack case.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                ForEach(["a", "a much longer row of text"], id: \.self) { row in
+                    HStack {
+                        Text(row)
+                        Spacer()
+                        Text("42")
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            },
+            context: "ForEach stretch"
+        ).html
+
+        #expect(html.contains("data-scui=\"TupleView1\""))
+        #expect(html.contains("align-self:stretch"))
+    }
+}
