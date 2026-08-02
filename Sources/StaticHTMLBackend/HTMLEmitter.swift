@@ -427,7 +427,7 @@ public struct HTMLEmitter {
                     }
                 }
 
-            case let button as StaticHTMLBackend.Button:
+            case let button as StaticHTMLBackend.SimpleButton:
                 // Tier-activation principle: an element is live at this tier
                 // only if pure HTML/CSS can resolve what it does. A
                 // navigation-intent href IS resolvable in pure HTML — the
@@ -463,8 +463,8 @@ public struct HTMLEmitter {
                 // from href+action at this layer. `Button.init(_:action:)`
                 // defaults `action` to an empty closure, so "no action" and
                 // "a real no-op action" are indistinguishable both at the
-                // View layer and on the widget (`StaticHTMLBackend.Button`
-                // doesn't even retain the closure — see `updateButton`).
+                // View layer and on the widget (the button widgets don't even
+                // retain the closure — see `updateSimpleButton`/`updateButton`).
                 // Marking every href-carrying Button with the enliven marker
                 // — rather than trying to guess which ones are "really"
                 // href-only — is the honest choice: a hydration tier that

@@ -215,8 +215,12 @@ public final class StaticHTMLBackend:
         public var isTextSelectionEnabled = false
     }
 
-    /// A button, which in static output becomes a link.
-    public class Button: Widget {
+    /// A button whose label is a plain string, used by ``SwiftCrossUI/Toggle``
+    /// and ``SwiftCrossUI/Menu``.
+    ///
+    /// ``SwiftCrossUI/Button`` takes an arbitrary view as its label and so
+    /// emits from ``StaticHTMLBackend/ViewLabelButton`` instead.
+    public class SimpleButton: Widget {
         public var label = ""
         public var font: Font.Resolved?
         /// The appearance requested by ``SwiftCrossUI/View/htmlButtonStyle(_:)``.
@@ -760,17 +764,17 @@ public final class StaticHTMLBackend:
         textView.captureIntent(from: environment)
     }
 
-    public func createButton() -> Widget {
-        Button()
+    public func createSimpleButton() -> Widget {
+        SimpleButton()
     }
 
-    public func updateButton(
+    public func updateSimpleButton(
         _ button: Widget,
         label: String,
         environment: EnvironmentValues,
         action: @escaping () -> Void
     ) {
-        let button = button as! Button
+        let button = button as! SimpleButton
         button.label = label
         button.font = environment.resolvedFont
         button.style = environment.htmlButtonStyle
