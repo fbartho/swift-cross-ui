@@ -555,6 +555,33 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("An empty NavigationSplitView sidebar doesn't cost the detail pane its tag")
+    func emptySplitViewSidebarDoesNotCostDetailItsTag() {
+        // The deeper shape the original specimen-B trace came from: a real
+        // `SplitViewWidget` rather than a plain stack, which is where the
+        // reported second-order effect was said to surface. With the sidebar
+        // collapsed to an empty coverage the split has exactly one populated
+        // child, so `deepestCommonRequest` runs over a single-entry array and
+        // returns the detail pane's own tag as "shared by all" — the shape
+        // that would defer it upward and leave it unassigned.
+        let rows: [String] = []
+        let view = NavigationSplitView {
+            ForEach(rows) { row in
+                Text(row)
+            }
+        } detail: {
+            VStack {
+                Text("Detail")
+            }
+            .htmlTag(.section)
+        }
+        let html = StaticHTMLRenderer.render(view, context: "Empty split sidebar").html
+
+        #expect(html.components(separatedBy: "<section").count - 1 == 1)
+        #expect(html.contains(">Detail</"))
+    }
+
+    @MainActor
     @Test("A tagged Group wrapping a single view still reaches that view")
     func taggedGroupStillReachesItsSingleChild() {
         // A Group wrapping exactly one child is the transparent-wrapper case
