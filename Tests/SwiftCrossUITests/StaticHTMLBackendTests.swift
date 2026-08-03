@@ -1668,6 +1668,28 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("The reset anchors body type and smooths glyph rendering")
+    func resetAnchorsBodyTypeAndSmoothing() {
+        // `font: inherit` on buttons/inputs/links only reaches the body's
+        // 17px/22px/400 anchor if the `body` rule declares it — without it,
+        // those controls fall back to the browser's unstyled 16px default.
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {},
+            context: "Reset body type anchor"
+        ).html
+
+        let reset = html.split(separator: "id:scui-reset").dropFirst().first ?? ""
+        let body = reset.split(separator: "body {").dropFirst().first ?? ""
+
+        #expect(body.contains("font-size: 17px;"))
+        #expect(body.contains("line-height: 22px;"))
+        #expect(body.contains("font-weight: 400;"))
+        #expect(body.contains("-webkit-font-smoothing: antialiased;"))
+        #expect(body.contains("-moz-osx-font-smoothing: grayscale;"))
+        #expect(body.contains("text-rendering: optimizelegibility;"))
+    }
+
+    @MainActor
     @Test("A disabled button keeps its variant styling, dimmed rather than stripped")
     func disabledButtonKeepsVariantStyling() {
         // Per tier activation: the still image has to say the control is

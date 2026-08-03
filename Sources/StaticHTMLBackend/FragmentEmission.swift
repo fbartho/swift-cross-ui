@@ -137,7 +137,16 @@ extension HTMLFragmentRegistry {
             content: .style(
                 """
                 :root { color-scheme: light dark; }
-                body { margin: 0; font-family: -apple-system, system-ui, sans-serif; }
+                body {
+                  margin: 0;
+                  font-family: -apple-system, system-ui, sans-serif;
+                  font-size: 17px;
+                  line-height: 22px;
+                  font-weight: 400;
+                  -webkit-font-smoothing: antialiased;
+                  -moz-osx-font-smoothing: grayscale;
+                  text-rendering: optimizelegibility;
+                }
                 :where(#root h1, #root h2, #root h3, #root h4, #root h5, #root h6, #root p) {
                   margin: 0;
                   font-size: inherit;
