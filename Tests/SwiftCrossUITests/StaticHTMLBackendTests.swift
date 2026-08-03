@@ -455,6 +455,100 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("A labelled sidebar keeps its attributes beside a populated detail pane")
+    func labelledSidebarKeepsAttributesWhenPopulated() {
+        // The control shape for the empty-sidebar cases below: everything
+        // populated, so no early return is in play and both requests resolve
+        // through the ordinary path.
+        let view = HStack {
+            VStack {
+                Text("Sidebar")
+            }
+            .htmlAttributes(["aria-label": "Sections"])
+
+            VStack {
+                Text("Detail")
+            }
+            .htmlTag(.section)
+        }
+        let html = StaticHTMLRenderer.render(view, context: "Populated sidebar").html
+
+        #expect(html.contains(#"aria-label="Sections""#))
+        #expect(html.components(separatedBy: "<section").count - 1 == 1)
+    }
+
+    @MainActor
+    @Test("Two labelled populated panes each keep their own request")
+    func twoPopulatedPanesEachKeepTheirRequest() {
+        let view = HStack {
+            VStack {
+                Text("First")
+            }
+            .htmlAttributes(["aria-label": "One"])
+
+            VStack {
+                Text("Second")
+            }
+            .htmlAttributes(["aria-label": "Two"])
+        }
+        let html = StaticHTMLRenderer.render(view, context: "Two panes").html
+
+        #expect(html.contains(#"aria-label="One""#))
+        #expect(html.contains(#"aria-label="Two""#))
+    }
+
+    @MainActor
+    @Test("A labelled wrapper whose every child is empty keeps its own attributes")
+    func labelledWrapperWithOnlyEmptyChildrenKeepsItsAttributes() {
+        // The primary specimen-B bug: an empty `ForEach` is a childless
+        // `Container` reporting `isEmpty`, so the wrapper around it has no
+        // populated child at all. The wrapper's own request is ground truth
+        // it captured itself — nothing above it is a better owner — so the
+        // empty-children path has to consult it rather than returning a
+        // blank coverage and dropping it.
+        let rows: [String] = []
+        let view = VStack {
+            ForEach(rows) { row in
+                Text(row)
+            }
+        }
+        .htmlAttributes(["aria-label": "Sections"])
+        let html = StaticHTMLRenderer.render(view, context: "Empty sidebar").html
+
+        #expect(html.contains(#"aria-label="Sections""#))
+    }
+
+    @MainActor
+    @Test("An empty labelled sibling doesn't cost a populated pane its tag")
+    func emptyLabelledSiblingDoesNotCostSiblingItsTag() {
+        // The second-order effect: with the sidebar collapsed to an empty
+        // coverage, the stack has exactly one populated child, and the
+        // deepest request common to a single-entry set is just that child's
+        // own. Deferring it upward leaves the detail pane's `.htmlTag` on a
+        // widget no ancestor ever assigns, so a correctly-populated,
+        // unrelated pane silently loses its element.
+        let rows: [String] = []
+        let view = HStack {
+            VStack {
+                ForEach(rows) { row in
+                    Text(row)
+                }
+            }
+            .htmlAttributes(["aria-label": "Sections"])
+
+            VStack {
+                Text("Detail")
+            }
+            .htmlTag(.section)
+        }
+        let html = StaticHTMLRenderer.render(view, context: "Empty sidebar sibling").html
+
+        #expect(html.contains(#"aria-label="Sections""#))
+        #expect(html.components(separatedBy: "<section").count - 1 == 1)
+        #expect(html.contains(">Detail</"))
+    }
+
+    @MainActor
     @Test("A tagged Group wrapping a single view still reaches that view")
     func taggedGroupStillReachesItsSingleChild() {
         // A Group wrapping exactly one child is the transparent-wrapper case
