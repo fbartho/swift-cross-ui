@@ -8,8 +8,8 @@ public final class HTMLRawFragmentRequest: Sendable {
     /// The markup to splice, verbatim.
     public let html: String
     /// The name of the slot whose items should be spliced instead, if this
-    /// request came from a ``SlotComponent`` rather than a
-    /// ``RawHTMLFragment``.
+    /// request came from a ``HTMLSlot`` rather than a
+    /// ``HTMLRawFragment``.
     public let slotName: String?
     /// The request this one shadowed, if it was applied inside another.
     public let enclosing: HTMLRawFragmentRequest?
@@ -32,14 +32,14 @@ public final class HTMLRawFragmentRequest: Sendable {
 }
 
 extension EnvironmentValues {
-    /// Markup to splice in place of a view, from ``RawHTMLFragment``.
+    /// Markup to splice in place of a view, from ``HTMLRawFragment``.
     ///
     /// Only consumed by StaticHTMLBackend; other backends never read it, which
-    /// is what makes a ``RawHTMLFragment`` render as nothing under them.
+    /// is what makes a ``HTMLRawFragment`` render as nothing under them.
     @Entry public var htmlRawFragmentRequest: HTMLRawFragmentRequest?
 }
 
-/// How a ``RawHTMLFragment`` renders under a backend other than
+/// How a ``HTMLRawFragment`` renders under a backend other than
 /// StaticHTMLBackend.
 ///
 /// A non-web backend has no way to execute the markup a fragment carries, so
@@ -54,7 +54,7 @@ public enum RawFragmentNativeDisplay: Hashable, Sendable {
 }
 
 extension EnvironmentValues {
-    /// How a ``RawHTMLFragment`` displays under a non-web backend.
+    /// How a ``HTMLRawFragment`` displays under a non-web backend.
     ///
     /// Set at the app root with `.environment(\.rawFragmentNativeDisplay,
     /// .hidden)` to flip every fragment in the tree at once. A fragment's own
@@ -99,7 +99,7 @@ extension EnvironmentValues {
 /// Under any other backend this renders its source as preformatted text by
 /// default — see ``SwiftCrossUI/EnvironmentValues/rawFragmentNativeDisplay``
 /// to hide it instead, either app-wide or per instance.
-public struct RawHTMLFragment: View {
+public struct HTMLRawFragment: View {
     @Environment(\.rawFragmentNativeDisplay) var environmentNativeDisplay
 
     /// The markup to splice.
@@ -182,7 +182,7 @@ public struct RawHTMLFragment: View {
 /// The named slot must be declared on the ``DocumentContext``; a marker for an
 /// undeclared name is a typo and fails the render rather than emitting an empty
 /// hole.
-public struct SlotComponent: View {
+public struct HTMLSlot: View {
     /// The name of the slot to emit here.
     public var name: String
 

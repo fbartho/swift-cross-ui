@@ -9,7 +9,7 @@ import SwiftCrossUI
 ///
 /// ## Idempotency, and why it spans tiers
 ///
-/// Registration keeps the first item seen per ``FragmentItem/DedupeKey`` — a
+/// Registration keeps the first item seen per ``HTMLHeadItem/DedupeKey`` — a
 /// component that renders in fifty places contributes its script once. The same
 /// contract is what lets a future runtime backend reuse this type verbatim: a
 /// live registry checks the document for an element already carrying
@@ -20,9 +20,9 @@ import SwiftCrossUI
 @MainActor
 public final class HTMLFragmentRegistry {
     /// The registered items, in the order their keys were first seen.
-    private var items: [FragmentItem] = []
+    private var items: [HTMLHeadItem] = []
     /// The position in `items` of the item registered under each key.
-    private var indicesByKey: [FragmentItem.DedupeKey: Int] = [:]
+    private var indicesByKey: [HTMLHeadItem.DedupeKey: Int] = [:]
 
     /// Creates an empty registry.
     public init() {}
@@ -33,7 +33,7 @@ public final class HTMLFragmentRegistry {
     /// - Returns: Whether the item was added, as opposed to deduplicated away
     ///   against an earlier registration under the same key.
     @discardableResult
-    public func register(_ item: FragmentItem) -> Bool {
+    public func register(_ item: HTMLHeadItem) -> Bool {
         precondition(
             item.content.allows(item.slot),
             """
@@ -61,18 +61,18 @@ public final class HTMLFragmentRegistry {
     /// - Returns: Whether the item was added.
     @discardableResult
     public func register(
-        _ content: FragmentContent,
-        slot: FragmentItem.Slot,
+        _ content: HTMLHeadItemContent,
+        slot: HTMLHeadItem.Slot,
         id: String? = nil
     ) -> Bool {
-        register(FragmentItem(content, slot: slot, id: id))
+        register(HTMLHeadItem(content, slot: slot, id: id))
     }
 
     /// Whether an item is already registered under a key.
     ///
     /// - Parameter key: The key to check.
     /// - Returns: Whether the key is spoken for.
-    public func contains(_ key: FragmentItem.DedupeKey) -> Bool {
+    public func contains(_ key: HTMLHeadItem.DedupeKey) -> Bool {
         indicesByKey[key] != nil
     }
 
@@ -80,12 +80,12 @@ public final class HTMLFragmentRegistry {
     ///
     /// - Parameter slot: The slot to collect.
     /// - Returns: That slot's items.
-    public func items(in slot: FragmentItem.Slot) -> [FragmentItem] {
+    public func items(in slot: HTMLHeadItem.Slot) -> [HTMLHeadItem] {
         items.filter { $0.slot == slot }
     }
 
     /// Every registered item, in first-appearance order.
-    public var allItems: [FragmentItem] {
+    public var allItems: [HTMLHeadItem] {
         items
     }
 }
@@ -100,7 +100,7 @@ extension EnvironmentValues {
     @Entry public var htmlFragmentRegistry: HTMLFragmentRegistry?
 }
 
-extension FragmentContent {
+extension HTMLHeadItemContent {
     /// A human-readable name for the content kind, for diagnostics.
     var kindName: String {
         switch self {
@@ -114,7 +114,7 @@ extension FragmentContent {
     }
 }
 
-extension FragmentItem.Slot {
+extension HTMLHeadItem.Slot {
     /// A human-readable name for the slot, for diagnostics.
     var debugName: String {
         switch self {

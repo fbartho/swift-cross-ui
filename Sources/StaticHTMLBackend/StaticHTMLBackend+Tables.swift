@@ -1,4 +1,5 @@
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 // Tables are where the static tier has an advantage over a native rendering
 // rather than a deficit: `<table>` markup carries the row/column relationships

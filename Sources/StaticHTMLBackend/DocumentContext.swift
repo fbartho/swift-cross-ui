@@ -1,5 +1,6 @@
 import Foundation
 import SwiftCrossUI
+import SwiftCrossUIComponents
 
 /// Everything the page owner gets to say about the document being assembled.
 ///
@@ -31,10 +32,10 @@ public struct DocumentContext {
     /// The language written into `<html lang>`.
     public var language: String
     /// The page owner's own items, emitted after every contribution.
-    public var items: [FragmentItem]
-    /// The names of the slots ``SlotComponent`` may reference.
+    public var items: [HTMLHeadItem]
+    /// The names of the slots ``HTMLSlot`` may reference.
     ///
-    /// Declaring a slot is what makes it addressable: a ``SlotComponent`` for a
+    /// Declaring a slot is what makes it addressable: a ``HTMLSlot`` for a
     /// name that was never declared is a typo, and this is what lets the
     /// renderer say so instead of emitting an empty hole.
     public var customSlots: Set<String>
@@ -78,7 +79,7 @@ public struct DocumentContext {
     ///   - headingMap: The mapping to derive headings with.
     ///   - language: The language for `<html lang>`.
     ///   - items: The page owner's own fragment items.
-    ///   - customSlots: The names of slots ``SlotComponent`` may reference.
+    ///   - customSlots: The names of slots ``HTMLSlot`` may reference.
     ///   - assetStore: Where to publish image data, or `nil` to inline it.
     ///   - inlineAssetThreshold: The byte size at or below which an image is
     ///     inlined even when a store is configured.
@@ -88,7 +89,7 @@ public struct DocumentContext {
         title: String,
         headingMap: HeadingMap = .default,
         language: String = "en",
-        items: [FragmentItem] = [],
+        items: [HTMLHeadItem] = [],
         customSlots: Set<String> = [],
         assetStore: (any AssetStore)? = nil,
         inlineAssetThreshold: Int? = nil,
@@ -112,12 +113,12 @@ public struct DocumentContext {
     ///   - id: An author-supplied identity, overriding the derived dedupe key.
     /// - Returns: The context, carrying the added item.
     public func with(
-        _ content: FragmentContent,
-        slot: FragmentItem.Slot,
+        _ content: HTMLHeadItemContent,
+        slot: HTMLHeadItem.Slot,
         id: String? = nil
     ) -> DocumentContext {
         var copy = self
-        copy.items.append(FragmentItem(content, slot: slot, id: id))
+        copy.items.append(HTMLHeadItem(content, slot: slot, id: id))
         return copy
     }
 
@@ -206,7 +207,7 @@ public final class DirectoryAssetStore: AssetStore {
     public private(set) var writtenFileNames: [String] = []
 
     public func publish(_ data: [UInt8], fileExtension: String) -> String? {
-        let digest = FragmentContent.hash(of: Self.digestInput(for: data))
+        let digest = HTMLHeadItemContent.hash(of: Self.digestInput(for: data))
         let name = "\(digest).\(fileExtension)"
 
         if let existing = published[name] {

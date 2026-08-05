@@ -1,4 +1,5 @@
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 // Controls, split out from the main backend file to keep the core emit path
 // readable.

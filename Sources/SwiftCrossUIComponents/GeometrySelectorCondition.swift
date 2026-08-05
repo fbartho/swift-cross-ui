@@ -10,9 +10,9 @@ import SwiftCrossUI
 /// Construct one from a standard range expression:
 ///
 /// ```swift
-/// WidthCase(..<600) { … }    // WidthRange(upperBound: 600)
-/// WidthCase(600...) { … }    // WidthRange(lowerBound: 600)
-/// WidthCase(600..<900) { … } // WidthRange(lowerBound: 600, upperBound: 900)
+/// GeometryCase(..<600) { … }    // WidthRange(upperBound: 600)
+/// GeometryCase(600...) { … }    // WidthRange(lowerBound: 600)
+/// GeometryCase(600..<900) { … } // WidthRange(lowerBound: 600, upperBound: 900)
 /// ```
 public struct WidthRange: Hashable, Sendable, CustomStringConvertible {
     /// The range's lower bound, inclusive. `nil` means unbounded below.
@@ -64,7 +64,7 @@ public struct WidthRange: Hashable, Sendable, CustomStringConvertible {
     /// The CSS media/container feature declarations this range compiles to,
     /// e.g. `(min-width: 600px)` or `(min-width: 600px) and (max-width: 899.98px)`.
     ///
-    /// The upper bound is exclusive (a `WidthCase(..<900)` branch must not
+    /// The upper bound is exclusive (a `GeometryCase(..<900)` branch must not
     /// apply at exactly 900px, where the next branch begins), but CSS range
     /// media features have no exclusive-max syntax, so the bound is nudged
     /// down by a hairline (0.02px, below any real viewport's precision) to
@@ -264,21 +264,27 @@ extension GeometrySelector {
 /// GeometrySelector's emission needs: a safe `<custom-ident>` for
 /// `container-name`/`@container`, and a safe attribute-selector string
 /// literal for `[data-gsel-container="…"]`.
-enum GSelCSS {
+public enum GSelCSS {
     /// A CSS-identifier-safe rendering of a name, for `container-name` and
     /// `@container <name>`.
     ///
     /// Container names follow the `<custom-ident>` grammar; this doesn't
     /// attempt full validation, only strips characters that would break the
     /// generated stylesheet if an author supplied something unusual.
-    static func identifier(_ name: String) -> String {
+    ///
+    /// - Parameter name: The container name to sanitize.
+    /// - Returns: The name, safe to write as a CSS identifier.
+    public static func identifier(_ name: String) -> String {
         let sanitized = name.filter { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
         return sanitized.isEmpty ? "gsel" : sanitized
     }
 
     /// Escapes a string for use inside a double-quoted CSS attribute-selector
     /// value, e.g. `[data-gsel-container="<escaped>"]`.
-    static func attributeSelectorLiteral(_ value: String) -> String {
+    ///
+    /// - Parameter value: The value to escape.
+    /// - Returns: The value, safe inside a double-quoted selector literal.
+    public static func attributeSelectorLiteral(_ value: String) -> String {
         var output = ""
         output.reserveCapacity(value.count)
         for character in value {

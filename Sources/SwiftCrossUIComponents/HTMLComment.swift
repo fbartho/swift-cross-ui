@@ -27,7 +27,7 @@ import SwiftCrossUI
 ///
 /// ## What it costs
 ///
-/// The comment rides ``RawHTMLFragment``'s infrastructure: a zero-size leaf
+/// The comment rides ``HTMLRawFragment``'s infrastructure: a zero-size leaf
 /// that the emitter replaces outright, with a `display:contents` wrapper chain
 /// so it never participates in layout. Comments aren't boxes, and siblings lay
 /// out as though it weren't there.
@@ -78,8 +78,8 @@ public struct HTMLComment: View {
 
     public var body: some View {
         // The payload rides the environment down to a zero-size leaf, the
-        // same path RawHTMLFragment uses. Set here rather than by nesting a
-        // RawHTMLFragment, which would add another wrapper level between this
+        // same path HTMLRawFragment uses. Set here rather than by nesting a
+        // HTMLRawFragment, which would add another wrapper level between this
         // view and the leaf and indent the spliced comment one step further
         // from the siblings it annotates.
         SwiftCrossUI.Color.clear

@@ -7,16 +7,16 @@ import SwiftCrossUI
 /// The item is placement-generic rather than head-specific: a script or a
 /// stylesheet is legal in several places, so the item names what it *is* and
 /// the content kind carries its own placement validity (see
-/// ``FragmentContent/allowedSlots``). A meta tag, which the HTML parser only
+/// ``HTMLHeadItemContent/allowedSlots``). A meta tag, which the HTML parser only
 /// honors inside `<head>`, is rejected at registration if it's aimed anywhere
 /// else rather than emitted somewhere it would be silently ignored.
-public struct FragmentItem: Hashable, Sendable {
+public struct HTMLHeadItem: Hashable, Sendable {
     /// What distinguishes this item from every other one.
     public var key: DedupeKey
     /// Where in the document the item should be emitted.
     public var slot: Slot
     /// The item itself.
-    public var content: FragmentContent
+    public var content: HTMLHeadItemContent
 
     /// Creates an item with an explicit dedupe key.
     ///
@@ -24,7 +24,7 @@ public struct FragmentItem: Hashable, Sendable {
     ///   - key: The item's dedupe key.
     ///   - slot: Where to emit the item.
     ///   - content: The item itself.
-    public init(key: DedupeKey, slot: Slot, content: FragmentContent) {
+    public init(key: DedupeKey, slot: Slot, content: HTMLHeadItemContent) {
         self.key = key
         self.slot = slot
         self.content = content
@@ -46,7 +46,7 @@ public struct FragmentItem: Hashable, Sendable {
     ///   - content: The item itself.
     ///   - slot: Where to emit the item.
     ///   - id: An author-supplied identity, which overrides the derived key.
-    public init(_ content: FragmentContent, slot: Slot, id: String? = nil) {
+    public init(_ content: HTMLHeadItemContent, slot: Slot, id: String? = nil) {
         self.init(
             key: id.map(DedupeKey.id) ?? content.derivedKey,
             slot: slot,
@@ -76,16 +76,16 @@ public struct FragmentItem: Hashable, Sendable {
         /// At the end of `<body>`, after the rendered content.
         case bodyEnd
         /// A slot the page owner defined, marked in the tree by a
-        /// ``SlotComponent``.
+        /// ``HTMLSlot``.
         case custom(String)
     }
 }
 
-/// The kinds of machinery a ``FragmentItem`` can carry.
+/// The kinds of machinery a ``HTMLHeadItem`` can carry.
 ///
 /// Each case knows where it is legal, so placement is a property of the content
 /// rather than a convention callers have to remember.
-public enum FragmentContent: Hashable, Sendable {
+public enum HTMLHeadItemContent: Hashable, Sendable {
     /// An external script, referenced by URL.
     case script(src: String, attributes: [String: String] = [:])
     /// A script whose source is written inline.
@@ -98,7 +98,7 @@ public enum FragmentContent: Hashable, Sendable {
     case meta([String: String])
     /// Markup spliced in verbatim, with no escaping and no validation.
     ///
-    /// The same caller-trusted stance as ``RawHTMLFragment``: whatever is
+    /// The same caller-trusted stance as ``HTMLRawFragment``: whatever is
     /// written here reaches the document unchanged.
     case rawHTML(String)
 
@@ -107,7 +107,7 @@ public enum FragmentContent: Hashable, Sendable {
     /// `nil` means the content is legal anywhere. A meta tag is the case that
     /// isn't: the parser only honors it inside `<head>`, so aiming one at
     /// `bodyEnd` is a mistake worth catching rather than markup worth emitting.
-    public var allowedSlots: Set<FragmentItem.Slot>? {
+    public var allowedSlots: Set<HTMLHeadItem.Slot>? {
         switch self {
             case .meta:
                 [.head]
@@ -120,12 +120,12 @@ public enum FragmentContent: Hashable, Sendable {
     ///
     /// - Parameter slot: The slot in question.
     /// - Returns: Whether the content is legal there.
-    public func allows(_ slot: FragmentItem.Slot) -> Bool {
+    public func allows(_ slot: HTMLHeadItem.Slot) -> Bool {
         allowedSlots?.contains(slot) ?? true
     }
 
     /// The dedupe key this content implies when the author supplies none.
-    var derivedKey: FragmentItem.DedupeKey {
+    var derivedKey: HTMLHeadItem.DedupeKey {
         switch self {
             case .script(let src, _):
                 .url(src)
@@ -159,7 +159,10 @@ public enum FragmentContent: Hashable, Sendable {
     /// small, dependency-free, and deterministic — and since the only thing
     /// riding on it is collapsing identical registrations, it doesn't need to
     /// resist an adversary.
-    static func hash(of string: String) -> String {
+    ///
+    /// - Parameter string: The string to digest.
+    /// - Returns: A short, process-stable hex digest.
+    public static func hash(of string: String) -> String {
         var hash: UInt64 = 0xcbf2_9ce4_8422_2325
         for byte in string.utf8 {
             hash ^= UInt64(byte)
@@ -169,7 +172,7 @@ public enum FragmentContent: Hashable, Sendable {
     }
 }
 
-extension FragmentItem.DedupeKey {
+extension HTMLHeadItem.DedupeKey {
     /// The key the emitter's own baseline stylesheet registers itself under.
     ///
     /// Registering an item under this key before the reset would have been
@@ -177,7 +180,7 @@ extension FragmentItem.DedupeKey {
     /// the emitter registers its own late. That makes dropping the baseline a
     /// deliberate, visible act in the page owner's code rather than something
     /// that can happen by accident.
-    public static let reset = FragmentItem.DedupeKey.id("scui-reset")
+    public static let reset = HTMLHeadItem.DedupeKey.id("scui-reset")
 
     /// The identity written into an emitted item's `data-scui-head-id`.
     ///

@@ -5,6 +5,7 @@ import Testing
 @testable import StaticHTMLBackend
 
 @_spi(Backends) import SwiftCrossUI
+@testable import SwiftCrossUIComponents
 
 @Suite("Testing GeometrySelector: validation, emission, and gating CSS")
 @MainActor
@@ -18,7 +19,7 @@ struct GeometrySelectorTests {
 
     // MARK: - Validation
 
-    @Test("Overlapping WidthCase ranges are rejected")
+    @Test("Overlapping GeometryCase ranges are rejected")
     func rejectsOverlappingRanges() {
         let errors = GeometrySelector.validationErrors(for: [
             branch(0, WidthRange(..<700)),
@@ -78,7 +79,7 @@ struct GeometrySelectorTests {
     func rejectsEmptyBranchList() {
         let errors = GeometrySelector.validationErrors(for: [])
         #expect(!errors.isEmpty)
-        #expect(errors.contains { $0.contains("at least one WidthCase") })
+        #expect(errors.contains { $0.contains("at least one GeometryCase") })
     }
 
     @Test("Two branches sharing an unbounded direction overlap")
@@ -90,7 +91,7 @@ struct GeometrySelectorTests {
         #expect(errors.contains { $0.contains("overlap") })
     }
 
-    @Test("A fallback alone, with no WidthCase, is accepted")
+    @Test("A fallback alone, with no GeometryCase, is accepted")
     func acceptsFallbackOnly() {
         let errors = GeometrySelector.validationErrors(for: [branch(0, nil)])
         #expect(errors.isEmpty)
@@ -111,9 +112,9 @@ struct GeometrySelectorTests {
     @Test("Three-branch emission carries a distinct data-gsel marker per branch")
     func emitsDistinctMarkersPerBranch() {
         let view = GeometrySelector {
-            WidthCase(..<600) { Text("Narrow") }
-            WidthCase(600..<900) { Text("Medium") }
-            WidthCase(900...) { Text("Wide") }
+            GeometryCase(..<600) { Text("Narrow") }
+            GeometryCase(600..<900) { Text("Medium") }
+            GeometryCase(900...) { Text("Wide") }
         }
         let html = StaticHTMLRenderer.render(view, context: "Test").html
 
@@ -138,9 +139,9 @@ struct GeometrySelectorTests {
         // covers (see fallbackIsTheOnlyVisibleBranchInsideAGap). Under a
         // neighbor-hides scheme nothing fires in the gap; browser-verified.
         let view = GeometrySelector {
-            WidthCase(..<600) { Text("Narrow") }
-            WidthCase(600..<900) { Text("Medium") }
-            WidthCase(900...) { Text("Wide") }
+            GeometryCase(..<600) { Text("Narrow") }
+            GeometryCase(600..<900) { Text("Medium") }
+            GeometryCase(900...) { Text("Wide") }
         }
         let html = StaticHTMLRenderer.render(view, context: "Test").html
 
@@ -171,9 +172,9 @@ struct GeometrySelectorTests {
     @Test("A gap covered by a fallback hides the fallback under every other branch's at-rule")
     func fallbackHidesUnderEveryOtherBranch() {
         let view = GeometrySelector {
-            WidthCase(..<600) { Text("Narrow") }
-            WidthCase(900...) { Text("Wide") }
-            GeometryFallback { Text("Middle") }
+            GeometryCase(..<600) { Text("Narrow") }
+            GeometryCase(900...) { Text("Wide") }
+            GeometryDefault { Text("Middle") }
         }
         let html = StaticHTMLRenderer.render(view, context: "Test").html
 
@@ -220,8 +221,8 @@ struct GeometrySelectorTests {
         let view = VStack {
             Text("Padded").padding(16)
             GeometrySelector {
-                WidthCase(..<600) { Text("Narrow") }
-                WidthCase(600...) { Text("Wide") }
+                GeometryCase(..<600) { Text("Narrow") }
+                GeometryCase(600...) { Text("Wide") }
             }
         }
         let html = StaticHTMLRenderer.render(view, context: "Test").html
@@ -255,8 +256,8 @@ struct GeometrySelectorTests {
         let view = VStack {
             Text("Label")
             GeometrySelector(of: "sidebar") {
-                WidthCase(..<400) { Text("Stacked") }
-                WidthCase(400...) { Text("Side by side") }
+                GeometryCase(..<400) { Text("Stacked") }
+                GeometryCase(400...) { Text("Side by side") }
             }
         }
         .container("sidebar")
@@ -282,9 +283,9 @@ struct GeometrySelectorTests {
         // simultaneously at a gap-region viewport width. Self-negation
         // fires everywhere outside the range, gap included.
         let view = GeometrySelector {
-            WidthCase(..<600) { Text("Narrow") }
-            WidthCase(900...) { Text("Wide") }
-            GeometryFallback { Text("Fallback") }
+            GeometryCase(..<600) { Text("Narrow") }
+            GeometryCase(900...) { Text("Wide") }
+            GeometryDefault { Text("Fallback") }
         }
         let html = StaticHTMLRenderer.render(view, context: "Test").html
 
@@ -330,8 +331,8 @@ struct GeometrySelectorTests {
     @Test("Under a measuring tier, exactly one branch is instantiated — not all of them")
     func measuringTierInstantiatesOneBranch() {
         let view = GeometrySelector {
-            WidthCase(..<600) { Text("Narrow") }
-            WidthCase(600...) { Text("Wide") }
+            GeometryCase(..<600) { Text("Narrow") }
+            GeometryCase(600...) { Text("Wide") }
         }
         let node = committedNode(for: view, proposedSize: ProposedViewSize(300, 200))
 
@@ -342,8 +343,8 @@ struct GeometrySelectorTests {
     @Test("The measuring tier picks the branch whose range contains the proposed width")
     func measuringTierPicksBranchMatchingProposedWidth() {
         let view = GeometrySelector {
-            WidthCase(..<600) { Text("Narrow") }
-            WidthCase(600...) { Text("Wide") }
+            GeometryCase(..<600) { Text("Narrow") }
+            GeometryCase(600...) { Text("Wide") }
         }
 
         let narrowNode = committedNode(for: view, proposedSize: ProposedViewSize(300, 200))
@@ -361,9 +362,9 @@ struct GeometrySelectorTests {
         // GeometrySelector.Condition.containerWidth. The selector falls
         // through to its fallback rather than guessing.
         let view = GeometrySelector(of: "sidebar") {
-            WidthCase(..<400) { Text("Stacked") }
-            WidthCase(400...) { Text("Side by side") }
-            GeometryFallback { Text("Fallback") }
+            GeometryCase(..<400) { Text("Stacked") }
+            GeometryCase(400...) { Text("Side by side") }
+            GeometryDefault { Text("Fallback") }
         }
         let node = committedNode(for: view, proposedSize: ProposedViewSize(800, 200))
 
@@ -380,8 +381,8 @@ struct GeometrySelectorTests {
         // from: nothing GeometrySelector does should require a registry to
         // exist under a measuring tier.
         let view = GeometrySelector {
-            WidthCase(..<600) { Text("Narrow") }
-            WidthCase(600...) { Text("Wide") }
+            GeometryCase(..<600) { Text("Narrow") }
+            GeometryCase(600...) { Text("Wide") }
         }
         // No throw/crash constructing or laying this out under DummyBackend,
         // where htmlFragmentRegistry is never seeded, is itself the

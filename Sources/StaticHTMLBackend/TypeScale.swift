@@ -1,4 +1,5 @@
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 /// Collects the page's text styles and emits them as CSS custom properties.
 ///

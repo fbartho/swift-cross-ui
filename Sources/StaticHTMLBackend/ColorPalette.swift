@@ -1,4 +1,5 @@
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 /// A color as observed under both color schemes.
 ///

@@ -4,6 +4,7 @@ import Foundation
 import ImageFormats
 import StaticHTMLBackend
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 @Suite("Testing for the static HTML backend")
 struct StaticHTMLBackendTests {

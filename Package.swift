@@ -168,6 +168,11 @@ let package = Package(
         .library(name: "UIKitBackend", type: libraryType, targets: ["UIKitBackend"]),
         .library(name: "Gtk", type: libraryType, targets: ["Gtk"]),
         .library(name: "Gtk3", type: libraryType, targets: ["Gtk3"]),
+        .library(
+            name: "SwiftCrossUIComponents",
+            type: libraryType,
+            targets: ["SwiftCrossUIComponents"]
+        ),
         .library(name: "StaticHTMLBackend", type: libraryType, targets: ["StaticHTMLBackend"]),
         .executable(name: "GtkExample", targets: ["GtkExample"]),
         // .library(name: "CursesBackend", type: libraryType, targets: ["CursesBackend"]),
@@ -250,6 +255,7 @@ let package = Package(
                 "SwiftCrossUI",
                 "DummyBackend",
                 "StaticHTMLBackend",
+                "SwiftCrossUIComponents",
                 "SwiftCrossUIMacrosPlugin",
                 .product(name: "SwiftSyntaxMacrosTestSupport", package: "swift-syntax"),
                 .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
@@ -328,9 +334,16 @@ let package = Package(
         ),
         .target(name: "UIKitBackend", dependencies: ["SwiftCrossUI"]),
         .target(name: "DummyBackend", dependencies: ["SwiftCrossUI"]),
+        // Cross-tier components and the environment keys both tiers read. Holds
+        // no emitter code, so a native application can link it without linking
+        // an HTML emitter.
+        .target(
+            name: "SwiftCrossUIComponents",
+            dependencies: ["SwiftCrossUI"]
+        ),
         .target(
             name: "StaticHTMLBackend",
-            dependencies: ["SwiftCrossUI"] + imageFormatsDependencies
+            dependencies: ["SwiftCrossUI", "SwiftCrossUIComponents"] + imageFormatsDependencies
         ),
         .executableTarget(
             name: "StaticHTMLDemo",

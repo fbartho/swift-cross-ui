@@ -1,5 +1,6 @@
 import Foundation
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 /// A backend that renders a view tree to a standalone HTML document.
 ///
@@ -77,15 +78,15 @@ public final class StaticHTMLBackend:
         /// Markup this widget should be replaced by, resolved from
         /// ``pendingRawFragmentRequest`` once the whole tree is built.
         ///
-        /// Set only on the zero-size leaf a ``RawHTMLFragment`` or
-        /// ``SlotComponent`` produces; the emitter writes it out in place of
+        /// Set only on the zero-size leaf a ``HTMLRawFragment`` or
+        /// ``HTMLSlot`` produces; the emitter writes it out in place of
         /// the element it would otherwise have emitted.
         public var rawFragment: HTMLRawFragmentRequest?
 
         /// Whether this widget's subtree bottoms out at a raw-fragment leaf,
         /// following single-child wrapping only.
         ///
-        /// `RawHTMLFragment`/`SlotComponent` produce several levels of
+        /// `HTMLRawFragment`/`HTMLSlot` produce several levels of
         /// single-child `Container` (``StrictFrameView``'s `.frame(width: 0,
         /// height: 0)`, `.transformEnvironment`'s wrapper, the view's own
         /// boundary) around the leaf that actually carries ``rawFragment``.
@@ -94,7 +95,7 @@ public final class StaticHTMLBackend:
         /// but that size is meaningless once the wrapper reaches this
         /// property: the real content the leaf's markup replaces itself
         /// with has no size on the build host at all (see
-        /// ``RawHTMLFragment``'s documented cost), so an ancestor trusting
+        /// ``HTMLRawFragment``'s documented cost), so an ancestor trusting
         /// its own committed `0x0` as a real box is what lets the spliced
         /// content overlap a flex sibling instead of the wrapper
         /// participating in the parent's layout directly. See

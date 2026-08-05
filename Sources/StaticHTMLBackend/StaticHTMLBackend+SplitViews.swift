@@ -1,4 +1,5 @@
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 // A split view's native behaviour is a draggable divider between two panes.
 // Only half of that survives to this tier: both panes render, side by side, and

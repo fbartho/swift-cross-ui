@@ -1,5 +1,6 @@
 import Foundation
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 extension StaticHTMLBackend: BackendFeatures.Paths {
     /// A path accumulated for a ``SwiftCrossUI/Shape``.

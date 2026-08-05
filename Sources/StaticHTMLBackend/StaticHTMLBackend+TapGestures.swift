@@ -1,4 +1,5 @@
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 extension StaticHTMLBackend: BackendFeatures.TapGestures {
     /// Marks a view as a tap target without making it tappable.

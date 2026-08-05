@@ -214,7 +214,7 @@ extension View {
     /// backend never writes `style` itself — its own styling always goes
     /// through interned classes — so an author's `style` ops are the only
     /// source of an inline `style` attribute (same precedent as
-    /// `RawHTMLFragment`'s raw markup). `.setProperty(_:value:)` and
+    /// `HTMLRawFragment`'s raw markup). `.setProperty(_:value:)` and
     /// `.removeProperty(_:)` merge per CSS declaration; `.set(_:)` replaces
     /// the whole attribute with a raw string. **Caveat:** values set this way
     /// bypass the backend's color-scheme swap and any tier-level CSS choice

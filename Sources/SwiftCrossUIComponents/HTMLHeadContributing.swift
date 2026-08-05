@@ -20,18 +20,18 @@ extension View {
     ///     the content (its URL, or a hash of it).
     /// - Returns: The view, contributing the item whenever it renders.
     public func htmlHeadItem(
-        _ content: FragmentContent,
-        slot: FragmentItem.Slot = .head,
+        _ content: HTMLHeadItemContent,
+        slot: HTMLHeadItem.Slot = .head,
         id: String? = nil
     ) -> some View {
-        htmlHeadItems([FragmentItem(content, slot: slot, id: id)])
+        htmlHeadItems([HTMLHeadItem(content, slot: slot, id: id)])
     }
 
     /// Contributes several fragment items at once.
     ///
     /// - Parameter items: The items to contribute.
     /// - Returns: The view, contributing the items whenever it renders.
-    public func htmlHeadItems(_ items: [FragmentItem]) -> some View {
+    public func htmlHeadItems(_ items: [HTMLHeadItem]) -> some View {
         HTMLHeadContributionView(items: items, content: self)
     }
 }
@@ -45,8 +45,8 @@ extension View {
 ///
 /// ```swift
 /// struct SyntaxHighlightedCode: HTMLHeadContributing {
-///     var headItems: [FragmentItem] {
-///         [FragmentItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
+///     var headItems: [HTMLHeadItem] {
+///         [HTMLHeadItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
 ///     }
 ///
 ///     var body: some View { contributingBody { … } }
@@ -61,7 +61,7 @@ extension View {
 @MainActor
 public protocol HTMLHeadContributing: View {
     /// The items this component needs the document to carry.
-    var headItems: [FragmentItem] { get }
+    var headItems: [HTMLHeadItem] { get }
 }
 
 extension HTMLHeadContributing {
@@ -85,7 +85,7 @@ extension HTMLHeadContributing {
 /// environment below this view differs.
 struct HTMLHeadContributionView<Content: View>: View {
     /// The items to register.
-    var items: [FragmentItem]
+    var items: [HTMLHeadItem]
     /// The view being modified.
     var content: Content
 

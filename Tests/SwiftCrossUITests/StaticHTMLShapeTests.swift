@@ -3,6 +3,7 @@ import Testing
 import Foundation
 import StaticHTMLBackend
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 @Suite("Testing shape and gradient emission for the static HTML backend")
 struct StaticHTMLShapeTests {

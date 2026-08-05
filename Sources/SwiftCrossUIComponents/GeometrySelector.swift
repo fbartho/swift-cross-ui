@@ -14,8 +14,8 @@ private let branchMarkerAttribute = "data-gsel"
 ///
 /// ```swift
 /// GeometrySelector {
-///     WidthCase(..<600) { VStack(alignment: .leading, spacing: 8) { navLinks } }
-///     WidthCase(600...) { HStack(spacing: 16) { navLinks } }
+///     GeometryCase(..<600) { VStack(alignment: .leading, spacing: 8) { navLinks } }
+///     GeometryCase(600...) { HStack(spacing: 16) { navLinks } }
 /// }
 /// ```
 ///
@@ -42,7 +42,7 @@ private let branchMarkerAttribute = "data-gsel"
 /// - **Overlapping ranges are always rejected.** Two branches that could
 ///   both match the same width make "which one renders" ambiguous, on every
 ///   tier.
-/// - **Gaps are rejected unless a `GeometryFallback` branch is present.**
+/// - **Gaps are rejected unless a `GeometryDefault` branch is present.**
 ///   A width with no matching branch and no fallback would render nothing —
 ///   almost certainly not what was intended — so it's caught at construction
 ///   rather than discovered as a blank page at some width nobody tested.
@@ -68,7 +68,7 @@ public struct GeometrySelector: View {
     /// markers a later pass's `commit()` actually wrote onto the widget
     /// tree. Hashing the declared ranges (stable, known at construction)
     /// makes every reconstruction of the same selector converge on the same
-    /// ID, the same way `FragmentContent`'s content-hash dedup keys already
+    /// ID, the same way `HTMLHeadItemContent`'s content-hash dedup keys already
     /// need process-stable hashing (see its `hash(of:)`, which this reuses
     /// the same FNV-1a shape as, for the same reason).
     let selectorID: String
@@ -77,8 +77,8 @@ public struct GeometrySelector: View {
 
     /// Creates a viewport-width selector.
     ///
-    /// - Parameter branches: The selector's branches, built from `WidthCase`
-    ///   and at most one trailing `GeometryFallback`.
+    /// - Parameter branches: The selector's branches, built from `GeometryCase`
+    ///   and at most one trailing `GeometryDefault`.
     public init(@GeometrySelectorBuilder branches: () -> [GSelBranch]) {
         self.init(of: nil, branches: branches)
     }
@@ -91,8 +91,8 @@ public struct GeometrySelector: View {
     ///     selector's branches query. Must match a `.container(_:)` name in
     ///     scope; naming is required (see `.container(_:)`), so there is no
     ///     unnamed form.
-    ///   - branches: The selector's branches, built from `WidthCase` and at
-    ///     most one trailing `GeometryFallback`.
+    ///   - branches: The selector's branches, built from `GeometryCase` and at
+    ///     most one trailing `GeometryDefault`.
     public init(
         of container: String,
         @GeometrySelectorBuilder branches: () -> [GSelBranch]
@@ -116,7 +116,7 @@ public struct GeometrySelector: View {
     /// an accepted consequence, not a bug: they'd emit byte-identical gating
     /// CSS anyway, so collapsing them via the registry's existing
     /// first-wins dedup is the same "identical content, one rule" behavior
-    /// `FragmentContent`'s content-hash keys already rely on — not
+    /// `HTMLHeadItemContent`'s content-hash keys already rely on — not
     /// different in kind from two components emitting the same stylesheet
     /// link twice.
     private static func deterministicSelectorID(
@@ -126,7 +126,7 @@ public struct GeometrySelector: View {
         let shape = ([container ?? ""] + branches.map { branch in
             "\(branch.id):\(branch.range.map(\.description) ?? "fallback")"
         }).joined(separator: "|")
-        return "gsel-\(FragmentContent.hash(of: shape))"
+        return "gsel-\(HTMLHeadItemContent.hash(of: shape))"
     }
 
     /// Rejects an empty branch list, overlapping ranges, and gaps unless a
@@ -148,14 +148,14 @@ public struct GeometrySelector: View {
     /// `branches` is valid.
     static func validationErrors(for branches: [GSelBranch]) -> [String] {
         guard !branches.isEmpty else {
-            return ["at least one WidthCase (or a GeometryFallback) is required."]
+            return ["at least one GeometryCase (or a GeometryDefault) is required."]
         }
 
         let ranged = branches.compactMap { branch in branch.range.map { (branch.id, $0) } }
         let hasFallback = branches.contains { $0.range == nil }
 
         guard !ranged.isEmpty || hasFallback else {
-            return ["at least one WidthCase (or a GeometryFallback) is required."]
+            return ["at least one GeometryCase (or a GeometryDefault) is required."]
         }
 
         var errors: [String] = []
@@ -168,7 +168,7 @@ public struct GeometrySelector: View {
                     errors.append(
                         """
                         branch \(idA) (\(rangeA)) and branch \(idB) (\(rangeB)) overlap. \
-                        Overlapping WidthCase ranges make it ambiguous which branch should \
+                        Overlapping GeometryCase ranges make it ambiguous which branch should \
                         render at a width both cover — narrow one of the ranges so they no \
                         longer overlap.
                         """
@@ -188,8 +188,8 @@ public struct GeometrySelector: View {
             errors.append(
                 """
                 no branch covers widths below \(sorted[0].lowerBound!), and no \
-                GeometryFallback branch is present. Add a WidthCase covering that range, or \
-                a trailing GeometryFallback.
+                GeometryDefault branch is present. Add a GeometryCase covering that range, or \
+                a trailing GeometryDefault.
                 """
             )
         }
@@ -197,8 +197,8 @@ public struct GeometrySelector: View {
             errors.append(
                 """
                 no branch covers widths at or above \(sorted[sorted.count - 1].upperBound!), \
-                and no GeometryFallback branch is present. Add a WidthCase covering that \
-                range, or a trailing GeometryFallback.
+                and no GeometryDefault branch is present. Add a GeometryCase covering that \
+                range, or a trailing GeometryDefault.
                 """
             )
         }
@@ -209,8 +209,8 @@ public struct GeometrySelector: View {
                 errors.append(
                     """
                     no branch covers widths between \(previousEnd) and \(nextStart), and no \
-                    GeometryFallback branch is present. Add a WidthCase covering the gap, or \
-                    a trailing GeometryFallback.
+                    GeometryDefault branch is present. Add a GeometryCase covering the gap, or \
+                    a trailing GeometryDefault.
                     """
                 )
             }
@@ -344,7 +344,7 @@ public struct GeometrySelector: View {
         guard let registry = environment.htmlFragmentRegistry else {
             return
         }
-        let key = FragmentItem.DedupeKey.id(selectorID)
+        let key = HTMLHeadItem.DedupeKey.id(selectorID)
         guard !registry.contains(key) else {
             return
         }
@@ -384,7 +384,7 @@ public struct GeometrySelector: View {
         }
 
         registry.register(
-            FragmentItem(
+            HTMLHeadItem(
                 key: key,
                 slot: .head,
                 content: .style(rules.joined(separator: "\n"))

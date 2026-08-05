@@ -1,5 +1,6 @@
 import Foundation
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 /// Renders a view tree to a standalone HTML document.
 ///
@@ -78,13 +79,13 @@ public enum StaticHTMLRenderer {
         emitter.emitsViewIdentity = context.emitsViewIdentity
         emitter.declaredSlots = context.customSlots
 
-        // A custom slot is emitted from inside the body, where a SlotComponent
+        // A custom slot is emitted from inside the body, where a HTMLSlot
         // sits, so its items have to be registered before the body runs — the
         // marker reads the registry as the emitter reaches it. Head and
         // bodyEnd items are drained after the body instead (see below), which
         // is what gives contributions their first-appearance position ahead of
         // the page owner's.
-        func isCustomSlot(_ item: FragmentItem) -> Bool {
+        func isCustomSlot(_ item: HTMLHeadItem) -> Bool {
             if case .custom = item.slot { true } else { false }
         }
         let documentItems = context.items.filter { !isCustomSlot($0) }
@@ -177,8 +178,8 @@ public enum StaticHTMLRenderer {
         // that guarantee independent of when the renderer happened to drain
         // each source.
         let ownerKeys = Set(context.items.map(\.key))
-        func partition(_ slot: FragmentItem
-            .Slot) -> (contributed: [FragmentItem], owned: [FragmentItem])
+        func partition(_ slot: HTMLHeadItem
+            .Slot) -> (contributed: [HTMLHeadItem], owned: [HTMLHeadItem])
         {
             let items = registry.items(in: slot)
             return (
@@ -490,7 +491,7 @@ public enum StaticHTMLRenderer {
 
     /// Assigns each raw-fragment request to the leaf that carries it.
     ///
-    /// Unlike a tag request, this one never hoists. ``RawHTMLFragment`` puts
+    /// Unlike a tag request, this one never hoists. ``HTMLRawFragment`` puts
     /// the request in scope for exactly one zero-size leaf of its own making,
     /// so the leaf reporting it *is* the view the author wrote — there's no
     /// ambiguity about which element the payload replaces, and hoisting it to

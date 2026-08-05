@@ -1,4 +1,5 @@
 import SwiftCrossUI
+import SwiftCrossUIComponents
 
 /// Maps declared text styles onto HTML elements.
 ///

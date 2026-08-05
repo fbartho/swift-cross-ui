@@ -3,6 +3,7 @@ import Testing
 import Foundation
 import StaticHTMLBackend
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 @Suite("Testing wrapper elision for the static HTML backend")
 struct StaticHTMLElisionTests {
@@ -200,7 +201,7 @@ struct StaticHTMLElisionTests {
         // the DOM for the fragment's markup to land in the right place.
         let html = StaticHTMLRenderer.render(
             VStack {
-                RawHTMLFragment("<em>raw</em>")
+                HTMLRawFragment("<em>raw</em>")
             },
             context: "Raw fragment elision"
         ).html

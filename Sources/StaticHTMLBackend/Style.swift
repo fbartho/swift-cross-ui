@@ -1,3 +1,5 @@
+import SwiftCrossUIComponents
+
 /// A resolved set of CSS declarations for a single element.
 ///
 /// Styles are values, not strings, so that identical styling across many

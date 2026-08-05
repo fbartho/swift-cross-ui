@@ -6,6 +6,7 @@ import DummyBackend
 @testable import StaticHTMLBackend
 
 @_spi(Backends) import SwiftCrossUI
+@testable import SwiftCrossUIComponents
 
 @Suite("Testing document fragments, slots, and asset emission")
 @MainActor
@@ -54,22 +55,22 @@ struct StaticHTMLFragmentTests {
     func contentHashIsStable() {
         // A per-process seed (Hasher) would give one asset a different
         // data-scui-head-id on every build, breaking the cross-tier check.
-        #expect(FragmentContent.hash(of: "scui") == FragmentContent.hash(of: "scui"))
-        #expect(FragmentContent.hash(of: "scui") != FragmentContent.hash(of: "scui2"))
+        #expect(HTMLHeadItemContent.hash(of: "scui") == HTMLHeadItemContent.hash(of: "scui"))
+        #expect(HTMLHeadItemContent.hash(of: "scui") != HTMLHeadItemContent.hash(of: "scui2"))
     }
 
     // MARK: - Placement validity
 
     @Test("A meta tag is only legal in the head")
     func metaIsHeadOnly() {
-        #expect(FragmentContent.meta(["name": "x"]).allows(.head))
-        #expect(!FragmentContent.meta(["name": "x"]).allows(.bodyEnd))
-        #expect(!FragmentContent.meta(["name": "x"]).allows(.custom("aside")))
+        #expect(HTMLHeadItemContent.meta(["name": "x"]).allows(.head))
+        #expect(!HTMLHeadItemContent.meta(["name": "x"]).allows(.bodyEnd))
+        #expect(!HTMLHeadItemContent.meta(["name": "x"]).allows(.custom("aside")))
     }
 
     @Test("Scripts and styles are legal in every slot")
     func scriptsAndStylesArePlacementFree() {
-        for content: FragmentContent in [
+        for content: HTMLHeadItemContent in [
             .script(src: "/a.js"),
             .inlineScript("x"),
             .stylesheet(href: "/a.css"),
@@ -86,19 +87,19 @@ struct StaticHTMLFragmentTests {
 
     @Test("Every emitted item carries the cross-tier marker")
     func emittedItemsCarryTheMarker() {
-        let script = FragmentItem(.script(src: "/js/a.js"), slot: .bodyEnd)
+        let script = HTMLHeadItem(.script(src: "/js/a.js"), slot: .bodyEnd)
         #expect(script.rendered(indent: "").contains("data-scui-head-id=\"url:/js/a.js\""))
 
-        let meta = FragmentItem(.meta(["name": "author"]), slot: .head, id: "author")
+        let meta = HTMLHeadItem(.meta(["name": "author"]), slot: .head, id: "author")
         #expect(meta.rendered(indent: "").contains("data-scui-head-id=\"id:author\""))
 
-        let style = FragmentItem(.style("a{}"), slot: .head)
+        let style = HTMLHeadItem(.style("a{}"), slot: .head)
         #expect(style.rendered(indent: "").contains("data-scui-head-id=\"sha:"))
     }
 
     @Test("A script body's closing tag is neutralized so it can't end the element early")
     func neutralizesClosingScriptTagInBody() {
-        let item = FragmentItem(.inlineScript("var s = \"</script>\";"), slot: .bodyEnd)
+        let item = HTMLHeadItem(.inlineScript("var s = \"</script>\";"), slot: .bodyEnd)
         let html = item.rendered(indent: "")
         #expect(html.contains("<\\/script>"))
         // Exactly one real closing tag: the element's own.
@@ -107,7 +108,7 @@ struct StaticHTMLFragmentTests {
 
     @Test("Script and style bodies aren't HTML-escaped, since entities don't decode there")
     func doesNotEscapeScriptBodies() {
-        let item = FragmentItem(.inlineScript("if (a && b < c) {}"), slot: .bodyEnd)
+        let item = HTMLHeadItem(.inlineScript("if (a && b < c) {}"), slot: .bodyEnd)
         #expect(item.rendered(indent: "").contains("if (a && b < c) {}"))
     }
 
@@ -151,8 +152,8 @@ struct StaticHTMLFragmentTests {
     @Test("The protocol sugar registers the same items the modifier would")
     func protocolSugarRegistersItems() {
         struct Highlighted: HTMLHeadContributing {
-            var headItems: [FragmentItem] {
-                [FragmentItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
+            var headItems: [HTMLHeadItem] {
+                [HTMLHeadItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
             }
 
             var body: some View {
@@ -239,7 +240,7 @@ struct StaticHTMLFragmentTests {
     func rawFragmentSplicesVerbatim() {
         let view = VStack {
             Text("Before")
-            RawHTMLFragment("<figure class=\"x\"><em>&amp;</em></figure>")
+            HTMLRawFragment("<figure class=\"x\"><em>&amp;</em></figure>")
             Text("After")
         }
         let html = StaticHTMLRenderer.render(view, context: "Raw").html
@@ -249,7 +250,7 @@ struct StaticHTMLFragmentTests {
     @Test("A raw fragment replaces its element rather than nesting inside one")
     func rawFragmentEmitsNoWrapper() {
         let html = StaticHTMLRenderer.render(
-            RawHTMLFragment("<hr id=\"marker\">"),
+            HTMLRawFragment("<hr id=\"marker\">"),
             context: "Raw"
         ).html
         // The zero-size leaf the view produces exists only to carry the
@@ -262,7 +263,7 @@ struct StaticHTMLFragmentTests {
         "A raw fragment's wrapper chain emits display:contents, so it doesn't overlap flex siblings"
     )
     func rawFragmentWrapperDoesNotOverlapFlexSiblings() {
-        // Whatever committed size RawHTMLFragment's leaf reports, every
+        // Whatever committed size HTMLRawFragment's leaf reports, every
         // ancestor wrapper on the way to it (the view's own boundary,
         // .transformEnvironment, and the EitherView/TupleView1 the
         // display-mode switch in its body introduces) also honestly reports
@@ -274,7 +275,7 @@ struct StaticHTMLFragmentTests {
         let html = StaticHTMLRenderer.render(
             VStack {
                 Text("Before")
-                RawHTMLFragment("<p data-fragment=\"true\">Spliced</p>")
+                HTMLRawFragment("<p data-fragment=\"true\">Spliced</p>")
                 Text("After")
             },
             context: "Raw fragment in a stack"
@@ -282,7 +283,7 @@ struct StaticHTMLFragmentTests {
 
         // Every div between the VStack and the spliced <p> is present in
         // markup (EitherView, TupleView1, EnvironmentModifier,
-        // RawHTMLFragment), but none of them should carry a width/height
+        // HTMLRawFragment), but none of them should carry a width/height
         // declaration derived from the leaf's committed size —
         // display:contents replaces it.
         #expect(html.contains("data-scui=\"EitherView\""))
@@ -298,14 +299,14 @@ struct StaticHTMLFragmentTests {
         // what nativeDisplay says, both from the environment and from the
         // constructor override.
         let hiddenByEnvironment = StaticHTMLRenderer.render(
-            RawHTMLFragment("<hr id=\"marker\">")
+            HTMLRawFragment("<hr id=\"marker\">")
                 .environment(\.rawFragmentNativeDisplay, .hidden),
             context: "Env hidden"
         ).html
         #expect(hiddenByEnvironment.contains("<hr id=\"marker\">"))
 
         let hiddenByConstructor = StaticHTMLRenderer.render(
-            RawHTMLFragment("<hr id=\"marker\">", nativeDisplay: .hidden),
+            HTMLRawFragment("<hr id=\"marker\">", nativeDisplay: .hidden),
             context: "Constructor hidden"
         ).html
         #expect(hiddenByConstructor.contains("<hr id=\"marker\">"))
@@ -323,7 +324,7 @@ struct StaticHTMLFragmentTests {
         let environment = EnvironmentValues(backend: backend).with(\.window, window)
 
         let node = ViewGraphNode(
-            for: RawHTMLFragment("<p>Some markup</p>"),
+            for: HTMLRawFragment("<p>Some markup</p>"),
             backend: backend,
             environment: environment
         )
@@ -340,7 +341,7 @@ struct StaticHTMLFragmentTests {
         let environment = EnvironmentValues(backend: backend).with(\.window, window)
 
         let node = ViewGraphNode(
-            for: RawHTMLFragment("<p>Some markup</p>", nativeDisplay: .hidden),
+            for: HTMLRawFragment("<p>Some markup</p>", nativeDisplay: .hidden),
             backend: backend,
             environment: environment
         )
@@ -359,7 +360,7 @@ struct StaticHTMLFragmentTests {
             .with(\.rawFragmentNativeDisplay, .hidden)
 
         let node = ViewGraphNode(
-            for: RawHTMLFragment("<p>Some markup</p>"),
+            for: HTMLRawFragment("<p>Some markup</p>"),
             backend: backend,
             environment: environment
         )
@@ -381,7 +382,7 @@ struct StaticHTMLFragmentTests {
             .with(\.rawFragmentNativeDisplay, .hidden)
 
         let node = ViewGraphNode(
-            for: RawHTMLFragment("<p>Some markup</p>", nativeDisplay: .source),
+            for: HTMLRawFragment("<p>Some markup</p>", nativeDisplay: .source),
             backend: backend,
             environment: environment
         )
@@ -409,7 +410,7 @@ struct StaticHTMLFragmentTests {
         // wrapper of its own chain rather than floating at column zero.
         //
         // That chain — the view's own boundary, .transformEnvironment,
-        // StrictFrameView — is RawHTMLFragment's, and it puts the payload
+        // StrictFrameView — is HTMLRawFragment's, and it puts the payload
         // three levels deeper than the stack siblings it sits between. The
         // wrappers exist for layout (they carry display:contents so the
         // fragment doesn't overlap flex siblings) and are invisible in the
@@ -441,14 +442,14 @@ struct StaticHTMLFragmentTests {
         }
     }
 
-    @Test("A comment nests no deeper than RawHTMLFragment's own wrapper chain")
+    @Test("A comment nests no deeper than HTMLRawFragment's own wrapper chain")
     func commentAddsNoWrapperLevel() {
         // HTMLComment sets the fragment request itself rather than nesting a
-        // RawHTMLFragment, which would add another wrapper and indent the
+        // HTMLRawFragment, which would add another wrapper and indent the
         // comment one step further from the markup it annotates.
-        // RawHTMLFragment's own chain is one level deeper than HTMLComment's
+        // HTMLRawFragment's own chain is one level deeper than HTMLComment's
         // fixed one, from the EitherView/TupleView1 its display-mode switch
-        // introduces — that's intrinsic to RawHTMLFragment, not composition
+        // introduces — that's intrinsic to HTMLRawFragment, not composition
         // overhead, so the invariant under test is "no deeper", not "equal".
         func depth(of html: String) -> Int {
             html.components(separatedBy: "\n")
@@ -467,7 +468,7 @@ struct StaticHTMLFragmentTests {
         let fragment = StaticHTMLRenderer.render(
             VStack {
                 Text("Before")
-                RawHTMLFragment("<p>Spliced</p>")
+                HTMLRawFragment("<p>Spliced</p>")
                 Text("After")
             },
             context: "Fragment depth"
@@ -542,7 +543,7 @@ struct StaticHTMLFragmentTests {
 
     @Test("A comment doesn't participate in layout")
     func commentDoesNotParticipateInLayout() {
-        // Comments aren't boxes. The comment rides RawHTMLFragment's
+        // Comments aren't boxes. The comment rides HTMLRawFragment's
         // zero-size leaf, whose wrapper chain emits display:contents so the
         // siblings lay out as though it weren't there.
         let withComment = StaticHTMLRenderer.render(
@@ -565,7 +566,7 @@ struct StaticHTMLFragmentTests {
     func slotComponentEmitsItsItems() throws {
         let view = VStack {
             Text("Above")
-            SlotComponent("aside")
+            HTMLSlot("aside")
             Text("Below")
         }
         let context = DocumentContext(title: "Slots")
@@ -584,7 +585,7 @@ struct StaticHTMLFragmentTests {
     func slotItemsStayInTheirSlot() {
         let view = VStack {
             Text("Content")
-            SlotComponent("aside")
+            HTMLSlot("aside")
         }
         let context = DocumentContext(title: "Slots")
             .withSlot("aside")
@@ -712,16 +713,16 @@ struct StaticHTMLFragmentTests {
                 .htmlHeadItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
             // Registered twice by two different views; one tag comes out.
             Text("Twin").htmlHeadItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
-            SlotComponent("aside")
-            RawHTMLFragment("<hr id=\"raw\">")
+            HTMLSlot("aside")
+            HTMLRawFragment("<hr id=\"raw\">")
         }
 
         let context = DocumentContext(
             title: "Everything",
             items: [
-                FragmentItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
-                FragmentItem(.style(".owned { color: blue }"), slot: .head),
-                FragmentItem(.inlineScript("console.log('tail')"), slot: .bodyEnd),
+                HTMLHeadItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
+                HTMLHeadItem(.style(".owned { color: blue }"), slot: .head),
+                HTMLHeadItem(.inlineScript("console.log('tail')"), slot: .bodyEnd),
             ],
             customSlots: ["aside"],
             assetStore: DirectoryAssetStore(directory: directory)
@@ -810,9 +811,9 @@ struct StaticHTMLFragmentTests {
         let context = DocumentContext(
             title: "Metadata",
             items: [
-                FragmentItem(.meta(["name": "description", "content": "A page."]), slot: .head),
-                FragmentItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
-                FragmentItem(
+                HTMLHeadItem(.meta(["name": "description", "content": "A page."]), slot: .head),
+                HTMLHeadItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
+                HTMLHeadItem(
                     .meta(["property": "og:type", "content": "article"]),
                     slot: .head
                 ),

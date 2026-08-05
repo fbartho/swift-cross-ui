@@ -1,6 +1,7 @@
 import Foundation
+import SwiftCrossUIComponents
 
-extension FragmentItem {
+extension HTMLHeadItem {
     /// The item rendered as markup.
     ///
     /// Every emitted item carries `data-scui-head-id`, which is what makes
@@ -47,7 +48,7 @@ extension FragmentItem {
 
             case .rawHTML(let html):
                 // Unescaped by contract — the same caller-trusted stance as
-                // RawHTMLFragment. A wrapper element would be the only place to
+                // HTMLRawFragment. A wrapper element would be the only place to
                 // hang the marker, and wrapping arbitrary markup changes what
                 // it means (a <div> around a <tr>, say), so raw items forgo the
                 // cross-tier marker rather than distort their payload.
@@ -91,7 +92,7 @@ extension FragmentItem {
 extension HTMLFragmentRegistry {
     /// The emitter's own baseline stylesheet, as a registrable item.
     ///
-    /// Registered under ``FragmentItem/DedupeKey/reset`` so that a page owner
+    /// Registered under ``HTMLHeadItem/DedupeKey/reset`` so that a page owner
     /// who registers their own item under that key replaces it outright.
     /// Because the registry keeps the *first* item per key and the emitter adds
     /// this one last, an override needs no special casing — it simply got there
@@ -130,8 +131,8 @@ extension HTMLFragmentRegistry {
     /// read as buttons, so an anchor wearing one drops the underline it would
     /// otherwise get as a link. The boxless styles keep it, since without it
     /// nothing would mark them followable.
-    static func resetItem() -> FragmentItem {
-        FragmentItem(
+    static func resetItem() -> HTMLHeadItem {
+        HTMLHeadItem(
             key: .reset,
             slot: .head,
             content: .style(

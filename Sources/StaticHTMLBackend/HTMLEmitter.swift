@@ -1,6 +1,7 @@
 import Foundation
 import ImageFormats
 @_spi(Backends) import SwiftCrossUI
+import SwiftCrossUIComponents
 
 /// Serializes a committed widget tree into HTML.
 ///
@@ -65,9 +66,9 @@ public struct HTMLEmitter {
     /// governed by it.
     var emitsViewIdentity = true
     /// The custom slot names the document declared, for validating
-    /// ``SlotComponent`` markers as they're encountered.
+    /// ``HTMLSlot`` markers as they're encountered.
     var declaredSlots: Set<String> = []
-    /// The slot names a ``SlotComponent`` marker was actually found for.
+    /// The slot names a ``HTMLSlot`` marker was actually found for.
     ///
     /// Collected during emission so the renderer can report a declared slot
     /// whose items would otherwise be silently dropped.
@@ -307,7 +308,7 @@ public struct HTMLEmitter {
                 precondition(
                     declaredSlots.contains(slotName),
                     """
-                    SlotComponent("\(slotName)") has no matching slot on the \
+                    HTMLSlot("\(slotName)") has no matching slot on the \
                     document context. Declare it with \
                     DocumentContext.withSlot("\(slotName)") — an undeclared \
                     name is a typo, and emitting nothing here would hide it.
@@ -1360,7 +1361,7 @@ public struct HTMLEmitter {
     ) -> String {
         // A wrapper on the way to a raw-fragment leaf carries its own
         // honestly-computed 0x0 committed size (the leaf really was told to
-        // be that size, per RawHTMLFragment/SlotComponent's
+        // be that size, per HTMLRawFragment/HTMLSlot's
         // .frame(width: 0, height: 0)), but that size describes nothing
         // real: the fragment's actual content has no size on the build host
         // at all. Every declaredWidth/declaredMaxWidth/etc. branch below

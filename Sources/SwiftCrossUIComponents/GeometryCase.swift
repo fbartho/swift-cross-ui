@@ -4,15 +4,15 @@ import SwiftCrossUI
 ///
 /// ```swift
 /// GeometrySelector {
-///     WidthCase(..<600) { VStack { navLinks } }
-///     WidthCase(600...) { HStack { navLinks } }
+///     GeometryCase(..<600) { VStack { navLinks } }
+///     GeometryCase(600...) { HStack { navLinks } }
 /// }
 /// ```
 ///
-/// By default a `WidthCase` is a viewport-width condition. Use
+/// By default a `GeometryCase` is a viewport-width condition. Use
 /// `GeometrySelector(of:)` to scope every branch to a named container
 /// instead — see that initializer.
-public struct WidthCase<Content: View> {
+public struct GeometryCase<Content: View> {
     /// The range this branch is active over.
     var range: WidthRange
     /// The branch's content.
@@ -49,13 +49,13 @@ public struct WidthCase<Content: View> {
     }
 }
 
-/// A `GeometrySelector` branch that renders when no `WidthCase` matches.
+/// A `GeometrySelector` branch that renders when no `GeometryCase` matches.
 ///
 /// ```swift
 /// GeometrySelector {
-///     WidthCase(600..<900) { … }
-///     WidthCase(900...) { … }
-///     GeometryFallback { … }
+///     GeometryCase(600..<900) { … }
+///     GeometryCase(900...) { … }
+///     GeometryDefault { … }
 /// }
 /// ```
 ///
@@ -64,7 +64,7 @@ public struct WidthCase<Content: View> {
 /// CSS is cheap by construction: a hide-rule under every other branch's
 /// at-rule, never a computed complement of the declared ranges (per the
 /// ratified design).
-public struct GeometryFallback<Content: View> {
+public struct GeometryDefault<Content: View> {
     /// The fallback's content.
     var content: Content
 

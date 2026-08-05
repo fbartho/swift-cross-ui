@@ -2,7 +2,7 @@ import SwiftCrossUI
 
 /// One `GeometrySelector` branch, erased to a uniform shape.
 ///
-/// `WidthCase<Content>` is generic per branch (each can hold different
+/// `GeometryCase<Content>` is generic per branch (each can hold different
 /// content), so `GeometrySelectorBuilder` erases every branch to this common
 /// type to collect them into one array — the same move `ForEach` requires of
 /// its own children, and the only way to give `GeometrySelector` a runtime
@@ -21,8 +21,8 @@ public struct GSelBranch: Identifiable, Sendable {
     public var content: AnyView
 }
 
-/// Builds a `GeometrySelector`'s branch list from a sequence of `WidthCase`
-/// and (at most one, trailing) `GeometryFallback` values.
+/// Builds a `GeometrySelector`'s branch list from a sequence of `GeometryCase`
+/// and (at most one, trailing) `GeometryDefault` values.
 ///
 /// Declarative conditions only, per the ratified design: this builder
 /// collects *data* (ranges + content), not closures, so the static tier can
@@ -35,20 +35,20 @@ public struct GeometrySelectorBuilder {
     }
 
     public static func buildPartialBlock<Content: View>(
-        first: WidthCase<Content>
+        first: GeometryCase<Content>
     ) -> [GSelBranch] {
         [GSelBranch(id: 0, range: first.range, content: AnyView(first.content))]
     }
 
     public static func buildPartialBlock<Content: View>(
-        first: GeometryFallback<Content>
+        first: GeometryDefault<Content>
     ) -> [GSelBranch] {
         [GSelBranch(id: 0, range: nil, content: AnyView(first.content))]
     }
 
     public static func buildPartialBlock<Content: View>(
         accumulated: [GSelBranch],
-        next: WidthCase<Content>
+        next: GeometryCase<Content>
     ) -> [GSelBranch] {
         accumulated + [
             GSelBranch(id: accumulated.count, range: next.range, content: AnyView(next.content))
@@ -57,7 +57,7 @@ public struct GeometrySelectorBuilder {
 
     public static func buildPartialBlock<Content: View>(
         accumulated: [GSelBranch],
-        next: GeometryFallback<Content>
+        next: GeometryDefault<Content>
     ) -> [GSelBranch] {
         accumulated + [
             GSelBranch(id: accumulated.count, range: nil, content: AnyView(next.content))
