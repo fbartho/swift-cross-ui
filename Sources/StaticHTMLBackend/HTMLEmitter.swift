@@ -1293,7 +1293,7 @@ public struct HTMLEmitter {
         // A container the layout system never described as a stack reaches
         // the padding, overlap-pin, or plain-splice paths instead; the first
         // two are real boxes and the third is already a splice.
-        guard let stack = container.stackLayout else {
+        guard container.stackLayout != nil else {
             return nil
         }
         // A stack of two or more children is a real flex container whose item
@@ -1303,10 +1303,13 @@ public struct HTMLEmitter {
         guard container.children.count == 1 else {
             return nil
         }
-        // The flex trio is inert at one child only when the alignment names
-        // block flow's own placement, and only when the child stays a flex
-        // item either way.
-        guard stack.alignment == .leading, parentIsFlex else {
+        // At one child the wrapper shrink-wraps, so its own align-items has no
+        // slack to place the child within — measured identical across every
+        // parent × wrapper alignment pair except a stretching parent, which a
+        // StackAlignment can never produce (leading/center/trailing map to
+        // flex-start/center/flex-end). What still decides the child's sizing is
+        // whichever ancestor survives, hence parentIsFlex.
+        guard parentIsFlex else {
             return nil
         }
         return container

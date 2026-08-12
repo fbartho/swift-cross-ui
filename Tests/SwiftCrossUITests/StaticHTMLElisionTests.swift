@@ -33,21 +33,146 @@ struct StaticHTMLElisionTests {
     }
 
     @MainActor
-    @Test("A centering wrapper survives, since it places its child")
+    @Test("A centering stack of several children survives, since it places them")
     func centeringWrapperSurvives() {
-        // align-items positions the child on the cross axis within this
-        // element's own box, which is real work at any child count — only
-        // flex-start names the placement block flow already gives. Eliding
-        // these moved every anchor element on all three site pages.
+        // align-items genuinely distributes two or more items within this
+        // element's own box. At one child the box shrink-wraps and the same
+        // declaration has no slack to work in, so only the multi-child case
+        // is real work.
         let html = StaticHTMLRenderer.render(
-            VStack(alignment: .center) {
-                Text("Centered")
+            VStack(alignment: .leading) {
+                VStack(alignment: .center) {
+                    Text("One")
+                    Text("Two")
+                }
             },
             context: "Centering wrapper"
         ).html
 
         let rule = Self.internedRule(containing: "align-items:center", in: html)
         #expect(rule != nil)
+    }
+
+    @MainActor
+    @Test("A single-child wrapper under a centering parent is elided")
+    func centeredParentSingleChildWrapperIsElided() {
+        // The wrapper inherits the default center alignment rather than
+        // declaring one, and at one child its own align-items has no slack to
+        // place the child within — only the parent's alignment decides the
+        // child's box, and a StackAlignment can never say stretch.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .center) {
+                Group {
+                    Text("Only")
+                }
+            },
+            context: "Centered parent"
+        ).html
+
+        #expect(html.contains("Only"))
+        #expect(!html.contains("data-scui=\"Group\""))
+    }
+
+    @MainActor
+    @Test("A single-child wrapper under a trailing parent is elided")
+    func trailingParentSingleChildWrapperIsElided() {
+        // .trailing maps to flex-end, which is as inert at one child as
+        // center: the shrink-wrapped wrapper has no cross-axis slack either
+        // way.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .trailing) {
+                Group {
+                    Text("Only")
+                }
+            },
+            context: "Trailing parent"
+        ).html
+
+        #expect(html.contains("Only"))
+        #expect(!html.contains("data-scui=\"Group\""))
+    }
+
+    @MainActor
+    @Test("A wrapper is single-child independently of its parent's child count")
+    func oneChildWrapperInsideTwoChildStackIsElided() {
+        // The stack has two children and keeps its element; the wrapper
+        // around the first has one and goes. The elision question is asked of
+        // each container about its own children.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .center) {
+                Group {
+                    Text("Alpha")
+                }
+                Text("Beta")
+            },
+            context: "Two-child stack"
+        ).html
+
+        #expect(html.contains("data-scui=\"VStack\""))
+        #expect(!html.contains("data-scui=\"Group\""))
+    }
+
+    @MainActor
+    @Test("No stack alignment can produce align-items:stretch")
+    func stackAlignmentNeverProducesStretch() {
+        // The single-child elision law rests on stretch being unreachable
+        // from a stack's alignment: a stretching parent is the one case where
+        // the wrapper would be load-bearing. The switch is exhaustive so a
+        // fourth StackAlignment case fails compilation here and points at the
+        // law before it silently breaks.
+        func probe(_ alignment: StackAlignment) -> (stack: HorizontalAlignment, css: String) {
+            switch alignment {
+                case .leading: (.leading, "flex-start")
+                case .center: (.center, "center")
+                case .trailing: (.trailing, "flex-end")
+            }
+        }
+
+        for alignment in [StackAlignment.leading, .center, .trailing] {
+            let (stackAlignment, expectedCSS) = probe(alignment)
+            let html = StaticHTMLRenderer.render(
+                VStack(alignment: stackAlignment) {
+                    Text("One")
+                    Text("Two")
+                },
+                context: "Alignment mapping"
+            ).html
+
+            #expect(
+                Self.internedRule(
+                    containing: "align-items:\(expectedCSS)",
+                    in: html
+                ) != nil
+            )
+            #expect(Self.internedRule(containing: "align-items:stretch", in: html) == nil)
+        }
+    }
+
+    @MainActor
+    @Test("No emitted rule selects through one interned class to another")
+    func noCombinatorsOverInternedClasses() {
+        // Elision is safe against the stylesheet because no selector can
+        // depend on a structural wrapper's presence: every interned rule
+        // names exactly one class. A combinator between two interned classes
+        // would break that property, so its absence is pinned here.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .center) {
+                Group {
+                    Text("Alpha")
+                }
+                HStack {
+                    Text("Beta")
+                    Text("Gamma")
+                }
+            },
+            context: "Combinator guard"
+        ).html
+
+        let combinator = html.range(
+            of: #"\.scui-[0-9a-z]+[^{,\n]*[ >+~][^{,\n]*\.scui-"#,
+            options: .regularExpression
+        )
+        #expect(combinator == nil)
     }
 
     @MainActor

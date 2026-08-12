@@ -2915,16 +2915,20 @@ struct StaticHTMLAccessibilityTests {
     @Test("A wrapper outside a list keeps its element")
     func wrappersOutsideListsAreUntouched() {
         // The elision is scoped to elements whose content model demands it.
+        // The witness wrapper carries two children so it survives on its own
+        // merits — it stands for "not spliced by the list rule", not for
+        // doing no work.
         let html = StaticHTMLRenderer.render(
             VStack {
                 ForEach(["a", "b"]) { item in
                     Text(item)
+                    Text("·")
                 }
             },
             context: "Plain stack"
         ).html
 
-        #expect(html.contains("data-scui=\"TupleView1\""))
+        #expect(html.contains("data-scui=\"TupleView2\""))
     }
 
     @MainActor
