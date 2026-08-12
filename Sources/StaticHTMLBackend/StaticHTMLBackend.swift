@@ -274,8 +274,10 @@ public final class StaticHTMLBackend:
     public class SimpleButton: Widget {
         public var label = ""
         public var font: Font.Resolved?
-        /// The appearance requested by ``SwiftCrossUI/View/htmlButtonStyle(_:)``.
-        public var style: HTMLButtonStyle = .automatic
+        /// The style resolved from the environment by
+        /// ``SwiftCrossUI/View/buttonStyle(_:)``, falling back to
+        /// ``StaticHTMLBackend/defaultButtonStyle()``.
+        public var style: ButtonStyle = .bordered
 
         /// Buttons take their intrinsic size from the backend, so leaving this
         /// at zero would render them 0x0. Estimated from the label the same
@@ -308,8 +310,6 @@ public final class StaticHTMLBackend:
         /// ``SwiftCrossUI/View/buttonStyle(_:)``, falling back to
         /// ``StaticHTMLBackend/defaultButtonStyle()``.
         public var buttonStyle: ButtonStyle = .bordered
-        /// The appearance requested by ``SwiftCrossUI/View/htmlButtonStyle(_:)``.
-        public var style: HTMLButtonStyle = .automatic
 
         /// Creates a button wrapping the given label widget.
         ///
@@ -858,7 +858,7 @@ public final class StaticHTMLBackend:
         let button = button as! SimpleButton
         button.label = label
         button.font = environment.resolvedFont
-        button.style = environment.htmlButtonStyle
+        button.style = environment.resolvedButtonStyle
         button.captureIntent(from: environment)
     }
 
@@ -873,23 +873,15 @@ public final class StaticHTMLBackend:
     ) {
         let button = button as! ViewLabelButton
         button.buttonStyle = environment.resolvedButtonStyle
-        button.style = HTMLButtonStyle(
-            resolving: environment.buttonStyle,
-            html: environment.htmlButtonStyle
-        )
         button.captureIntent(from: environment)
     }
 
     public func buttonPadding(in environment: EnvironmentValues) -> SIMD2<Int> {
-        let style = HTMLButtonStyle(
-            resolving: environment.buttonStyle,
-            html: environment.htmlButtonStyle
-        )
-        return style.padding(forFont: environment.resolvedFont)
+        environment.resolvedButtonStyle.padding(forFont: environment.resolvedFont)
     }
 
     public func defaultButtonStyle() -> ButtonStyle {
-        // The emitted default is a bordered button (`.scui-btn-automatic`
+        // The emitted default is a bordered button (`.scui-btn-bordered`
         // carries a border and a background), so the style the core resolves
         // for an unstyled button has to say the same thing — the layout
         // system sizes labels against it.

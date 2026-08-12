@@ -1634,7 +1634,7 @@ struct StaticHTMLBackendTests {
             context: "Default button"
         ).html
 
-        #expect(html.contains("class=\"scui-btn-automatic"))
+        #expect(html.contains("class=\"scui-btn-bordered"))
         #expect(html.contains("border-color: light-dark("))
         #expect(html.contains("border-radius:"))
         #expect(html.contains("cursor: pointer"))
@@ -1704,14 +1704,21 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("Each button style emits its own class", arguments: HTMLButtonStyle.allCases)
-    func buttonStyleEmitsItsClass(style: HTMLButtonStyle) {
+    @Test(
+        "Each button style emits its own class",
+        arguments: [
+            (ButtonStyle.bordered, "scui-btn-bordered"),
+            (ButtonStyle.borderless, "scui-btn-borderless"),
+            (ButtonStyle.plain, "scui-btn-plain"),
+        ]
+    )
+    func buttonStyleEmitsItsClass(style: ButtonStyle, className: String) {
         let html = StaticHTMLRenderer.render(
-            Button("Press") {}.htmlButtonStyle(style),
+            Button("Press") {}.buttonStyle(style),
             context: "Styled button"
         ).html
 
-        #expect(html.contains("class=\"\(style.className)"))
+        #expect(html.contains("class=\"\(className)"))
     }
 
     @MainActor
@@ -1722,14 +1729,14 @@ struct StaticHTMLBackendTests {
         // is where a border has to sit for the focus ring and hit area to
         // agree with it.
         let html = StaticHTMLRenderer.render(
-            Button("Press") {}.htmlButtonStyle(.borderedProminent),
-            context: "Prominent button"
+            Button("Press") {}.buttonStyle(.borderless),
+            context: "Borderless button"
         ).html
 
         let start = try #require(html.range(of: "<button"))
         let end = try #require(html.range(of: ">", range: start.upperBound..<html.endIndex))
         let tag = String(html[start.lowerBound..<end.upperBound])
-        #expect(tag.contains("scui-btn-borderedprominent"))
+        #expect(tag.contains("scui-btn-borderless"))
     }
 
     @MainActor
@@ -1742,7 +1749,7 @@ struct StaticHTMLBackendTests {
                 Button("One") {}
                 Button("Two") {}
             }
-            .htmlButtonStyle(.borderless),
+            .buttonStyle(.borderless),
             context: "Inherited style"
         ).html
 
@@ -1757,7 +1764,7 @@ struct StaticHTMLBackendTests {
         // A Button with an href emits an <a>, so rules keyed off the `button`
         // element would style only half the matrix. Both rows carry the class.
         let anchorHTML = StaticHTMLRenderer.render(
-            Button("Go") {}.href("/docs").htmlButtonStyle(.bordered),
+            Button("Go") {}.href("/docs").buttonStyle(.bordered),
             context: "Styled link"
         ).html
 
@@ -1823,12 +1830,12 @@ struct StaticHTMLBackendTests {
         // Per tier activation: the still image has to say the control is
         // disabled without pretending it's a different kind of control.
         let html = StaticHTMLRenderer.render(
-            Button("Press") {}.htmlButtonStyle(.borderedProminent),
-            context: "Disabled prominent button"
+            Button("Press") {}.buttonStyle(.borderless),
+            context: "Disabled borderless button"
         ).html
 
         #expect(html.contains("disabled=\"disabled\""))
-        #expect(html.contains("scui-btn-borderedprominent"))
+        #expect(html.contains("scui-btn-borderless"))
         #expect(html.contains("opacity: 0.55"))
     }
 

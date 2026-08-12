@@ -582,7 +582,7 @@ public struct HTMLEmitter {
                     controlAttributes["type"] = "button"
                     controlAttributes["data-scui-enliven"] = "js"
                 }
-                extraClasses.append(button.style.className)
+                extraClasses.append(button.buttonStyle.className)
                 style.set("inline-flex", for: "display")
                 style.set("center", for: "align-items")
                 style.set("center", for: "justify-content")
@@ -657,7 +657,7 @@ public struct HTMLEmitter {
                 // chrome; without it the reset leaves it as bare text, which
                 // is the one thing a control named for a button can't look
                 // like. Pressed state comes from the aria-pressed rule.
-                extraClasses.append(HTMLButtonStyle.automatic.className)
+                extraClasses.append(ButtonStyle.bordered.className)
                 if let font = toggleButton.font {
                     style.set("\(Int(font.pointSize))px", for: "font-size")
                     style.set("\(Int(font.lineHeight))px", for: "line-height")

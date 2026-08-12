@@ -122,7 +122,7 @@ extension HTMLFragmentRegistry {
     /// author colors reaching the emitter through a render — they're the
     /// backend's own chrome, so they need no per-page plumbing.
     ///
-    /// The button rules key off ``HTMLButtonStyle``'s classes rather than the
+    /// The button rules key off the button style classes rather than the
     /// `button` element, because a Button carrying an `href` emits as an `<a>`
     /// and has to look identical to the one that didn't. Keying off the
     /// element would style only half the emission matrix.
@@ -171,34 +171,22 @@ extension HTMLFragmentRegistry {
                   color: inherit;
                   appearance: none;
                 }
-                :where(#root .scui-btn-automatic, #root .scui-btn-bordered,
-                       #root .scui-btn-borderedprominent, #root .scui-btn-borderless,
+                :where(#root .scui-btn-bordered, #root .scui-btn-borderless,
                        #root .scui-btn-plain) {
                   padding: 0.3em 0.8em;
                   border: 1px solid transparent;
                   border-radius: 0.4em;
                   cursor: pointer;
                 }
-                :where(#root a.scui-btn-automatic, #root a.scui-btn-bordered,
-                       #root a.scui-btn-borderedprominent) {
+                :where(#root a.scui-btn-bordered) {
                   text-decoration: none;
                 }
-                :where(#root .scui-btn-automatic, #root .scui-btn-bordered) {
+                :where(#root .scui-btn-bordered) {
                   border-color: light-dark(rgba(0,0,0,0.28), rgba(255,255,255,0.32));
                   background: light-dark(rgba(255,255,255,0.9), rgba(255,255,255,0.09));
                 }
-                :where(#root .scui-btn-automatic:hover:not(:disabled),
-                       #root .scui-btn-bordered:hover:not(:disabled)) {
+                :where(#root .scui-btn-bordered:hover:not(:disabled)) {
                   background: light-dark(rgba(0,0,0,0.05), rgba(255,255,255,0.16));
-                }
-                :where(#root .scui-btn-borderedprominent) {
-                  border-color: light-dark(rgba(0,60,160,1), rgba(120,170,255,1));
-                  background: light-dark(rgba(0,80,200,1), rgba(80,140,240,1));
-                  color: light-dark(rgba(255,255,255,1), rgba(10,12,16,1));
-                  font-weight: 600;
-                }
-                :where(#root .scui-btn-borderedprominent:hover:not(:disabled)) {
-                  background: light-dark(rgba(0,64,168,1), rgba(112,164,248,1));
                 }
                 :where(#root .scui-btn-borderless:hover:not(:disabled)) {
                   background: light-dark(rgba(0,0,0,0.06), rgba(255,255,255,0.12));
