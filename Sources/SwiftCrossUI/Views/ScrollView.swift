@@ -143,12 +143,12 @@ public struct ScrollView<Content: View>: TypeSafeView, View {
             outerSize.height += horizontalScrollBarHeight
         }
 
-        // Guides deliberately stop here. On a scrolling axis the content's
-        // offset within the viewport is a scroll position the layout system
-        // never sees, so a guide propagated out would hold only while scrolled
-        // to the origin, and an ancestor aligning on it would be dragged around
-        // by the user scrolling. Reporting none leaves ancestors aligning on
-        // the scroll view's own edges, which is stable.
+        // Guides deliberately stop here, matching SwiftUI: measured 2026-08-13,
+        // it refuses guide propagation out of a ScrollView even when the
+        // content is shorter than the viewport and no scrolling is possible, so
+        // the refusal is structural rather than a consequence of scroll offset.
+        // Reporting none leaves ancestors aligning on the scroll view's own
+        // edges.
         return ViewLayoutResult(
             size: outerSize,
             childResults: [finalChildResult],
