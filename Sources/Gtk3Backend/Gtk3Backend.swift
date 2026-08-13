@@ -634,7 +634,8 @@ public final class Gtk3Backend:
 
     public func setColor(
         ofColorableRectangle widget: Widget,
-        to color: SwiftCrossUI.Color.Resolved
+        to color: SwiftCrossUI.Color.Resolved,
+        environment: EnvironmentValues
     ) {
         widget.css.set(property: .backgroundColor(color.gtkColor))
         widget.css.set(property: CSSProperty(key: "background-clip", value: "border-box"))
