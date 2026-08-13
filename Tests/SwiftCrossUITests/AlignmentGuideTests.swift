@@ -611,6 +611,70 @@ struct AlignmentGuideTests {
         #expect(result.explicitGuides[VerticalAlignment.top.key] == 0)
     }
 
+    // MARK: Multi-child guide consumers
+
+    /// The container side of an alignment used to resolve against the
+    /// container's own default for the guide, which is a value none of its
+    /// children reported. With two children both sourcing a custom guide, that
+    /// puts the one whose guide sits deepest in its own box at a negative
+    /// offset, outside the container.
+    @MainActor
+    @Test("An overlay aligning a custom guide keeps both children inside itself")
+    func overlayOnCustomGuideKeepsChildrenInside() {
+        let view = Color.blue.frame(width: 40, height: 40)
+            .alignmentGuide(.fifth) { _ in 35 }
+            .overlay(alignment: Alignment(horizontal: .center, vertical: .fifth)) {
+                Color.green.frame(width: 10, height: 10)
+                    .alignmentGuide(.fifth) { _ in 5 }
+            }
+
+        let node = committedNode(for: view)
+        let offsets = committedOffsets(in: node.widget)
+        #expect(
+            offsets.allSatisfy { $0.y >= 0 },
+            "a child was placed above the overlay's own top edge: \(offsets)"
+        )
+    }
+
+    /// Both children of a multi-child consumer land on one line, rather than
+    /// each being resolved against the container independently.
+    @MainActor
+    @Test("An overlay places both children on one shared custom-guide line")
+    func overlayPlacesBothChildrenOnOneLine() {
+        let view = Color.blue.frame(width: 40, height: 40)
+            .alignmentGuide(.fifth) { _ in 30 }
+            .overlay(alignment: Alignment(horizontal: .center, vertical: .fifth)) {
+                Color.green.frame(width: 10, height: 10)
+                    .alignmentGuide(.fifth) { _ in 4 }
+            }
+
+        let node = committedNode(for: view)
+        let container = container(withChildCount: 2, in: node.widget)
+        let positions = positions(of: container ?? node.widget)
+
+        // The line sits at 30, so the base needs no shift and the overlay drops
+        // to 26 to put its own guide on the same line.
+        #expect(positions.map(\.y) == [0, 26])
+    }
+
+    /// A single-child consumer is the case the old container-side resolution
+    /// got right, so the fix must leave it exactly where it was.
+    @MainActor
+    @Test("A frame still places a single guide-setting child where it always did")
+    func singleChildFramePlacementIsUnchanged() {
+        for alignment in [Alignment.top, .center, .bottom] {
+            let view = Color.blue.frame(width: 10, height: 20)
+                .alignmentGuide(.fifth) { _ in 6 }
+                .frame(width: 10, height: 60, alignment: alignment)
+
+            let result = computeLayout(of: view)
+            // The child's guide is the line whatever the frame aligns on, so
+            // the frame reports it offset by wherever the child was placed.
+            let placed = alignment.vertical.position(ofChild: 20, in: 60)
+            #expect(result.explicitGuides[VerticalAlignment.fifth.key] == placed + 6)
+        }
+    }
+
     // MARK: Helpers
 
     @MainActor

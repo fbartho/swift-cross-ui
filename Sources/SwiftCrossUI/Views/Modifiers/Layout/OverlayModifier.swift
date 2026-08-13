@@ -74,17 +74,21 @@ struct OverlayModifier<Content: View, Overlay: View>: TypeSafeView {
             max(contentSize.height, overlaySize.height)
         )
 
+        // Both children share one line derived from both of them, so an overlay
+        // aligned on a guide the two resolve differently lands where each one's
+        // own guide actually sits.
+        let placements = alignment.placements(
+            ofChildren: [contentResult, overlayResult],
+            in: size
+        )
+
         // Only the content's guides propagate: an overlay decorates the view
         // it sits on and must not move an ancestor's alignment of it.
-        let contentPosition = alignment.position(ofChild: contentResult, in: size)
-
         return ViewLayoutResult(
             size: size,
             childResults: [contentResult, overlayResult],
             explicitGuides: ViewLayoutResult.aggregateGuides(
-                children: [
-                    (contentResult, SIMD2(Double(contentPosition.x), Double(contentPosition.y)))
-                ]
+                children: [(contentResult, placements[0])]
             )
         )
     }
@@ -100,11 +104,21 @@ struct OverlayModifier<Content: View, Overlay: View>: TypeSafeView {
         let contentResult = children.child0.commit()
         let overlayResult = children.child1.commit()
 
-        let contentPosition = alignment.position(ofChild: contentResult, in: frameSize)
-        let overlayPosition = alignment.position(ofChild: overlayResult, in: frameSize)
+        let placements = alignment.placements(
+            ofChildren: [contentResult, overlayResult],
+            in: frameSize
+        )
 
-        backend.setPosition(ofChildAt: 0, in: widget, to: contentPosition)
-        backend.setPosition(ofChildAt: 1, in: widget, to: overlayPosition)
+        for (index, placement) in placements.enumerated() {
+            backend.setPosition(
+                ofChildAt: index,
+                in: widget,
+                to: SIMD2(
+                    LayoutSystem.roundSize(placement.x),
+                    LayoutSystem.roundSize(placement.y)
+                )
+            )
+        }
 
         backend.setSize(of: widget, to: frameSize.vector)
     }
