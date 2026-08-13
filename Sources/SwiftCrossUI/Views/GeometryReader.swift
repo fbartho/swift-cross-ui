@@ -62,7 +62,12 @@ public struct GeometryReader<Content: View>: TypeSafeView, View {
         let size = proposedSize.replacingUnspecifiedDimensions(by: ViewSize(10, 10))
         let view = content(GeometryProxy(size: size))
 
-        let environment = environment.with(\.layoutAlignment, .leading)
+        // Both axes' near-edge guides resolve to zero, so this pins the content
+        // to the corner whichever orientation is inherited.
+        let environment = environment.with(
+            \.layoutAlignment,
+            HorizontalAlignment.leading.key
+        )
 
         let contentNode: AnyViewGraphNode<Content>
         if let node = children.node {

@@ -56,7 +56,7 @@ public struct HStack<Content: View>: View {
             proposedSize: proposedSize,
             environment: environment
                 .with(\.layoutOrientation, .horizontal)
-                .with(\.layoutAlignment, alignment.asStackAlignment)
+                .with(\.layoutAlignment, alignment.key)
                 .with(\.layoutSpacing, spacing),
             backend: backend
         )
@@ -79,7 +79,7 @@ public struct HStack<Content: View>: View {
             layout: layout,
             environment: environment
                 .with(\.layoutOrientation, .horizontal)
-                .with(\.layoutAlignment, alignment.asStackAlignment)
+                .with(\.layoutAlignment, alignment.key)
                 .with(\.layoutSpacing, spacing),
             backend: backend
         )

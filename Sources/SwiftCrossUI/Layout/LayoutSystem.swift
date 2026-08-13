@@ -101,6 +101,121 @@ public enum LayoutSystem {
         }
     }
 
+    /// The cross-axis geometry a stack derives from its children's alignment
+    /// guides: where each child sits across the axis, and how much room the
+    /// stack needs to hold them all.
+    struct StackCrossGeometry {
+        /// Each child's offset across the stack's axis, indexed as `children`
+        /// is. Hidden children get zero.
+        var offsets: [Double]
+        /// The stack's own extent across its axis: the distance from the
+        /// furthest extent above the shared guide line to the furthest below.
+        var crossSize: Double
+        /// Where the shared guide line sits within the stack, across its axis.
+        var guideLine: Double
+    }
+
+    /// Places a stack's children across its axis so that every child's
+    /// alignment guide falls on one shared line.
+    ///
+    /// This is the whole cross-axis algorithm, and both phases run it: compute
+    /// calls it to size the stack, and commit calls it again after any space
+    /// redistribution so the positions it applies match the children's final
+    /// sizes rather than the ones compute saw.
+    ///
+    /// With no explicit guides and a built-in alignment it reduces to the edge
+    /// arithmetic it replaces: the guide line lands at
+    /// `max(childGuide)`, each offset at `line - childGuide`, and the cross
+    /// size at `max(childSize)`.
+    ///
+    /// - Parameters:
+    ///   - children: The children's layout results, in visual order.
+    ///   - alignment: The guide the stack aligns on.
+    ///   - orientation: The axis the stack stacks along; children are aligned
+    ///     across its perpendicular.
+    /// - Returns: The children's cross-axis offsets and the stack's cross size.
+    static func stackCrossGeometry(
+        of children: [ViewLayoutResult],
+        alignment: AlignmentKey,
+        orientation: Orientation
+    ) -> StackCrossGeometry {
+        let perpendicular = orientation.perpendicular
+        let visible = children.filter(\.participatesInStackLayouts)
+
+        // The shared line sits as far across the axis as the child needing the
+        // most room above it, so no child is pushed to a negative offset.
+        let guideLine = visible.map { $0.resolvedGuide(alignment) }.max() ?? 0
+
+        // Behaviour 5: the stack grows to hold the largest extent above the
+        // line plus the largest below, which a guide-shifted child can push
+        // beyond the size of the tallest child on its own.
+        let below =
+            visible.map { child in
+                child.size[component: perpendicular] - child.resolvedGuide(alignment)
+            }.max() ?? 0
+
+        let offsets = children.map { child in
+            child.participatesInStackLayouts
+                ? guideLine - child.resolvedGuide(alignment)
+                : 0
+        }
+
+        return StackCrossGeometry(
+            offsets: offsets,
+            crossSize: guideLine + below,
+            guideLine: guideLine
+        )
+    }
+
+    /// Places a stack's children along and across its axis, and derives the
+    /// guides the stack itself reports from theirs.
+    ///
+    /// Pure in its inputs, so both phases can run it and agree.
+    ///
+    /// - Parameters:
+    ///   - children: The children's layout results, in visual order.
+    ///   - alignment: The guide the stack aligns on.
+    ///   - orientation: The axis the stack stacks along.
+    ///   - spacing: The gap between adjacent visible children.
+    /// - Returns: Each child's placement, the stack's cross size, and the
+    ///   stack's own explicit guides.
+    static func stackPlacements(
+        of children: [ViewLayoutResult],
+        alignment: AlignmentKey,
+        orientation: Orientation,
+        spacing: Int
+    ) -> (
+        placements: [SIMD2<Double>],
+        crossSize: Double,
+        explicitGuides: [AlignmentKey: Double]
+    ) {
+        let perpendicular = orientation.perpendicular
+        let cross = stackCrossGeometry(
+            of: children,
+            alignment: alignment,
+            orientation: orientation
+        )
+
+        var placements = [SIMD2<Double>](repeating: .zero, count: children.count)
+        var along = 0.0
+        for (index, child) in children.enumerated() {
+            guard child.participatesInStackLayouts else {
+                continue
+            }
+            var position = Position.zero
+            position[component: orientation] = along
+            position[component: perpendicular] = cross.offsets[index]
+            placements[index] = SIMD2(position.x, position.y)
+            along += child.size[component: orientation] + Double(spacing)
+        }
+
+        let guides = ViewLayoutResult.aggregateGuides(
+            children: zip(children, placements).map { ($0, $1) }
+        )
+
+        return (placements, cross.crossSize, guides)
+    }
+
     /// - Parameter inheritStackLayoutParticipation: If `true`, the stack layout
     ///   will have ``ViewSize/participateInStackLayoutsWhenEmpty`` set to `true`
     ///   if all of its children have it set to true. This allows views such as
@@ -124,7 +239,6 @@ public enum LayoutSystem {
         if stackLength == 0 || stackLength == .infinity || stackLength == nil || children.count == 1
         {
             var resultLength: Double = 0
-            var resultWidth: Double = 0
             var results: [ViewLayoutResult] = []
             for child in children {
                 let result = child.computeLayout(
@@ -132,7 +246,6 @@ public enum LayoutSystem {
                     environment: environment
                 )
                 resultLength += result.size[component: orientation]
-                resultWidth = max(resultWidth, result.size[component: perpendicularOrientation])
                 results.append(result)
             }
 
@@ -140,10 +253,17 @@ public enum LayoutSystem {
                 result.participatesInStackLayouts
             }
 
+            let placement = stackPlacements(
+                of: results,
+                alignment: environment.layoutAlignment,
+                orientation: orientation,
+                spacing: spacing
+            )
+
             let totalSpacing = Double(max(visibleChildrenCount - 1, 0) * spacing)
             var size = ViewSize.zero
             size[component: orientation] = resultLength + totalSpacing
-            size[component: perpendicularOrientation] = resultWidth
+            size[component: perpendicularOrientation] = placement.crossSize
 
             // In this case, flexibility and layout priority don't matter. We set
             // the grouping to the trivial grouping so that commitStackLayout
@@ -174,7 +294,8 @@ public enum LayoutSystem {
                 childResults: results,
                 participateInStackLayoutsWhenEmpty: results
                     .contains(where: \.participateInStackLayoutsWhenEmpty),
-                preferencesOverlay: nil
+                preferencesOverlay: nil,
+                explicitGuides: placement.explicitGuides
             )
         }
 
@@ -197,17 +318,24 @@ public enum LayoutSystem {
             ignoreHiddenChildrenEntirely: false
         )
 
+        let placement = stackPlacements(
+            of: renderedChildren,
+            alignment: environment.layoutAlignment,
+            orientation: orientation,
+            spacing: spacing
+        )
+
         var size = ViewSize.zero
         size[component: orientation] =
             renderedChildren.map(\.size[component: orientation]).reduce(0, +) + cache.totalSpacing
-        size[component: perpendicularOrientation] =
-            renderedChildren.map(\.size[component: perpendicularOrientation]).max() ?? 0
+        size[component: perpendicularOrientation] = placement.crossSize
 
         return ViewLayoutResult(
             size: size,
             childResults: renderedChildren,
             participateInStackLayoutsWhenEmpty: renderedChildren
-                .contains(where: \.participateInStackLayoutsWhenEmpty)
+                .contains(where: \.participateInStackLayoutsWhenEmpty),
+            explicitGuides: placement.explicitGuides
         )
     }
 
@@ -338,10 +466,15 @@ public enum LayoutSystem {
         let orientation = environment.layoutOrientation
         let perpendicularOrientation = orientation.perpendicular
 
+        // A backend that re-expresses the stack in its own layout system has
+        // only the three edge spellings to say this with, so a custom guide is
+        // described as the closest thing that doesn't misplace the children a
+        // backend positions itself. Faithful custom-guide description needs a
+        // richer hook than this signature can carry.
         backend.describeStackLayout(
             of: container,
             orientation: orientation,
-            alignment: alignment,
+            alignment: alignment.asStackAlignment ?? .center,
             spacing: spacing
         )
 
@@ -371,7 +504,22 @@ public enum LayoutSystem {
 
         let renderedChildren = children.map { $0.commit() }
 
-        var position = Position.zero
+        // Re-derived rather than carried over from compute: redistribution may
+        // have changed the children's sizes, and a guide is a function of the
+        // size it was resolved against.
+        let placement = stackPlacements(
+            of: renderedChildren,
+            alignment: alignment,
+            orientation: orientation,
+            spacing: spacing
+        )
+
+        // The stack keeps the cross size it promised its parent at compute
+        // time; the guide line re-centres within it so that a redistribution
+        // that shrank a child doesn't leave the line where nothing sits.
+        let crossSlack =
+            size[component: perpendicularOrientation] - placement.crossSize
+
         for (index, child) in renderedChildren.enumerated() {
             // Avoid the whole iteration if the child is hidden. If there
             // are weird positioning issues for views that do strange things
@@ -380,24 +528,28 @@ public enum LayoutSystem {
                 continue
             }
 
-            // Compute alignment
-            switch alignment {
-                case .leading:
-                    position[component: perpendicularOrientation] = 0
-                case .center:
-                    let outer = size[component: perpendicularOrientation]
-                    let inner = child.size[component: perpendicularOrientation]
-                    position[component: perpendicularOrientation] = (outer - inner) / 2
-                case .trailing:
-                    let outer = size[component: perpendicularOrientation]
-                    let inner = child.size[component: perpendicularOrientation]
-                    position[component: perpendicularOrientation] = outer - inner
-            }
+            var position = Position(placement.placements[index].x, placement.placements[index].y)
+            position[component: perpendicularOrientation] +=
+                crossSlack * alignmentSlackFraction(alignment)
 
             backend.setPosition(ofChildAt: index, in: container, to: position.vector)
-
-            position[component: orientation] += child.size[component: orientation] + Double(spacing)
         }
+    }
+
+    /// How a stack distributes cross-axis slack between the space above its
+    /// guide line and the space below, when its committed cross size exceeds
+    /// what its children need.
+    ///
+    /// The three built-in edge alignments keep their historical behaviour
+    /// exactly — leading pins to the near edge, trailing to the far edge,
+    /// center splits the difference. A custom guide has no edge to pin to, so
+    /// it splits like center.
+    static func alignmentSlackFraction(_ alignment: AlignmentKey) -> Double {
+        let unit = ViewDimensions(size: ViewSize(1, 1), explicitGuides: [:])
+        // A guide's default value at unit size is exactly the fraction of the
+        // view that sits above the line, which is the fraction of the slack
+        // that belongs above it.
+        return alignment.defaultValue(in: unit)
     }
 
     /// The main stack layout space allocation algorithm. Used during

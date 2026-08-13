@@ -50,24 +50,29 @@ public struct Alignment: Hashable, Sendable {
         ofChild child: SIMD2<Int>,
         in parent: SIMD2<Int>
     ) -> SIMD2<Int> {
-        let x =
-            switch horizontal {
-                case .leading:
-                    0
-                case .center:
-                    (parent.x - child.x) / 2
-                case .trailing:
-                    parent.x - child.x
-            }
-        let y =
-            switch vertical {
-                case .top:
-                    0
-                case .center:
-                    (parent.y - child.y) / 2
-                case .bottom:
-                    parent.y - child.y
-            }
-        return SIMD2(x, y)
+        position(
+            ofChild: ViewLayoutResult.leafView(size: ViewSize(child)),
+            in: ViewSize(parent)
+        )
+    }
+
+    /// Computes the position of a child in a parent view, honouring any
+    /// explicit alignment guides the child reports.
+    ///
+    /// - Parameters:
+    ///   - child: The child's layout result, whose explicit guides override
+    ///     this alignment's defaults on either axis.
+    ///   - parent: The size of the parent.
+    /// - Returns: The position of the child within the parent, as an x/y
+    ///   vector.
+    func position(
+        ofChild child: ViewLayoutResult,
+        in parent: ViewSize
+    ) -> SIMD2<Int> {
+        let parentDimensions = ViewDimensions(size: parent, explicitGuides: [:])
+        let childDimensions = child.dimensions
+        let x = parentDimensions[horizontal] - childDimensions[horizontal]
+        let y = parentDimensions[vertical] - childDimensions[vertical]
+        return SIMD2(LayoutSystem.roundSize(x), LayoutSystem.roundSize(y))
     }
 }
