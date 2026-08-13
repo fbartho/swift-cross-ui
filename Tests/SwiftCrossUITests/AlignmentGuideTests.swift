@@ -611,6 +611,198 @@ struct AlignmentGuideTests {
         #expect(result.explicitGuides[VerticalAlignment.top.key] == 0)
     }
 
+    // MARK: 9. Baselines
+
+    /// DummyBackend's synthetic line box: glyphs `pointSize` tall sitting at the
+    /// bottom of a line `lineHeight` tall, so the baseline is the glyph height
+    /// plus half of the leading.
+    @MainActor
+    var syntheticLineMetrics: (lineHeight: Double, ascent: Double) {
+        let font = environment.resolvedFont
+        let lineHeight = Double(Int(font.lineHeight))
+        let characterHeight = Double(Int(font.pointSize))
+        return (lineHeight, characterHeight + max(lineHeight - characterHeight, 0) / 2)
+    }
+
+    @MainActor
+    @Test("Text reports both baselines from its backend's metrics")
+    func textSourcesBothBaselines() {
+        let result = computeLayout(of: Text("Hello"))
+        let metrics = syntheticLineMetrics
+
+        // One line, so both baselines coincide.
+        #expect(result.explicitGuides[VerticalAlignment.firstTextBaseline.key] == metrics.ascent)
+        #expect(result.explicitGuides[VerticalAlignment.lastTextBaseline.key] == metrics.ascent)
+    }
+
+    @MainActor
+    @Test("Multi-line text separates its first and last baselines by the wrapped lines")
+    func multiLineTextSeparatesBaselines() {
+        // Narrow enough that the synthetic sizer wraps the string over lines.
+        let view = Text("Hello wrapping world")
+        let result = computeLayout(of: view, proposedSize: ProposedViewSize(40, 400))
+        let metrics = syntheticLineMetrics
+
+        let lineCount = (result.size.height / metrics.lineHeight).rounded(.down)
+        #expect(lineCount > 1, "fixture did not wrap; it can't separate the baselines")
+
+        #expect(result.explicitGuides[VerticalAlignment.firstTextBaseline.key] == metrics.ascent)
+        #expect(
+            result.explicitGuides[VerticalAlignment.lastTextBaseline.key]
+                == (lineCount - 1) * metrics.lineHeight + metrics.ascent
+        )
+    }
+
+    @MainActor
+    @Test("A view with no text in it reports its bottom edge as both baselines")
+    func nonTextDefaultsToBottomEdge() {
+        let dimensions = ViewDimensions(size: ViewSize(30, 60), explicitGuides: [:])
+        #expect(dimensions[VerticalAlignment.firstTextBaseline] == 60)
+        #expect(dimensions[VerticalAlignment.lastTextBaseline] == 60)
+    }
+
+    @MainActor
+    @Test("An image-shaped view sits on the text baseline it is aligned with")
+    func nonTextSitsOnTheBaseline() {
+        let view = HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("Hello")
+            Color.blue.frame(width: 10, height: 10)
+        }
+
+        let node = committedNode(for: view, proposedSize: ProposedViewSize(nil, nil))
+        let positions = positionsOfContainer(withChildCount: 2, in: node.widget)
+        let metrics = syntheticLineMetrics
+
+        // The colour's own baseline is its bottom edge, so its bottom lands on
+        // the text's baseline.
+        #expect(positions[1].y == LayoutSystem.roundSize(metrics.ascent - 10))
+    }
+
+    @MainActor
+    @Test("Baselines merge by min for the first and max for the last across branches")
+    func baselinesMergeByMinAndMax() {
+        // Two branches whose text sits at different depths and offsets, so the
+        // two baseline keys disagree and each combiner is visible.
+        let view = HStack(alignment: .top, spacing: 0) {
+            Text("Hello")
+            Text("World").padding(EdgeInsets(top: 20, bottom: 0, leading: 0, trailing: 0))
+        }
+
+        let result = computeLayout(of: view, proposedSize: ProposedViewSize(nil, nil))
+        let metrics = syntheticLineMetrics
+
+        // Branch baselines are `ascent` and `ascent + 20`: the topmost wins for
+        // first, the bottommost for last.
+        #expect(
+            result.explicitGuides[VerticalAlignment.firstTextBaseline.key] == metrics.ascent
+        )
+        #expect(
+            result.explicitGuides[VerticalAlignment.lastTextBaseline.key] == metrics.ascent + 20
+        )
+    }
+
+    /// The timeline idiom: an HStack aligning a label's baseline against the
+    /// baseline of text nested several levels deep inside a sibling VStack.
+    @MainActor
+    @Test("A baseline propagates out of a deep sibling subtree and aligns end to end")
+    func timelineIdiomAlignsAcrossBranches() {
+        let view = HStack(alignment: .firstTextBaseline, spacing: 0) {
+            Text("9:00")
+            VStack(alignment: .leading, spacing: 0) {
+                Color.blue.frame(width: 30, height: 25)
+                Text("Standup")
+            }
+        }
+
+        let node = committedNode(for: view, proposedSize: ProposedViewSize(nil, nil))
+        let positions = positionsOfContainer(withChildCount: 2, in: node.widget)
+        let metrics = syntheticLineMetrics
+
+        // The nested text's baseline sits 25 below the VStack's own top, so the
+        // VStack drops by however much the flat label's baseline is higher.
+        #expect(positions[0].y == 25)
+        #expect(positions[1].y == 0)
+
+        // And the whole stack reports the topmost baseline it contains.
+        let result = computeLayout(of: view, proposedSize: ProposedViewSize(nil, nil))
+        #expect(
+            result.explicitGuides[VerticalAlignment.firstTextBaseline.key]
+                == metrics.ascent + 25
+        )
+    }
+
+    @MainActor
+    @Test("The baseline composite alignments pair an edge with a baseline")
+    func baselineCompositesArePairs() {
+        #expect(Alignment.leadingFirstTextBaseline.horizontal == .leading)
+        #expect(Alignment.leadingFirstTextBaseline.vertical == .firstTextBaseline)
+        #expect(Alignment.centerFirstTextBaseline.horizontal == .center)
+        #expect(Alignment.trailingFirstTextBaseline.horizontal == .trailing)
+        #expect(Alignment.leadingLastTextBaseline.vertical == .lastTextBaseline)
+        #expect(Alignment.centerLastTextBaseline.horizontal == .center)
+        #expect(Alignment.trailingLastTextBaseline.vertical == .lastTextBaseline)
+    }
+
+    /// The protocol-extension path the five backends without real metrics take.
+    @MainActor
+    @Test("The derived metrics default puts the baseline inside the line box")
+    func derivedMetricsDefaultIsWellFormed() {
+        let font = environment.resolvedFont
+        let single = TextLayoutMetrics(
+            size: SIMD2(100, LayoutSystem.roundSize(font.lineHeight)),
+            derivedFrom: font
+        )
+        #expect(single.firstBaseline == single.lastBaseline)
+        #expect(single.firstBaseline > 0)
+        #expect(single.firstBaseline <= font.lineHeight)
+
+        let triple = TextLayoutMetrics(
+            size: SIMD2(100, LayoutSystem.roundSize(font.lineHeight * 3)),
+            derivedFrom: font
+        )
+        #expect(triple.firstBaseline == single.firstBaseline)
+        #expect(triple.lastBaseline == single.firstBaseline + font.lineHeight * 2)
+    }
+
+    // MARK: Transform-only propagation
+
+    @MainActor
+    @Test("A GeometryReader passes its content's guides through unchanged")
+    func geometryReaderPropagatesGuides() {
+        let view = GeometryReader { _ in
+            Color.blue.frame(width: 10, height: 20)
+                .alignmentGuide(.fifth) { _ in 6 }
+        }
+
+        let result = computeLayout(of: view, proposedSize: ProposedViewSize(50, 50))
+        #expect(result.explicitGuides[VerticalAlignment.fifth.key] == 6)
+    }
+
+    @MainActor
+    @Test("A ScrollView reports no guides, since its content's offset is a scroll position")
+    func scrollViewRefusesToPropagateGuides() {
+        let view = ScrollView {
+            Color.blue.frame(width: 10, height: 20)
+                .alignmentGuide(.fifth) { _ in 6 }
+        }
+
+        let result = computeLayout(of: view, proposedSize: ProposedViewSize(50, 50))
+        #expect(result.explicitGuides[VerticalAlignment.fifth.key] == nil)
+    }
+
+    @MainActor
+    @Test("A List reports no guides, since its backend places the rows")
+    func listRefusesToPropagateGuides() {
+        let selection = Binding<Int?>(get: { nil }, set: { _ in })
+        let view = List([1, 2], id: \.self, selection: selection) { _ in
+            Color.blue.frame(width: 10, height: 20)
+                .alignmentGuide(.fifth) { _ in 6 }
+        }
+
+        let result = computeLayout(of: view, proposedSize: ProposedViewSize(50, 50))
+        #expect(result.explicitGuides[VerticalAlignment.fifth.key] == nil)
+    }
+
     // MARK: Multi-child guide consumers
 
     /// The container side of an alignment used to resolve against the
