@@ -108,9 +108,57 @@ struct SplitView<Sidebar: View, Detail: View>: TypeSafeView, View {
             size.height = max(size.height, proposedHeight)
         }
 
+        // Both panes are centred in their own half at commit, so their guides
+        // transform by the same arithmetic. Both panes contribute: a guide
+        // sourced in either one is legitimately visible to an ancestor, and a
+        // key that both report merges through its own combiner like anywhere
+        // else.
         return ViewLayoutResult(
             size: size,
-            childResults: [leadingResult, trailingResult]
+            childResults: [leadingResult, trailingResult],
+            explicitGuides: ViewLayoutResult.aggregateGuides(
+                children: [
+                    (
+                        leadingResult,
+                        Self.panePlacement(
+                            of: leadingResult.size,
+                            inPaneOfWidth: leadingWidth,
+                            startingAt: 0,
+                            splitViewHeight: size.height
+                        )
+                    ),
+                    (
+                        trailingResult,
+                        Self.panePlacement(
+                            of: trailingResult.size,
+                            inPaneOfWidth: size.width - leadingWidth,
+                            startingAt: leadingWidth,
+                            splitViewHeight: size.height
+                        )
+                    ),
+                ]
+            )
+        )
+    }
+
+    /// Where a pane's content sits within the split view, matching how commit
+    /// centres it in its own pane.
+    ///
+    /// - Parameters:
+    ///   - contentSize: The pane content's size.
+    ///   - paneWidth: The width of the pane holding it.
+    ///   - paneStart: The pane's own offset from the split view's leading edge.
+    ///   - splitViewHeight: The split view's height.
+    /// - Returns: The content's placement within the split view.
+    static func panePlacement(
+        of contentSize: ViewSize,
+        inPaneOfWidth paneWidth: Double,
+        startingAt paneStart: Double,
+        splitViewHeight: Double
+    ) -> SIMD2<Double> {
+        SIMD2(
+            paneStart + (paneWidth - contentSize.width) / 2,
+            (splitViewHeight - contentSize.height) / 2
         )
     }
 

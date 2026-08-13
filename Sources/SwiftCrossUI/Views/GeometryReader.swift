@@ -89,9 +89,11 @@ public struct GeometryReader<Content: View>: TypeSafeView, View {
             environment: environment
         )
 
+        // The content is pinned to the corner, so its guides need no transform.
         return ViewLayoutResult(
             size: size,
-            childResults: [contentResult]
+            childResults: [contentResult],
+            explicitGuides: contentResult.explicitGuides
         )
     }
 

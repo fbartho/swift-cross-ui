@@ -143,6 +143,12 @@ public struct ScrollView<Content: View>: TypeSafeView, View {
             outerSize.height += horizontalScrollBarHeight
         }
 
+        // Guides deliberately stop here. On a scrolling axis the content's
+        // offset within the viewport is a scroll position the layout system
+        // never sees, so a guide propagated out would hold only while scrolled
+        // to the origin, and an ancestor aligning on it would be dragged around
+        // by the user scrolling. Reporting none leaves ancestors aligning on
+        // the scroll view's own edges, which is stable.
         return ViewLayoutResult(
             size: outerSize,
             childResults: [finalChildResult],
