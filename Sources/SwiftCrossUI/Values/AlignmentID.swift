@@ -74,14 +74,29 @@ public struct AlignmentKey: Hashable, Sendable {
 
     /// The built-in edge alignment this guide represents, if it is one.
     ///
-    /// Backends can only describe the three edge alignments, so a custom guide
-    /// has no spelling to hand them.
-    var asStackAlignment: StackAlignment? {
+    /// A custom guide has no edge: its line is wherever the children's
+    /// resolved values put it.
+    var asEdge: StackAlignmentEdge? {
         switch axis {
             case .horizontal:
-                HorizontalAlignment(id).asStackAlignment
+                HorizontalAlignment(id).asEdge
             case .vertical:
-                VerticalAlignment(id).asStackAlignment
+                VerticalAlignment(id).asEdge
+        }
+    }
+
+    /// How this guide is described to a backend that re-expresses the layout in
+    /// its own system.
+    ///
+    /// - Parameter slackFraction: Where the guide line sits within a stack's
+    ///   cross axis as a fraction from the leading edge, for a custom guide
+    ///   that a backend can only approximate.
+    /// - Returns: The description, naming a custom guide as custom.
+    func description(slackFraction: @autoclosure () -> Double) -> StackAlignmentDescription {
+        if let edge = asEdge {
+            .edge(edge)
+        } else {
+            .guide(key: self, slackFraction: slackFraction())
         }
     }
 

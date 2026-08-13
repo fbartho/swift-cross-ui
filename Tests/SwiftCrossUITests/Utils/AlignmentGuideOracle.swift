@@ -10,6 +10,15 @@ import DummyBackend
 /// system, because its whole job is to disagree if the guide-aware algorithm
 /// stops reducing to it.
 enum LegacyStackPlacement {
+    /// The three cross-axis alignments the pre-guides algorithm could express,
+    /// declared here rather than borrowed from the layout system so that the
+    /// oracle stays an independent implementation.
+    enum Edge: CaseIterable {
+        case leading
+        case center
+        case trailing
+    }
+
     /// Where the pre-guides algorithm placed a child across a stack's axis.
     ///
     /// - Parameters:
@@ -20,7 +29,7 @@ enum LegacyStackPlacement {
     static func offset(
         childCross: Double,
         containerCross: Double,
-        alignment: StackAlignment
+        alignment: Edge
     ) -> Double {
         switch alignment {
             case .leading:
@@ -58,7 +67,7 @@ extension LayoutSystem {
     /// - Returns: The two algorithms' cross sizes and per-child offsets.
     static func compareWithLegacyPlacement(
         of children: [ViewLayoutResult],
-        edge: StackAlignment,
+        edge: LegacyStackPlacement.Edge,
         orientation: Orientation
     ) -> (
         guideAware: (crossSize: Double, offsets: [Double]),

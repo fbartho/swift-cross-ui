@@ -466,15 +466,12 @@ public enum LayoutSystem {
         let orientation = environment.layoutOrientation
         let perpendicularOrientation = orientation.perpendicular
 
-        // A backend that re-expresses the stack in its own layout system has
-        // only the three edge spellings to say this with, so a custom guide is
-        // described as the closest thing that doesn't misplace the children a
-        // backend positions itself. Faithful custom-guide description needs a
-        // richer hook than this signature can carry.
         backend.describeStackLayout(
             of: container,
             orientation: orientation,
-            alignment: alignment.asStackAlignment ?? .center,
+            alignment: alignment.description(
+                slackFraction: alignmentSlackFraction(alignment)
+            ),
             spacing: spacing
         )
 

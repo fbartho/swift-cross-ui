@@ -42,7 +42,7 @@ public struct VerticalAlignment: Hashable, Sendable {
     ///
     /// Backends can only express the three edge alignments, so they need to
     /// distinguish them from custom guides.
-    var asStackAlignment: StackAlignment? {
+    var asEdge: StackAlignmentEdge? {
         switch key.id {
             case is TopAlignmentID.Type:
                 .leading

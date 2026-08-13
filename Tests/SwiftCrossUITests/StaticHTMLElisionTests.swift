@@ -5,6 +5,18 @@ import StaticHTMLBackend
 @_spi(Backends) import SwiftCrossUI
 import SwiftCrossUIComponents
 
+/// A guide whose default sits a fifth of the way down — far enough from centre
+/// that emitting it as centre would be visible.
+enum EmissionFifthAlignmentID: AlignmentID {
+    static func defaultValue(in context: ViewDimensions) -> Double {
+        context.height / 5
+    }
+}
+
+extension VerticalAlignment {
+    static let emissionFifth = VerticalAlignment(EmissionFifthAlignmentID.self)
+}
+
 @Suite("Testing wrapper elision for the static HTML backend")
 struct StaticHTMLElisionTests {
     @MainActor
@@ -59,7 +71,7 @@ struct StaticHTMLElisionTests {
         // The wrapper inherits the default center alignment rather than
         // declaring one, and at one child its own align-items has no slack to
         // place the child within — only the parent's alignment decides the
-        // child's box, and a StackAlignment can never say stretch.
+        // child's box, and a stack alignment can never say stretch.
         let html = StaticHTMLRenderer.render(
             VStack(alignment: .center) {
                 Group {
@@ -113,22 +125,43 @@ struct StaticHTMLElisionTests {
     }
 
     @MainActor
+    @Test("A custom guide emits the edge nearest its line, not a blanket center")
+    func customGuideEmitsItsNearestEdge() {
+        // The description a custom guide reaches this backend as carries where
+        // its line sits, so the fallback tracks the guide instead of collapsing
+        // every custom alignment onto center. A guide a fifth of the way down
+        // is nearest the leading edge, and flex-start is what says so.
+        let html = StaticHTMLRenderer.render(
+            HStack(alignment: .emissionFifth) {
+                Text("One")
+                Text("Two")
+            },
+            context: "Custom guide fallback"
+        ).html
+
+        #expect(Self.internedRule(containing: "align-items:flex-start", in: html) != nil)
+        #expect(Self.internedRule(containing: "align-items:center", in: html) == nil)
+    }
+
+    @MainActor
     @Test("No stack alignment can produce align-items:stretch")
     func stackAlignmentNeverProducesStretch() {
         // The single-child elision law rests on stretch being unreachable
         // from a stack's alignment: a stretching parent is the one case where
-        // the wrapper would be load-bearing. The switch is exhaustive so a
-        // fourth StackAlignment case fails compilation here and points at the
-        // law before it silently breaks.
-        func probe(_ alignment: StackAlignment) -> (stack: HorizontalAlignment, css: String) {
-            switch alignment {
+        // the wrapper would be load-bearing. Every alignment reaches CSS
+        // through StackAlignmentEdge — custom guides included, via
+        // `closestEdge` — so this switch is where the law lives. It is
+        // exhaustive so that a fourth edge fails compilation here and points at
+        // the law before it silently breaks.
+        func probe(_ edge: StackAlignmentEdge) -> (stack: HorizontalAlignment, css: String) {
+            switch edge {
                 case .leading: (.leading, "flex-start")
                 case .center: (.center, "center")
                 case .trailing: (.trailing, "flex-end")
             }
         }
 
-        for alignment in [StackAlignment.leading, .center, .trailing] {
+        for alignment in [StackAlignmentEdge.leading, .center, .trailing] {
             let (stackAlignment, expectedCSS) = probe(alignment)
             let html = StaticHTMLRenderer.render(
                 VStack(alignment: stackAlignment) {

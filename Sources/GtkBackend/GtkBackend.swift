@@ -808,7 +808,7 @@ public final class GtkBackend:
         // Text justification only has the three edge spellings, so a custom
         // alignment guide justifies as leading.
         textView.justify =
-            switch environment.multilineTextAlignment.asStackAlignment {
+            switch environment.multilineTextAlignment.asEdge {
                 case .center:
                     Justification.center
                 case .trailing:

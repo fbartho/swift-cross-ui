@@ -101,7 +101,7 @@ struct AlignmentGuideTests {
                 "guide-free tree reported non-baseline guides at seed \(seed)"
             )
 
-            for edge in [StackAlignment.leading, .center, .trailing] {
+            for edge in LegacyStackPlacement.Edge.allCases {
                 for orientation in [Orientation.vertical, Orientation.horizontal] {
                     let childResults = childLayoutResults(
                         of: tree,
@@ -864,6 +864,52 @@ struct AlignmentGuideTests {
             // the frame reports it offset by wherever the child was placed.
             let placed = alignment.vertical.position(ofChild: 20, in: 60)
             #expect(result.explicitGuides[VerticalAlignment.fifth.key] == placed + 6)
+        }
+    }
+
+    // MARK: Backend description
+
+    /// Backends re-expressing a stack in their own layout system have to be
+    /// able to tell a custom guide from an edge, because only the edge names a
+    /// line they can place children on themselves.
+    @MainActor
+    @Test("A custom guide is described to backends as custom, not as an edge")
+    func customGuideIsDescribedAsCustom() {
+        let description = VerticalAlignment.fifth.key.description(
+            slackFraction: LayoutSystem.alignmentSlackFraction(VerticalAlignment.fifth.key)
+        )
+
+        guard case .guide(let key, let slackFraction) = description else {
+            Issue.record("a custom guide was described as \(description)")
+            return
+        }
+        #expect(key == VerticalAlignment.fifth.key)
+        // The guide's default sits a fifth of the way down, which is where a
+        // backend approximating it should put the line.
+        #expect(slackFraction == 0.2)
+        #expect(description.closestEdge == .leading)
+    }
+
+    /// The edge alignments keep describing themselves, so a backend that only
+    /// understands edges behaves exactly as it did before guides existed.
+    @MainActor
+    @Test("Edge alignments are described as themselves")
+    func edgeAlignmentsAreDescribedAsThemselves() {
+        let cases: [(AlignmentKey, StackAlignmentEdge)] = [
+            (HorizontalAlignment.leading.key, .leading),
+            (HorizontalAlignment.center.key, .center),
+            (HorizontalAlignment.trailing.key, .trailing),
+            (VerticalAlignment.top.key, .leading),
+            (VerticalAlignment.center.key, .center),
+            (VerticalAlignment.bottom.key, .trailing),
+        ]
+
+        for (key, expected) in cases {
+            let description = key.description(
+                slackFraction: LayoutSystem.alignmentSlackFraction(key)
+            )
+            #expect(description == .edge(expected))
+            #expect(description.closestEdge == expected)
         }
     }
 

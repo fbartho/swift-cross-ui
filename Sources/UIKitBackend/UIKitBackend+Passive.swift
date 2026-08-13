@@ -11,7 +11,7 @@ extension UIKitBackend {
         // Text justification only has the three edge spellings, so a custom
         // alignment guide justifies as leading.
         paragraphStyle.alignment =
-            switch environment.multilineTextAlignment.asStackAlignment {
+            switch environment.multilineTextAlignment.asEdge {
                 case .center:
                     .center
                 case .trailing:

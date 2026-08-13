@@ -31,7 +31,7 @@ public struct HorizontalAlignment: Hashable, Sendable {
     ///
     /// Backends and text layout can only express the three edge alignments, so
     /// they need to distinguish them from custom guides.
-    @_spi(Backends) public var asStackAlignment: StackAlignment? {
+    @_spi(Backends) public var asEdge: StackAlignmentEdge? {
         switch key.id {
             case is LeadingAlignmentID.Type:
                 .leading
