@@ -74,9 +74,18 @@ struct OverlayModifier<Content: View, Overlay: View>: TypeSafeView {
             max(contentSize.height, overlaySize.height)
         )
 
+        // Only the content's guides propagate: an overlay decorates the view
+        // it sits on and must not move an ancestor's alignment of it.
+        let contentPosition = alignment.position(ofChild: contentResult, in: size)
+
         return ViewLayoutResult(
             size: size,
-            childResults: [contentResult, overlayResult]
+            childResults: [contentResult, overlayResult],
+            explicitGuides: ViewLayoutResult.aggregateGuides(
+                children: [
+                    (contentResult, SIMD2(Double(contentPosition.x), Double(contentPosition.y)))
+                ]
+            )
         )
     }
 
@@ -87,16 +96,16 @@ struct OverlayModifier<Content: View, Overlay: View>: TypeSafeView {
         environment: EnvironmentValues,
         backend: Backend
     ) {
-        let frameSize = layout.size.vector
-        let contentSize = children.child0.commit().size.vector
-        let overlaySize = children.child1.commit().size.vector
+        let frameSize = layout.size
+        let contentResult = children.child0.commit()
+        let overlayResult = children.child1.commit()
 
-        let contentPosition = alignment.position(ofChild: contentSize, in: frameSize)
-        let overlayPosition = alignment.position(ofChild: overlaySize, in: frameSize)
+        let contentPosition = alignment.position(ofChild: contentResult, in: frameSize)
+        let overlayPosition = alignment.position(ofChild: overlayResult, in: frameSize)
 
         backend.setPosition(ofChildAt: 0, in: widget, to: contentPosition)
         backend.setPosition(ofChildAt: 1, in: widget, to: overlayPosition)
 
-        backend.setSize(of: widget, to: frameSize)
+        backend.setSize(of: widget, to: frameSize.vector)
     }
 }

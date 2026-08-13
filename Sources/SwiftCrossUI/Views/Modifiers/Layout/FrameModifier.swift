@@ -161,9 +161,16 @@ struct StrictFrameView<Child: View>: TypeSafeView {
             height ?? childSize.height
         )
 
+        let childPosition = alignment.position(ofChild: childResult, in: frameSize)
+
         return ViewLayoutResult(
             size: frameSize,
-            childResults: [childResult]
+            childResults: [childResult],
+            explicitGuides: ViewLayoutResult.aggregateGuides(
+                children: [
+                    (childResult, SIMD2(Double(childPosition.x), Double(childPosition.y)))
+                ]
+            )
         )
     }
 
@@ -175,12 +182,9 @@ struct StrictFrameView<Child: View>: TypeSafeView {
         backend: Backend
     ) {
         let frameSize = layout.size
-        let childSize = children.child0.commit().size
+        let childResult = children.child0.commit()
 
-        let childPosition = alignment.position(
-            ofChild: childSize.vector,
-            in: frameSize.vector
-        )
+        let childPosition = alignment.position(ofChild: childResult, in: frameSize)
         backend.setSize(of: widget, to: frameSize.vector)
         backend.describeFrame(of: widget, width: width, height: height)
         backend.setPosition(ofChildAt: 0, in: widget, to: childPosition)
@@ -302,9 +306,16 @@ struct FlexibleFrameView<Child: View>: TypeSafeView {
             frameSize.height = max(frameSize.height, proposedHeight)
         }
 
+        let childPosition = alignment.position(ofChild: childResult, in: frameSize)
+
         return ViewLayoutResult(
             size: frameSize,
-            childResults: [childResult]
+            childResults: [childResult],
+            explicitGuides: ViewLayoutResult.aggregateGuides(
+                children: [
+                    (childResult, SIMD2(Double(childPosition.x), Double(childPosition.y)))
+                ]
+            )
         )
     }
 
@@ -346,12 +357,9 @@ struct FlexibleFrameView<Child: View>: TypeSafeView {
             )
         }
 
-        let childSize = children.child0.commit().size
+        let childResult = children.child0.commit()
 
-        let childPosition = alignment.position(
-            ofChild: childSize.vector,
-            in: frameSize.vector
-        )
+        let childPosition = alignment.position(ofChild: childResult, in: frameSize)
         backend.setSize(of: widget, to: frameSize.vector)
         backend.describeFlexibleFrame(
             of: widget,

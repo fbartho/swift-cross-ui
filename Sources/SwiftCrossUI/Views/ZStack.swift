@@ -51,10 +51,7 @@ public struct ZStack<Content: View>: View {
                 )
             }
 
-        let size = ViewSize(
-            childResults.map(\.size.width).max() ?? 0,
-            childResults.map(\.size.height).max() ?? 0
-        )
+        let size = Self.frameSize(of: childResults, alignment: alignment)
 
         if !(children is TupleViewChildren || children is EmptyViewChildren) {
             logger.warning(
@@ -75,7 +72,66 @@ public struct ZStack<Content: View>: View {
             redistributeSpaceOnCommit: proposedSize.width == nil || proposedSize.height == nil
         )
 
-        return ViewLayoutResult(size: size, childResults: childResults)
+        return ViewLayoutResult(
+            size: size,
+            childResults: childResults,
+            explicitGuides: Self.guides(
+                of: childResults,
+                alignment: alignment,
+                in: size
+            )
+        )
+    }
+
+    /// The size a ZStack takes to hold children aligned on the given guides.
+    ///
+    /// On each axis this is the largest extent on the near side of the shared
+    /// guide line plus the largest on the far side, so a child whose guide is
+    /// offset from its own box can grow the stack past the largest child. With
+    /// no explicit guides it reduces to the largest child on each axis.
+    ///
+    /// - Parameters:
+    ///   - childResults: The children's layout results.
+    ///   - alignment: The alignment whose guides the children are placed by.
+    /// - Returns: The stack's size.
+    static func frameSize(
+        of childResults: [ViewLayoutResult],
+        alignment: Alignment
+    ) -> ViewSize {
+        var size = ViewSize.zero
+        for (axis, key) in [
+            (Axis.horizontal, alignment.horizontal.key),
+            (Axis.vertical, alignment.vertical.key),
+        ] {
+            let line = childResults.map { $0.resolvedGuide(key) }.max() ?? 0
+            let beyond =
+                childResults.map { child in
+                    child.size[component: axis] - child.resolvedGuide(key)
+                }.max() ?? 0
+            size[component: axis] = line + beyond
+        }
+        return size
+    }
+
+    /// The guides a ZStack reports, aggregated from its children's after
+    /// placing each one.
+    ///
+    /// - Parameters:
+    ///   - childResults: The children's layout results.
+    ///   - alignment: The alignment whose guides the children are placed by.
+    ///   - size: The stack's own size.
+    /// - Returns: The stack's guides, in its own coordinate space.
+    static func guides(
+        of childResults: [ViewLayoutResult],
+        alignment: Alignment,
+        in size: ViewSize
+    ) -> [AlignmentKey: Double] {
+        ViewLayoutResult.aggregateGuides(
+            children: childResults.map { child in
+                let position = alignment.position(ofChild: child, in: size)
+                return (child, SIMD2(Double(position.x), Double(position.y)))
+            }
+        )
     }
 
     public func commit<Backend: BaseAppBackend>(
@@ -103,10 +159,7 @@ public struct ZStack<Content: View>: View {
         }
 
         for (i, layoutResult) in layoutResults.enumerated() {
-            let position = alignment.position(
-                ofChild: layoutResult.size.vector,
-                in: size.vector
-            )
+            let position = alignment.position(ofChild: layoutResult, in: size)
             backend.setPosition(ofChildAt: i, in: widget, to: position)
         }
 

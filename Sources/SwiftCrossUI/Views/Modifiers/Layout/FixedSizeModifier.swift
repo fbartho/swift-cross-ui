@@ -77,9 +77,12 @@ struct FixedSizeModifier<Child: View>: TypeSafeView {
             environment: environment
         )
 
+        // The child is centred at commit, but the parent takes the child's own
+        // size, so the offset is always zero and the guides pass through.
         return ViewLayoutResult(
             size: childResult.size,
-            childResults: [childResult]
+            childResults: [childResult],
+            explicitGuides: childResult.explicitGuides
         )
     }
 

@@ -78,11 +78,26 @@ struct BackgroundModifier<Background: View, Foreground: View>: TypeSafeView {
             max(backgroundSize.height, foregroundSize.height)
         )
 
+        // Only the foreground's guides propagate: a background decorates the
+        // view it sits behind and must not move an ancestor's alignment of it.
+        let foregroundPosition = Alignment.center.position(
+            ofChild: foregroundResult,
+            in: frameSize
+        )
+
         // TODO: Investigate the ordering of SwiftUI's preference merging for
         //   the background modifier.
         return ViewLayoutResult(
             size: frameSize,
-            childResults: [backgroundResult, foregroundResult]
+            childResults: [backgroundResult, foregroundResult],
+            explicitGuides: ViewLayoutResult.aggregateGuides(
+                children: [
+                    (
+                        foregroundResult,
+                        SIMD2(Double(foregroundPosition.x), Double(foregroundPosition.y))
+                    )
+                ]
+            )
         )
     }
 
@@ -94,16 +109,16 @@ struct BackgroundModifier<Background: View, Foreground: View>: TypeSafeView {
         backend: Backend
     ) {
         let frameSize = layout.size
-        let backgroundSize = children.child0.commit().size
-        let foregroundSize = children.child1.commit().size
+        let backgroundResult = children.child0.commit()
+        let foregroundResult = children.child1.commit()
 
         let backgroundPosition = Alignment.center.position(
-            ofChild: backgroundSize.vector,
-            in: frameSize.vector
+            ofChild: backgroundResult,
+            in: frameSize
         )
         let foregroundPosition = Alignment.center.position(
-            ofChild: foregroundSize.vector,
-            in: frameSize.vector
+            ofChild: foregroundResult,
+            in: frameSize
         )
 
         backend.setPosition(ofChildAt: 0, in: widget, to: backgroundPosition)
