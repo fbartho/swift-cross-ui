@@ -610,7 +610,8 @@ public final class GtkBackend:
 
     public func setColor(
         ofColorableRectangle widget: Widget,
-        to color: SwiftCrossUI.Color.Resolved
+        to color: SwiftCrossUI.Color.Resolved,
+        environment: EnvironmentValues
     ) {
         widget.css.set(property: .backgroundColor(color.gtkColor))
     }
