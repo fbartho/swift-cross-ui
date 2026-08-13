@@ -1186,14 +1186,16 @@ public final class AppKitBackend: FullAppBackend {
         forTextIn environment: EnvironmentValues
     ) -> [NSAttributedString.Key: Any] {
         let paragraphStyle = NSMutableParagraphStyle()
+        // Text justification only has the three edge spellings, so a custom
+        // alignment guide justifies as leading.
         paragraphStyle.alignment =
-            switch environment.multilineTextAlignment {
-                case .leading:
-                    .left
+            switch environment.multilineTextAlignment.asStackAlignment {
                 case .center:
                     .center
                 case .trailing:
                     .right
+                case .leading, nil:
+                    .left
             }
 
         let resolvedFont = environment.resolvedFont

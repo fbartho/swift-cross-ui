@@ -2265,11 +2265,14 @@ public struct HTMLEmitter {
     }
 
     /// Maps a declared multiline text alignment to its CSS equivalent.
+    ///
+    /// Text justification only has the three edge spellings, so a custom
+    /// alignment guide justifies as leading.
     nonisolated static func cssTextAlign(_ alignment: HorizontalAlignment) -> String {
-        switch alignment {
-            case .leading: "left"
+        switch alignment.asStackAlignment {
             case .center: "center"
             case .trailing: "right"
+            case .leading, nil: "left"
         }
     }
 
