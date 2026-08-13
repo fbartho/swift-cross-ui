@@ -2251,6 +2251,37 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test("layoutPriority routes surplus space to the higher-priority child (unimplemented)")
+    func layoutPriorityWeightsSurplusGrowth() {
+        // The grow-side counterpart of the shrink test above, kept as a
+        // known issue so the gap cannot be forgotten: under surplus space,
+        // core's layout offers remaining room to higher priority groups
+        // first, but the emitter derives no growth declaration from
+        // priorities at all — only the shrink weights exist. The exact
+        // mechanism is a design decision for the web-tier layoutPriority
+        // work (lexicographic allocation is not expressible in proportional
+        // flex-grow; see the derivation comment on flexShrinkWeight), so
+        // this pins the contract, not the spelling: the two children of a
+        // surplus-width stack must emit *different* growth behavior.
+        let surplus = StaticHTMLRenderer.render(
+            HStack {
+                Text("Short")
+                Text("Label").layoutPriority(1)
+            }
+            .frame(width: 600),
+            context: "Surplus priority"
+        ).html
+
+        withKnownIssue("priority-derived growth emission is not implemented") {
+            let highRule = Self.styleRule(
+                forElementContaining: "data-scui=\"PreferenceModifier\"",
+                in: surplus
+            )
+            #expect(highRule?.contains("flex-grow") == true)
+        }
+    }
+
+    @MainActor
     @Test("Divider stretches via flex, not a pinned min-width that would overflow")
     func dividerStretchesWithoutOverflowing() {
         // Divider's un-declared axis (Divider only declares
