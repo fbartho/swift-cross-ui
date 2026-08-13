@@ -14,6 +14,17 @@ public struct VerticalAlignment: Hashable, Sendable {
     public static let center = Self(VerticalCenterAlignmentID.self)
     /// Bottom alignment.
     public static let bottom = Self(BottomAlignmentID.self)
+    /// Alignment on the baseline of a view's first line of text.
+    ///
+    /// A view with no text in it reports its bottom edge, so that it sits on
+    /// the line the text sits on. Where several of a container's descendants
+    /// report a first baseline, the topmost wins.
+    public static let firstTextBaseline = Self(FirstTextBaselineAlignmentID.self)
+    /// Alignment on the baseline of a view's last line of text.
+    ///
+    /// A view with no text in it reports its bottom edge. Where several of a
+    /// container's descendants report a last baseline, the bottommost wins.
+    public static let lastTextBaseline = Self(LastTextBaselineAlignmentID.self)
 
     /// The guide this alignment aligns on.
     var key: AlignmentKey
@@ -79,5 +90,35 @@ enum VerticalCenterAlignmentID: AlignmentID {
 enum BottomAlignmentID: AlignmentID {
     static func defaultValue(in context: ViewDimensions) -> Double {
         context.height
+    }
+}
+
+/// The guide backing ``VerticalAlignment/firstTextBaseline``.
+///
+/// ``Text`` sets this explicitly from its backend's font metrics; everything
+/// else falls back to its bottom edge, which is where a non-text view sits
+/// relative to text it is aligned with.
+enum FirstTextBaselineAlignmentID: AlignmentID {
+    static func defaultValue(in context: ViewDimensions) -> Double {
+        context.height
+    }
+
+    /// The topmost baseline wins, so a container's first baseline is the first
+    /// baseline of its text however deep it sits.
+    static func combineExplicit(_ values: [Double]) -> Double {
+        values.min() ?? 0
+    }
+}
+
+/// The guide backing ``VerticalAlignment/lastTextBaseline``.
+enum LastTextBaselineAlignmentID: AlignmentID {
+    static func defaultValue(in context: ViewDimensions) -> Double {
+        context.height
+    }
+
+    /// The bottommost baseline wins, mirroring
+    /// ``FirstTextBaselineAlignmentID``.
+    static func combineExplicit(_ values: [Double]) -> Double {
+        values.max() ?? 0
     }
 }

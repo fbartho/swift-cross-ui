@@ -177,6 +177,16 @@ extension BackendFeatures.BaseStubs {
         todo()
     }
 
+    public func layoutMetrics(
+        ofText text: String,
+        whenDisplayedIn widget: Widget,
+        proposedWidth: Int?,
+        proposedHeight: Int?,
+        environment: EnvironmentValues
+    ) -> TextLayoutMetrics {
+        todo()
+    }
+
     public func createTextView() -> Widget {
         todo()
     }

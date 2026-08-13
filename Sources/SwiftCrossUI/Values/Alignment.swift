@@ -22,6 +22,38 @@ public struct Alignment: Hashable, Sendable {
     /// Centered along the trailing edge.
     public static let trailing = Self(horizontal: .trailing, vertical: .center)
 
+    /// Aligned to the leading edge and the first text baseline.
+    public static let leadingFirstTextBaseline = Self(
+        horizontal: .leading,
+        vertical: .firstTextBaseline
+    )
+    /// Centered horizontally and aligned to the first text baseline.
+    public static let centerFirstTextBaseline = Self(
+        horizontal: .center,
+        vertical: .firstTextBaseline
+    )
+    /// Aligned to the trailing edge and the first text baseline.
+    public static let trailingFirstTextBaseline = Self(
+        horizontal: .trailing,
+        vertical: .firstTextBaseline
+    )
+
+    /// Aligned to the leading edge and the last text baseline.
+    public static let leadingLastTextBaseline = Self(
+        horizontal: .leading,
+        vertical: .lastTextBaseline
+    )
+    /// Centered horizontally and aligned to the last text baseline.
+    public static let centerLastTextBaseline = Self(
+        horizontal: .center,
+        vertical: .lastTextBaseline
+    )
+    /// Aligned to the trailing edge and the last text baseline.
+    public static let trailingLastTextBaseline = Self(
+        horizontal: .trailing,
+        vertical: .lastTextBaseline
+    )
+
     /// The horizontal alignment component.
     public var horizontal: HorizontalAlignment
     /// The vertical alignment component.

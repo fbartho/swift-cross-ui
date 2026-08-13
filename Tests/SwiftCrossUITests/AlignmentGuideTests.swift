@@ -90,9 +90,15 @@ struct AlignmentGuideTests {
                 environment: environment
             )
 
+            // Text sources baselines intrinsically, so those are the only
+            // guides a tree with no alignmentGuide in it may report.
+            let unexpectedGuides = result.explicitGuides.keys.filter { key in
+                key != VerticalAlignment.firstTextBaseline.key
+                    && key != VerticalAlignment.lastTextBaseline.key
+            }
             #expect(
-                result.explicitGuides.isEmpty,
-                "guide-free tree reported guides at seed \(seed)"
+                unexpectedGuides.isEmpty,
+                "guide-free tree reported non-baseline guides at seed \(seed)"
             )
 
             for edge in [StackAlignment.leading, .center, .trailing] {
