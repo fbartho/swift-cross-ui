@@ -1,41 +1,5 @@
 import SwiftCrossUI
 
-/// A request to emit one view as a specific element.
-///
-/// The environment propagates to every descendant, but an element name must
-/// apply to exactly one element. Identity is what distinguishes one request
-/// from another, so this is a reference type: the renderer gives the request
-/// to the topmost widget that saw it, which is the modified view itself.
-///
-/// A request nested inside another keeps a reference to the one it shadowed.
-/// The environment only ever holds the innermost request, so without that link
-/// a widget under `.htmlTag(.header)` whose sibling subtree overrode the tag
-/// would leave the outer request with no widget reporting it, and the header
-/// would be lost or scattered across the leaves that didn't override.
-///
-/// **Single-valued, so innermost-wins-outright is correct here.** An element
-/// has exactly one tag; two stacked `.htmlTag(_:)` calls are a genuine
-/// override, not two facts that both deserve to reach the document, so the
-/// outer one is meant to be fully shadowed. Contrast ``HTMLAttributesRequest``,
-/// which is dictionary-valued — many attributes can coexist on one element —
-/// and merges its stacked requests instead of discarding the outer one.
-public final class HTMLTagRequest: Sendable {
-    /// The requested element.
-    public let element: HTMLElement
-    /// The request this one shadowed, if it was applied inside another.
-    public let enclosing: HTMLTagRequest?
-
-    /// Creates a request.
-    ///
-    /// - Parameters:
-    ///   - element: The element to emit.
-    ///   - enclosing: The request already in scope, which this one shadows.
-    public init(element: HTMLElement, enclosing: HTMLTagRequest? = nil) {
-        self.element = element
-        self.enclosing = enclosing
-    }
-}
-
 /// An operation on one HTML attribute, shaped after that attribute's own
 /// grammar rather than treating every attribute as an opaque string.
 ///
@@ -58,7 +22,7 @@ public final class HTMLTagRequest: Sendable {
 /// There's no static `toggle` — a toggle needs something to toggle against,
 /// and nothing here defines that pair statically. A dynamic tier can grow
 /// one on the same attribute names later without this type changing shape.
-public enum HTMLAttributeOp: Sendable, ExpressibleByStringLiteral {
+public enum HTMLAttributeOp: Sendable, Equatable, ExpressibleByStringLiteral {
     /// Sets the attribute to this exact string, replacing any existing
     /// value — the scalar case, and the only one a plain string literal
     /// produces.
@@ -81,84 +45,155 @@ public enum HTMLAttributeOp: Sendable, ExpressibleByStringLiteral {
     }
 }
 
-/// A request to add attributes to one view's element.
+/// Distinguishes one application of an escape-hatch modifier from another that
+/// happens to carry the same value.
 ///
-/// Resolved by identity, for the same reason as ``HTMLTagRequest`` — but
-/// unlike a tag or an `href`, an element can carry any number of attributes
-/// at once, so a request here doesn't *shadow* the one it encloses the way
-/// ``HTMLTagRequest``/``HTMLHrefRequest`` do. It's kept alongside it: when
-/// several `.htmlAttributes(_:)` calls stack on one view, every one of them
-/// resolves onto the same element, merged key-by-key with the innermost
-/// (closest to the content) winning a conflict — the same "most specific
-/// wins" intuition as CSS cascade or nested environment overrides. See
-/// `StaticHTMLRenderer.mergedAttributes(from:)`, which walks `enclosing` to
-/// perform that merge; the field exists on this type only to make the chain
-/// walkable, not because outer requests are meant to be discarded.
-public final class HTMLAttributesRequest: Sendable {
-    /// The requested attribute operations.
-    public let attributes: [String: HTMLAttributeOp]
-    /// The request this one was applied inside, if any — see the type's doc
-    /// comment: this is *not* a shadowed-and-discarded predecessor the way
-    /// it is for ``HTMLTagRequest``, it's the next entry a merge walks to.
-    public let enclosing: HTMLAttributesRequest?
+/// Two applications of `.htmlTag(.li)` — one on a container, one repeated on
+/// each of its children by a `ForEach` — put identical values in scope, and
+/// only the leaves ever report them. Comparing values alone can't tell those
+/// apart, and they mean different documents: one list element, or one per row.
+/// A marker allocated per modifier application can, without making the values
+/// themselves reference types.
+public struct HTMLApplicationMarker: Sendable, Hashable {
+    private let token: Token
 
-    /// Creates a request.
-    ///
-    /// - Parameters:
-    ///   - attributes: The attribute operations to apply.
-    ///   - enclosing: The request already in scope, which this one is
-    ///     layered onto (not shadowing — see the type's doc comment).
-    public init(
-        attributes: [String: HTMLAttributeOp],
-        enclosing: HTMLAttributesRequest? = nil
-    ) {
-        self.attributes = attributes
-        self.enclosing = enclosing
+    private final class Token: Sendable {}
+
+    /// Creates a marker for one modifier application.
+    public init() {
+        token = Token()
+    }
+
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.token === rhs.token
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(ObjectIdentifier(token))
     }
 }
 
-/// A request to give one view's element a navigation-intent `href`.
-///
-/// Kept distinct from ``HTMLAttributesRequest`` — rather than folding this
-/// into a generic `"href"` key — because the emitter has to tell "the author
-/// declared navigation intent" apart from "the author attached an arbitrary
-/// attribute that happens to be named href": the former is the signal that
-/// picks a row out of the Button/NavigationLink emission matrix (see
-/// ``HTMLEmitter``'s button case), the latter is inert data with no bearing
-/// on which element or activation state gets emitted.
-///
-/// **Single-valued, so innermost-wins-outright is correct here**, the same
-/// reasoning as ``HTMLTagRequest``: an element navigates to one place, so a
-/// second `.href(_:)` is an override, not an addition — see that type's doc
-/// comment for the contrast with ``HTMLAttributesRequest``'s merge behavior.
-public final class HTMLHrefRequest: Sendable {
-    /// The requested href value.
-    public let href: String
-    /// The request this one shadowed, if it was applied inside another.
-    public let enclosing: HTMLHrefRequest?
+/// An element name paired with the application that requested it.
+public struct HTMLTagApplication: Sendable, Hashable {
+    /// The requested element.
+    public var element: HTMLElement
+    /// Which application of ``View/htmlTag(_:)`` asked for it.
+    public var marker: HTMLApplicationMarker
 
-    /// Creates a request.
+    /// Creates a tag application.
     ///
     /// - Parameters:
-    ///   - href: The href to give the view's element.
-    ///   - enclosing: The request already in scope, which this one shadows.
-    public init(href: String, enclosing: HTMLHrefRequest? = nil) {
-        self.href = href
-        self.enclosing = enclosing
+    ///   - element: The element to emit.
+    ///   - marker: The application requesting it.
+    public init(element: HTMLElement, marker: HTMLApplicationMarker) {
+        self.element = element
+        self.marker = marker
+    }
+}
+
+/// A block of attribute operations an author attached to one view.
+///
+/// Which element the block lands on is decided by how it is *consumed* during
+/// emission — see ``materializes`` — rather than by matching it back to the
+/// widget that captured it. The marker it carries only separates one
+/// application from another, so a repeated modifier (a `ForEach` body applying
+/// the same attributes to every row) stays one application per row.
+public struct HTMLAttributeBlock: Sendable, Equatable {
+    /// The attribute operations to apply, keyed by attribute name.
+    public var attributes: [String: HTMLAttributeOp]
+    /// Which application of ``View/htmlAttributes(_:)`` this block came from,
+    /// so two applications carrying identical attributes stay
+    /// distinguishable — see ``HTMLApplicationMarker``.
+    var marker = HTMLApplicationMarker()
+
+    /// Whether this block forces its application site to emit an element of
+    /// its own rather than riding down to the first element that survives
+    /// elision.
+    ///
+    /// True exactly when the block names an `id`. An identity referenced from
+    /// elsewhere in the document — a fragment link, a label association, a
+    /// script — has to land on the node the author designated, not on
+    /// whichever descendant elision happened to leave standing. Every other
+    /// attribute describes whatever element ends up carrying the content, so
+    /// it can ride through wrappers that emit nothing.
+    ///
+    /// A mixed block resolves as one unit: an `id` alongside other attributes
+    /// materializes all of them together, because one block describes one
+    /// element.
+    public var materializes: Bool {
+        attributes.keys.contains("id")
+    }
+
+    /// Creates a block of attribute operations.
+    ///
+    /// - Parameter attributes: The attribute operations, keyed by name.
+    public init(attributes: [String: HTMLAttributeOp]) {
+        self.attributes = attributes
+    }
+
+    /// Layers a block applied inside this one on top of it.
+    ///
+    /// Merges key-by-key with `inner` winning any conflict — the same
+    /// "most specific wins" rule as the CSS cascade or a nested environment
+    /// override. Attributes are the escape hatch that merges rather than
+    /// replaces: an element carries any number of them at once, so two
+    /// stacked applications are two facts that both deserve to reach the
+    /// document.
+    ///
+    /// - Parameter inner: The block applied closer to the content.
+    /// - Returns: The combined block.
+    func layering(_ inner: HTMLAttributeBlock) -> HTMLAttributeBlock {
+        HTMLAttributeBlock(
+            attributes: attributes.merging(inner.attributes) { _, innermost in innermost }
+        )
     }
 }
 
 extension EnvironmentValues {
-    /// An explicit element requested by ``View/htmlTag(_:)``.
+    /// The element applications requested by ``View/htmlTag(_:)``, outermost
+    /// first.
     ///
-    /// Only consumed by StaticHTMLBackend; other backends never read it.
-    @Entry public var htmlTagRequest: HTMLTagRequest?
+    /// A tag names the element of the view it was applied to, so each entry
+    /// belongs to exactly one element and a nested application does not
+    /// replace the one enclosing it — both elements exist, one inside the
+    /// other. Only a leaf receives an environment, so the enclosing entries
+    /// are what tells the renderer that a container above the leaf was
+    /// modified too; a lone value would leave the outer element with nothing
+    /// reporting it.
+    ///
+    /// Each entry carries the application that requested it, so two
+    /// applications naming the same element stay distinguishable — see
+    /// ``HTMLApplicationMarker``.
+    ///
+    /// Only StaticHTMLBackend reads this; other backends never do.
+    @Entry public var htmlTags: [HTMLTagApplication] = []
 
-    /// Extra attributes requested by ``View/htmlAttributes(_:)``.
-    @Entry public var htmlAttributesRequest: HTMLAttributesRequest?
+    /// The `id`-bearing attribute blocks requested by
+    /// ``View/htmlAttributes(_:)``, outermost first.
+    ///
+    /// Nested the same way as ``htmlTags`` and for the same reason: a block
+    /// naming an `id` materializes its own element, so an inner one sits
+    /// inside the outer one rather than replacing it. Blocks without an `id`
+    /// are not here — they merge into ``htmlAttributes`` instead, since they
+    /// describe whichever element survives rather than one of their own.
+    @Entry public var htmlIdentifiedAttributes: [HTMLAttributeBlock] = []
 
-    /// Navigation-intent href requested by ``View/href(_:)``.
-    @Entry public var htmlHrefRequest: HTMLHrefRequest?
+    /// Attributes requested by ``View/htmlAttributes(_:)`` that name no `id`.
+    ///
+    /// Consumed by the first element that survives elision beneath the
+    /// application site — see ``HTMLAttributeBlock/materializes``. Stacked
+    /// applications merge here rather than nesting, because they all describe
+    /// the same surviving element.
+    @Entry public var htmlAttributes: HTMLAttributeBlock?
+
+    /// Navigation intent requested by ``View/href(_:)``.
+    ///
+    /// Unlike the other two, this flows down through everything that isn't a
+    /// consumer: an href names a destination, and every href-capable view in
+    /// scope navigates there. A consumer removes it from the environment its
+    /// own children see, so a link's label never inherits the link's
+    /// destination.
+    @Entry public var htmlHref: String?
 }
 
 extension View {
@@ -168,14 +203,21 @@ extension View {
     /// can derive. Deriving semantics from layout or styling would be
     /// guesswork, so anything the backend isn't told about becomes a `div`.
     ///
+    /// The modified view emits an element of its own even where it would
+    /// otherwise be dropped as an empty wrapper: naming an element is a
+    /// request for that element to exist.
+    ///
     /// This modifier only affects StaticHTMLBackend. Under any other backend
     /// it does nothing, so a view hierarchy carrying it stays portable.
     ///
     /// - Parameter element: The element to emit the view as.
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ element: HTMLElement) -> some View {
-        htmlRequest(\.htmlTagRequest) { enclosing in
-            HTMLTagRequest(element: element, enclosing: enclosing)
+        // Allocated here, where the view value is built, so every propagation
+        // of this one application carries the same marker.
+        let application = HTMLTagApplication(element: element, marker: HTMLApplicationMarker())
+        return transformEnvironment(\.htmlTags) { tags in
+            tags.append(application)
         }
     }
 
@@ -188,9 +230,7 @@ extension View {
     /// - Parameter name: The element name, e.g. `"hgroup"`.
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ name: String) -> some View {
-        htmlRequest(\.htmlTagRequest) { enclosing in
-            HTMLTagRequest(element: .custom(name), enclosing: enclosing)
-        }
+        htmlTag(.custom(name))
     }
 
     /// Adds HTML attributes to this view's element.
@@ -201,6 +241,13 @@ extension View {
     /// ``HTMLAttributeOp``. A plain string, e.g. `["aria-label": "Primary"]`,
     /// is shorthand for `.set(_:)` and works for any scalar attribute.
     /// Values are escaped when emitted.
+    ///
+    /// A block naming an `id` lands on the modified view's own element, which
+    /// emits even if it would otherwise be dropped as an empty wrapper — a
+    /// referenced identity has to sit where the author put it. A block naming
+    /// no `id` describes whatever element ends up carrying the content, so it
+    /// rides through wrappers that emit nothing and lands on the first
+    /// element that survives.
     ///
     /// `class` is token-list: `.add(_:)`/`.remove(_:)`/`.replace(_:with:)`
     /// operate on the element's class list the way `classList` does,
@@ -241,21 +288,29 @@ extension View {
     /// later, "more inside" call in the chain — wins, mirroring how nested
     /// environment overrides work generally. This is unlike ``htmlTag(_:)``
     /// or ``href(_:)``, which are single-valued and where a later call
-    /// simply replaces the earlier one; see ``HTMLAttributesRequest``'s doc
-    /// comment for why attributes are the case that merges.
+    /// simply replaces the earlier one.
     ///
     /// - Parameter attributes: The attribute operations to apply, keyed by
     ///   name.
     /// - Returns: The view, carrying the requested attributes.
     public func htmlAttributes(_ attributes: [String: HTMLAttributeOp]) -> some View {
-        htmlRequest(\.htmlAttributesRequest) { enclosing in
-            HTMLAttributesRequest(attributes: attributes, enclosing: enclosing)
+        let block = HTMLAttributeBlock(attributes: attributes)
+        return transformEnvironment(\.htmlIdentifiedAttributes) { identified in
+            if block.materializes {
+                identified.append(block)
+            }
+        }
+        .transformEnvironment(\.htmlAttributes) { unidentified in
+            guard !block.materializes else {
+                return
+            }
+            unidentified = unidentified?.layering(block) ?? block
         }
     }
 
-    /// Gives this view navigation intent, so its element resolves to a real,
-    /// live `<a href>` under StaticHTMLBackend rather than a disabled control
-    /// waiting on a runtime.
+    /// Gives this view's subtree navigation intent, so every href-capable
+    /// view within it resolves to a real, live `<a href>` under
+    /// StaticHTMLBackend rather than a disabled control waiting on a runtime.
     ///
     /// Per the tier-activation principle: an `href` is fully resolvable in
     /// pure HTML — the browser handles navigation on its own — so a `Button`,
@@ -264,6 +319,19 @@ extension View {
     /// no `.href(_:)` but a click action, by contrast, has nothing pure HTML
     /// can resolve — it emits `disabled` until a later tier attaches the
     /// handler.
+    ///
+    /// The destination flows down the subtree and is consumed by the
+    /// href-capable views it reaches, however many there are: applying it to
+    /// a container of links sends all of them to the same place. A container
+    /// never becomes a link itself — an element that merely holds links is
+    /// not a link — and a consumer clears the destination from its own
+    /// children, so a link's label doesn't inherit its link's destination. A
+    /// nearer application overrides a farther one for the views it covers,
+    /// leaving that view's siblings on the outer destination.
+    ///
+    /// An `.href(_:)` that reaches no consumer at all emits nothing and is
+    /// reported through ``DocumentInfo/hrefsWithoutConsumer``, rather than
+    /// silently disappearing.
     ///
     /// A view can carry both a click action and `.href(_:)` at once (a
     /// `Button` that both navigates and runs code, e.g. an analytics-tracked
@@ -280,71 +348,6 @@ extension View {
     /// - Parameter href: The URL or path to navigate to.
     /// - Returns: The view, carrying the requested navigation intent.
     public func href(_ href: String) -> some View {
-        htmlRequest(\.htmlHrefRequest) { enclosing in
-            HTMLHrefRequest(href: href, enclosing: enclosing)
-        }
-    }
-
-    /// Puts an escape-hatch request in scope for this view's subtree, keeping
-    /// one request object per modifier application.
-    ///
-    /// The request types resolve by identity (see ``HTMLTagRequest``), so the
-    /// object a widget captures has to be the same one for every widget the
-    /// modifier covers. Allocating inside the transform breaks that: the
-    /// transform runs once per environment propagation, and a subtree isn't
-    /// guaranteed to be propagated to the same number of times as its parent —
-    /// an `HStack` re-runs its children's update during commit, so a control
-    /// updated in both passes ends up holding a later allocation than a leaf
-    /// updated only in the first. The cache makes the request identity depend
-    /// on the modifier application alone.
-    ///
-    /// - Parameters:
-    ///   - keyPath: The environment key the request lives under.
-    ///   - make: Builds the request, given the one already in scope.
-    /// - Returns: The view, carrying the request.
-    private func htmlRequest<Request: AnyObject & Sendable>(
-        _ keyPath: WritableKeyPath<EnvironmentValues, Request?>,
-        _ make: @escaping @Sendable (Request?) -> Request
-    ) -> some View {
-        let cache = HTMLRequestCache<Request>()
-        return transformEnvironment(keyPath) { request in
-            request = cache.request(enclosing: request, make: make)
-        }
-    }
-}
-
-/// Holds the one request object a single modifier application produces.
-///
-/// Keyed on the enclosing request's identity rather than storing a lone value:
-/// the same modifier application can legitimately be reached under different
-/// outer requests (a component carrying `.href()` used inside two differently
-/// wrapped parents), and each of those needs its own request so the chains stay
-/// distinct.
-///
-/// Synchronization is unnecessary rather than omitted: environment propagation
-/// runs on the main actor, so every call reaching this cache is already
-/// serialized by it.
-private final class HTMLRequestCache<Request: AnyObject & Sendable>: @unchecked Sendable {
-    /// The request produced for each enclosing request seen so far, with
-    /// `nil` — no enclosing request — keyed separately.
-    private var cached: [ObjectIdentifier?: Request] = [:]
-
-    /// The request for an enclosing scope, built once and reused after.
-    ///
-    /// - Parameters:
-    ///   - enclosing: The request already in scope, if any.
-    ///   - make: Builds the request when this scope hasn't been seen.
-    /// - Returns: The request for this scope.
-    func request(
-        enclosing: Request?,
-        make: @Sendable (Request?) -> Request
-    ) -> Request {
-        let key = enclosing.map(ObjectIdentifier.init)
-        if let existing = cached[key] {
-            return existing
-        }
-        let created = make(enclosing)
-        cached[key] = created
-        return created
+        environment(\.htmlHref, href)
     }
 }

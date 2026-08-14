@@ -90,6 +90,21 @@ extension BackendFeatures.ViewLabelButtons {
     public func computeButtonLabelEnvironment(
         from environment: EnvironmentValues
     ) -> EnvironmentValues {
+        defaultButtonLabelEnvironment(from: environment)
+    }
+
+    /// The SwiftUI-like button label environment, callable by a backend whose
+    /// own implementation adds to it rather than replacing it.
+    ///
+    /// A protocol extension's default can't be reached from the conformance
+    /// that overrides it, so a backend needing "the standard behavior plus one
+    /// more change" has to be able to name the default separately.
+    ///
+    /// - Parameter environment: The button's own environment.
+    /// - Returns: The environment its label is built in.
+    public func defaultButtonLabelEnvironment(
+        from environment: EnvironmentValues
+    ) -> EnvironmentValues {
         var labelEnvironment = environment
 
         let buttonStyle = environment.resolvedButtonStyle.kind

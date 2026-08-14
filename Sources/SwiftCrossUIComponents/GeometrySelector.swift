@@ -240,8 +240,8 @@ public struct GeometrySelector: View {
     /// safe even when that content already carries its own author
     /// `.htmlAttributes(…)` call, because `.htmlAttributes` merges across
     /// stacked calls rather than the outer one losing to the inner (see
-    /// `HTMLAttributesRequest`'s doc comment). No extra wrapper element is
-    /// needed just to give the marker somewhere to land.
+    /// ``HTMLAttributeBlock``). No extra wrapper element is needed just to
+    /// give the marker somewhere to land.
     ///
     /// `.frame(maxWidth: .infinity)` on the wrapping `VStack` is load-
     /// bearing, not cosmetic: `HorizontalAlignment` has no `.stretch` case
