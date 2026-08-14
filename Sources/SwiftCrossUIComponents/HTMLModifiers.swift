@@ -45,66 +45,14 @@ public enum HTMLAttributeOp: Sendable, Equatable, ExpressibleByStringLiteral {
     }
 }
 
-/// Distinguishes one application of an escape-hatch modifier from another that
-/// happens to carry the same value.
-///
-/// Two applications of `.htmlTag(.li)` — one on a container, one repeated on
-/// each of its children by a `ForEach` — put identical values in scope, and
-/// only the leaves ever report them. Comparing values alone can't tell those
-/// apart, and they mean different documents: one list element, or one per row.
-/// A marker allocated per modifier application can, without making the values
-/// themselves reference types.
-public struct HTMLApplicationMarker: Sendable, Hashable {
-    private let token: Token
-
-    private final class Token: Sendable {}
-
-    /// Creates a marker for one modifier application.
-    public init() {
-        token = Token()
-    }
-
-    public static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.token === rhs.token
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(ObjectIdentifier(token))
-    }
-}
-
-/// An element name paired with the application that requested it.
-public struct HTMLTagApplication: Sendable, Hashable {
-    /// The requested element.
-    public var element: HTMLElement
-    /// Which application of ``View/htmlTag(_:)`` asked for it.
-    public var marker: HTMLApplicationMarker
-
-    /// Creates a tag application.
-    ///
-    /// - Parameters:
-    ///   - element: The element to emit.
-    ///   - marker: The application requesting it.
-    public init(element: HTMLElement, marker: HTMLApplicationMarker) {
-        self.element = element
-        self.marker = marker
-    }
-}
-
 /// A block of attribute operations an author attached to one view.
 ///
-/// Which element the block lands on is decided by how it is *consumed* during
-/// emission — see ``materializes`` — rather than by matching it back to the
-/// widget that captured it. The marker it carries only separates one
-/// application from another, so a repeated modifier (a `ForEach` body applying
-/// the same attributes to every row) stays one application per row.
+/// The block is captured onto the widget of the view it was applied to, so
+/// which application it belongs to is settled structurally. Which *element* it
+/// lands on is decided during emission — see ``materializes``.
 public struct HTMLAttributeBlock: Sendable, Equatable {
     /// The attribute operations to apply, keyed by attribute name.
     public var attributes: [String: HTMLAttributeOp]
-    /// Which application of ``View/htmlAttributes(_:)`` this block came from,
-    /// so two applications carrying identical attributes stay
-    /// distinguishable — see ``HTMLApplicationMarker``.
-    var marker = HTMLApplicationMarker()
 
     /// Whether this block forces its application site to emit an element of
     /// its own rather than riding down to the first element that survives
@@ -142,7 +90,7 @@ public struct HTMLAttributeBlock: Sendable, Equatable {
     ///
     /// - Parameter inner: The block applied closer to the content.
     /// - Returns: The combined block.
-    func layering(_ inner: HTMLAttributeBlock) -> HTMLAttributeBlock {
+    public func layering(_ inner: HTMLAttributeBlock) -> HTMLAttributeBlock {
         HTMLAttributeBlock(
             attributes: attributes.merging(inner.attributes) { _, innermost in innermost }
         )
@@ -150,42 +98,6 @@ public struct HTMLAttributeBlock: Sendable, Equatable {
 }
 
 extension EnvironmentValues {
-    /// The element applications requested by ``View/htmlTag(_:)``, outermost
-    /// first.
-    ///
-    /// A tag names the element of the view it was applied to, so each entry
-    /// belongs to exactly one element and a nested application does not
-    /// replace the one enclosing it — both elements exist, one inside the
-    /// other. Only a leaf receives an environment, so the enclosing entries
-    /// are what tells the renderer that a container above the leaf was
-    /// modified too; a lone value would leave the outer element with nothing
-    /// reporting it.
-    ///
-    /// Each entry carries the application that requested it, so two
-    /// applications naming the same element stay distinguishable — see
-    /// ``HTMLApplicationMarker``.
-    ///
-    /// Only StaticHTMLBackend reads this; other backends never do.
-    @Entry public var htmlTags: [HTMLTagApplication] = []
-
-    /// The `id`-bearing attribute blocks requested by
-    /// ``View/htmlAttributes(_:)``, outermost first.
-    ///
-    /// Nested the same way as ``htmlTags`` and for the same reason: a block
-    /// naming an `id` materializes its own element, so an inner one sits
-    /// inside the outer one rather than replacing it. Blocks without an `id`
-    /// are not here — they merge into ``htmlAttributes`` instead, since they
-    /// describe whichever element survives rather than one of their own.
-    @Entry public var htmlIdentifiedAttributes: [HTMLAttributeBlock] = []
-
-    /// Attributes requested by ``View/htmlAttributes(_:)`` that name no `id`.
-    ///
-    /// Consumed by the first element that survives elision beneath the
-    /// application site — see ``HTMLAttributeBlock/materializes``. Stacked
-    /// applications merge here rather than nesting, because they all describe
-    /// the same surviving element.
-    @Entry public var htmlAttributes: HTMLAttributeBlock?
-
     /// Navigation intent requested by ``View/href(_:)``.
     ///
     /// Unlike the other two, this flows down through everything that isn't a
@@ -213,11 +125,8 @@ extension View {
     /// - Parameter element: The element to emit the view as.
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ element: HTMLElement) -> some View {
-        // Allocated here, where the view value is built, so every propagation
-        // of this one application carries the same marker.
-        let application = HTMLTagApplication(element: element, marker: HTMLApplicationMarker())
-        return transformEnvironment(\.htmlTags) { tags in
-            tags.append(application)
+        HTMLCaptureModifier(self) { backend, widget in
+            backend.captureElement(ofAny: widget, as: element)
         }
     }
 
@@ -295,16 +204,8 @@ extension View {
     /// - Returns: The view, carrying the requested attributes.
     public func htmlAttributes(_ attributes: [String: HTMLAttributeOp]) -> some View {
         let block = HTMLAttributeBlock(attributes: attributes)
-        return transformEnvironment(\.htmlIdentifiedAttributes) { identified in
-            if block.materializes {
-                identified.append(block)
-            }
-        }
-        .transformEnvironment(\.htmlAttributes) { unidentified in
-            guard !block.materializes else {
-                return
-            }
-            unidentified = unidentified?.layering(block) ?? block
+        return HTMLCaptureModifier(self) { backend, widget in
+            backend.captureAttributes(ofAny: widget, to: block)
         }
     }
 
