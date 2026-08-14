@@ -14,14 +14,14 @@ import SwiftCrossUI
 /// backend consults when deciding whether the wrapper survives, not a reason
 /// on its own for it to exist.
 ///
-/// Under a backend that doesn't conform to ``HTMLElementCapturing`` the capture
+/// Under a backend that doesn't conform to ``HTMLElementAnchoring`` the capture
 /// is skipped and this is an ordinary pass-through wrapper, which is what makes
 /// a tree carrying `.htmlTag(_:)` or `.htmlAttributes(_:)` portable.
 struct HTMLCaptureModifier<Child: View>: View {
     var body: TupleView1<Child>
     /// Records the value onto the widget this view owns, under a backend that
     /// can receive it.
-    var capture: @MainActor (any HTMLElementCapturing, Any) -> Void
+    var capture: @MainActor (any HTMLElementAnchoring, Any) -> Void
 
     /// Creates a capturing wrapper.
     ///
@@ -30,7 +30,7 @@ struct HTMLCaptureModifier<Child: View>: View {
     ///   - capture: Records the value onto the backend's widget.
     init(
         _ child: Child,
-        capture: @escaping @MainActor (any HTMLElementCapturing, Any) -> Void
+        capture: @escaping @MainActor (any HTMLElementAnchoring, Any) -> Void
     ) {
         body = TupleView1(child)
         self.capture = capture
@@ -50,7 +50,7 @@ struct HTMLCaptureModifier<Child: View>: View {
             environment: environment,
             backend: backend
         )
-        if let backend = backend as? any HTMLElementCapturing {
+        if let backend = backend as? any HTMLElementAnchoring {
             capture(backend, widget)
         }
     }

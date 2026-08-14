@@ -5,7 +5,7 @@ import SwiftCrossUI
 ///
 /// The escape-hatch modifiers that never leave their application site —
 /// ``SwiftCrossUI/View/htmlTag(_:)`` and
-/// ``SwiftCrossUI/View/htmlAttributes(_:)`` — capture through this. The
+/// ``SwiftCrossUI/View/htmlAttributes(_:)`` — anchor through this. The
 /// modifier creates a wrapper widget, and its own node receives both that
 /// widget and the environment in every core lifecycle call, so the value lands
 /// on the element the author modified without propagating past it. Structure
@@ -17,13 +17,13 @@ import SwiftCrossUI
 /// content unchanged, which is what keeps a view hierarchy carrying these
 /// modifiers portable.
 @MainActor
-public protocol HTMLElementCapturing: BaseAppBackend {
+public protocol HTMLElementAnchoring: BaseAppBackend {
     /// Records the element an author named for this widget.
     ///
     /// - Parameters:
-    ///   - widget: The wrapper widget the modifier owns.
     ///   - element: The element to emit the widget as.
-    func captureElement(of widget: Widget, as element: HTMLElement)
+    ///   - widget: The wrapper widget the modifier owns.
+    func anchor(element: HTMLElement, to widget: Widget)
 
     /// Records a block of attribute operations an author attached to this
     /// widget.
@@ -34,12 +34,12 @@ public protocol HTMLElementCapturing: BaseAppBackend {
     /// here, on the widget whose view the author modified.
     ///
     /// - Parameters:
+    ///   - attributes: The attribute operations to apply.
     ///   - widget: The wrapper widget the modifier owns.
-    ///   - block: The attribute operations to apply.
-    func captureAttributes(of widget: Widget, to block: HTMLAttributeBlock)
+    func anchor(attributes: HTMLAttributeBlock, to widget: Widget)
 }
 
-extension HTMLElementCapturing {
+extension HTMLElementAnchoring {
     /// Records an element name on a widget known only as `Any`.
     ///
     /// The modifier reaches its backend as an existential — it is generic over
@@ -47,25 +47,25 @@ extension HTMLElementCapturing {
     /// arrives untyped and is matched to this backend here.
     ///
     /// - Parameters:
-    ///   - widget: The widget, which does nothing unless it is this backend's.
     ///   - element: The element to emit the widget as.
-    func captureElement(ofAny widget: Any, as element: HTMLElement) {
+    ///   - widget: The widget, which does nothing unless it is this backend's.
+    func anchor(element: HTMLElement, toAny widget: Any) {
         guard let widget = widget as? Widget else {
             return
         }
-        captureElement(of: widget, as: element)
+        anchor(element: element, to: widget)
     }
 
     /// Records an attribute block on a widget known only as `Any`, as
-    /// ``captureElement(ofAny:as:)`` does for an element name.
+    /// ``anchor(element:toAny:)`` does for an element name.
     ///
     /// - Parameters:
+    ///   - attributes: The attribute operations to apply.
     ///   - widget: The widget, which does nothing unless it is this backend's.
-    ///   - block: The attribute operations to apply.
-    func captureAttributes(ofAny widget: Any, to block: HTMLAttributeBlock) {
+    func anchor(attributes: HTMLAttributeBlock, toAny widget: Any) {
         guard let widget = widget as? Widget else {
             return
         }
-        captureAttributes(of: widget, to: block)
+        anchor(attributes: attributes, to: widget)
     }
 }

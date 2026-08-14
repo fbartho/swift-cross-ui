@@ -18,7 +18,7 @@ public final class StaticHTMLBackend:
     BackendFeatures.Colors,
     BackendFeatures.Tables,
     BackendFeatures.Windowing,
-    HTMLElementCapturing
+    HTMLElementAnchoring
 {
     /// A window. Static output has no real windows; this only carries the
     /// size that the root view gets laid out against.
@@ -239,10 +239,10 @@ public final class StaticHTMLBackend:
         /// Records the authored intent in scope when this widget was updated.
         ///
         /// Only the values that propagate down a subtree arrive this way. An
-        /// element name and an attribute block are captured directly onto the
+        /// element name and an attribute block are anchored directly onto the
         /// modifier's own widget by
-        /// ``StaticHTMLBackend/captureElement(of:as:)`` and
-        /// ``StaticHTMLBackend/captureAttributes(of:to:)``.
+        /// ``StaticHTMLBackend/anchor(element:to:)`` and
+        /// ``StaticHTMLBackend/anchor(attributes:to:)``.
         ///
         /// - Parameter environment: The environment the widget was updated in.
         func captureIntent(from environment: EnvironmentValues) {
@@ -694,9 +694,9 @@ public final class StaticHTMLBackend:
     /// during emission, by descending to the author's modified view.
     ///
     /// - Parameters:
-    ///   - widget: The modifier's wrapper widget.
     ///   - element: The element to emit it as.
-    public func captureElement(of widget: Widget, as element: HTMLElement) {
+    ///   - widget: The modifier's wrapper widget.
+    public func anchor(element: HTMLElement, to widget: Widget) {
         // A name already here was applied closer to the content, which is the
         // more specific answer.
         widget.pendingElement = widget.pendingElement ?? element
@@ -712,19 +712,19 @@ public final class StaticHTMLBackend:
     /// none rides on to the first element that survives elision.
     ///
     /// - Parameters:
+    ///   - attributes: The attribute operations to apply.
     ///   - widget: The modifier's wrapper widget.
-    ///   - block: The attribute operations to apply.
-    public func captureAttributes(of widget: Widget, to block: HTMLAttributeBlock) {
-        guard block.materializes else {
+    public func anchor(attributes: HTMLAttributeBlock, to widget: Widget) {
+        guard attributes.materializes else {
             // A block applied closer to the content wins the keys it sets.
             widget.pendingAttributes = widget.pendingAttributes.map { pending in
-                block.layering(pending)
-            } ?? block
+                attributes.layering(pending)
+            } ?? attributes
             return
         }
         widget.pendingIdentifiedAttributes = widget.pendingIdentifiedAttributes.map { pending in
-            block.layering(pending)
-        } ?? block
+            attributes.layering(pending)
+        } ?? attributes
     }
 
     public func removeAllChildren(of container: Widget) {

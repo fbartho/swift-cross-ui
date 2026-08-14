@@ -125,7 +125,7 @@ extension View {
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ element: HTMLElement) -> some View {
         HTMLCaptureModifier(self) { backend, widget in
-            backend.captureElement(ofAny: widget, as: element)
+            backend.anchor(element: element, toAny: widget)
         }
     }
 
@@ -204,7 +204,7 @@ extension View {
     public func htmlAttributes(_ attributes: [String: HTMLAttributeOp]) -> some View {
         let block = HTMLAttributeBlock(attributes: attributes)
         return HTMLCaptureModifier(self) { backend, widget in
-            backend.captureAttributes(ofAny: widget, to: block)
+            backend.anchor(attributes: block, toAny: widget)
         }
     }
 
