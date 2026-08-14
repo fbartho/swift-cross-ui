@@ -17,7 +17,8 @@ public final class StaticHTMLBackend:
     BackendFeatures.CornerRadius,
     BackendFeatures.Colors,
     BackendFeatures.Tables,
-    BackendFeatures.Windowing
+    BackendFeatures.Windowing,
+    HTMLElementCapturing
 {
     /// A window. Static output has no real windows; this only carries the
     /// size that the root view gets laid out against.
@@ -55,9 +56,18 @@ public final class StaticHTMLBackend:
         public var cornerRadius = 0
         /// An element name explicitly requested via ``View/htmlTag(_:)``.
         ///
-        /// Set on the widget the modifier was applied to, which is the element
-        /// it names: a tag never propagates past its application site.
+        /// Resolved from ``pendingElement`` onto the element of the view the
+        /// author modified.
         public var explicitElement: HTMLElement?
+        /// The element name captured onto this widget by a
+        /// ``View/htmlTag(_:)`` modifier.
+        ///
+        /// The modifier owns a wrapper around the view the author named, not
+        /// that view's own widget, so the name descends from here to the
+        /// element the author was describing — the same local descent a
+        /// non-`id` attribute block takes, and stopping at the same places.
+        /// It never leaves the application site's subtree.
+        var pendingElement: HTMLElement?
         /// Attribute operations this widget's element carries.
         ///
         /// Populated during emission as blocks are consumed — either here,
@@ -65,23 +75,18 @@ public final class StaticHTMLBackend:
         /// elision beneath the application site. See
         /// ``HTMLAttributeBlock/materializes``.
         public var authorAttributes: [String: HTMLAttributeOp] = [:]
-        /// The nested element names in scope when this widget was updated,
-        /// outermost first.
+        /// The attribute block captured onto this widget that names no `id`.
         ///
-        /// Only a leaf receives an environment, so a tag applied to a
-        /// container arrives here rather than on the container. The renderer
-        /// distributes each entry to the element it names — see
-        /// ``StaticHTMLRenderer``.
-        var pendingTags: [HTMLTagApplication] = []
-        /// The nested `id`-bearing attribute blocks in scope when this widget
-        /// was updated, outermost first. Distributed like ``pendingTags``.
-        var pendingIdentifiedAttributes: [HTMLAttributeBlock] = []
-        /// The merged non-`id` attribute block in scope when this widget was
-        /// updated.
-        ///
-        /// This one names no element of its own, so it is consumed by the
-        /// first element surviving elision beneath the application site.
+        /// It describes no element of its own, so it rides past the author's
+        /// modified view to the first element that survives elision.
         var pendingAttributes: HTMLAttributeBlock?
+        /// The `id`-bearing attribute block captured onto this widget.
+        ///
+        /// Kept apart from ``pendingAttributes`` because the two stop in
+        /// different places: an author-designated identity lands on the
+        /// modified view's own element and keeps it alive, rather than riding
+        /// on to whatever elision leaves.
+        var pendingIdentifiedAttributes: HTMLAttributeBlock?
         /// The navigation destination in scope when this widget was updated.
         ///
         /// Href-capable widgets consume this into ``href``; everything else
@@ -238,20 +243,15 @@ public final class StaticHTMLBackend:
 
         /// Records the authored intent in scope when this widget was updated.
         ///
-        /// The two materializing kinds resolve here rather than during
-        /// emission, because this widget is already the application site they
-        /// name: only a leaf receives an environment, and a materializing
-        /// value never propagates past the view it was applied to, so a leaf
-        /// seeing one is that view. What can't resolve here is what the
-        /// application site doesn't decide — a non-`id` attribute block, whose
-        /// consumer is whichever element survives elision, and an `href`,
-        /// whose consumers are the href-capable views below.
+        /// Only the kinds that genuinely propagate are read here. An element
+        /// name and an attribute block reach their widget through
+        /// ``StaticHTMLBackend/captureElement(of:as:)`` and
+        /// ``StaticHTMLBackend/captureAttributes(of:to:)`` instead, because
+        /// they never leave the view they were applied to and the modifier
+        /// owns that view's widget.
         ///
         /// - Parameter environment: The environment the widget was updated in.
         func captureIntent(from environment: EnvironmentValues) {
-            pendingTags = environment.htmlTags
-            pendingIdentifiedAttributes = environment.htmlIdentifiedAttributes
-            pendingAttributes = environment.htmlAttributes
             pendingHref = environment.htmlHref
             pendingRawFragmentRequest = environment.htmlRawFragmentRequest
             isEnabled = environment.isEnabled
@@ -690,6 +690,47 @@ public final class StaticHTMLBackend:
 
     public func createContainer() -> Widget {
         Container()
+    }
+
+    /// Records the element an author named for this widget.
+    ///
+    /// The widget is the modifier's own wrapper, which is the application
+    /// site: one application, one wrapper, so nothing has to recover which
+    /// application a name came from. Which *element* it names is settled
+    /// during emission, by descending to the author's modified view.
+    ///
+    /// - Parameters:
+    ///   - widget: The modifier's wrapper widget.
+    ///   - element: The element to emit it as.
+    public func captureElement(of widget: Widget, as element: HTMLElement) {
+        // A tag applied closer to the content is the more specific answer, so
+        // an inner wrapper's name is already the one that reached this site.
+        widget.pendingElement = widget.pendingElement ?? element
+    }
+
+    /// Records a block of attribute operations an author attached to this
+    /// widget.
+    ///
+    /// Whether the block materializes an element decides where it lands, not
+    /// where it starts: both kinds start here, on the modifier's wrapper, and
+    /// descend to the author's modified view during emission. A block naming
+    /// an `id` stops at that view and keeps its element alive; a block naming
+    /// none rides on to the first element that survives elision.
+    ///
+    /// - Parameters:
+    ///   - widget: The modifier's wrapper widget.
+    ///   - block: The attribute operations to apply.
+    public func captureAttributes(of widget: Widget, to block: HTMLAttributeBlock) {
+        guard block.materializes else {
+            // A block applied closer to the content wins the keys it sets.
+            widget.pendingAttributes = widget.pendingAttributes.map { pending in
+                block.layering(pending)
+            } ?? block
+            return
+        }
+        widget.pendingIdentifiedAttributes = widget.pendingIdentifiedAttributes.map { pending in
+            block.layering(pending)
+        } ?? block
     }
 
     public func removeAllChildren(of container: Widget) {

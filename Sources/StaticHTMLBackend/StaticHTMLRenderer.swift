@@ -291,14 +291,15 @@ public enum StaticHTMLRenderer {
     /// Resolves the escape-hatch values a tree captured onto the elements
     /// that carry them.
     ///
-    /// Each pass below handles one kind, distinguished by where its consumer
-    /// sits relative to the view the author modified: at it (the materializing
-    /// kinds), beneath it (a non-`id` attribute block), or at every
-    /// href-capable view within it (a navigation destination, already consumed
-    /// during the update).
+    /// Only the kinds whose consumer isn't their application site need a pass
+    /// here. A tag and an `id`-bearing block already sit on the element they
+    /// name — the modifier captured them onto its own widget — so what's left
+    /// is a non-`id` block, consumed beneath its site, and a navigation
+    /// destination, consumed at every href-capable view within its scope
+    /// during the update.
     private static func resolveIntent(in root: StaticHTMLBackend.Widget) {
         resolveRawFragments(in: root)
-        distributeMaterializedValues(in: root)
+        sinkMaterializedValues(in: root)
         sinkAttributes(in: root)
 
         sinkTapMarkers(in: root)
@@ -351,20 +352,18 @@ public enum StaticHTMLRenderer {
     /// Moves each tap marker down onto the element the author made tappable.
     ///
     /// `OnTapGestureModifier` produces a wrapper widget of its own, so unlike
-    /// an href — which rides the environment and is hoisted to the widget
-    /// whose subtree it covers — the flag starts on the wrapper rather than on
-    /// the content. Left there it would mark a `<div>` around a control that
-    /// carries its own marker, so a tapped `Button` would emit two markers for
-    /// one interaction and the enlivening tier would have to guess which
-    /// element it was meant to bind.
+    /// an href — which rides the environment to the consumers it lights up —
+    /// the flag starts on the wrapper rather than on the content. Left there
+    /// it would mark a `<div>` around a control that carries its own marker,
+    /// so a tapped `Button` would emit two markers for one interaction and the
+    /// enlivening tier would have to guess which element it was meant to bind.
     ///
     /// Descent follows single-child wrapping only, the same shape
-    /// ``distributeMaterializedValues(in:depth:)`` hands ownership down
-    /// through: a wrapper adds no element worth marking, so the marker belongs
-    /// to the one view beneath it. A wrapper around several children keeps the
-    /// marker itself — the
-    /// author made that whole group tappable, and picking one child would be a
-    /// guess.
+    /// ``sinkMaterializedValues(in:)`` takes to the author's modified view: a
+    /// wrapper adds no element worth marking, so the marker belongs to the one
+    /// view beneath it. A wrapper around several children keeps the marker
+    /// itself — the author made that whole group tappable, and picking one
+    /// child would be a guess.
     ///
     /// Descent also stops at a control that owns its label subtree: a
     /// view-label button is a single-child widget, but it becomes the element
@@ -493,94 +492,6 @@ public enum StaticHTMLRenderer {
         }
     }
 
-    /// Gives each materializing value the element it names.
-    ///
-    /// A tag and an `id`-bearing attribute block both name the element of the
-    /// view they were applied to. Only a leaf receives an environment, though,
-    /// so a value applied to a container arrives on the leaves beneath it and
-    /// never on the container itself. Each leaf reports the whole nest of
-    /// values in scope for it, outermost first, and that nesting is what
-    /// recovers the application sites: the outermost entry belongs to the
-    /// outermost widget whose every leaf reports it, the next entry to a
-    /// widget inside that one, and so on.
-    ///
-    /// Ownership is decided structurally rather than by matching an object
-    /// back to the widget that captured it. Descent to the site follows
-    /// single-child wrapping only — a value covering several siblings was
-    /// applied above them — and stops at a control that owns its label, since
-    /// the control is the element the author named.
-    ///
-    /// - Parameters:
-    ///   - widget: The subtree to walk.
-    ///   - depth: How many enclosing values have already been placed above.
-    private static func distributeMaterializedValues(
-        in widget: StaticHTMLBackend.Widget,
-        depth: Int = 0
-    ) {
-        let tag = sharedValue(in: widget, at: depth, of: \.pendingTags)
-        let block = sharedValue(in: widget, at: depth, of: \.pendingIdentifiedAttributes)
-        guard tag != nil || block != nil else {
-            // Nothing at this depth covers the whole subtree, so every value
-            // still pending below was applied inside one of the children.
-            for child in widget.getChildren() {
-                distributeMaterializedValues(in: child, depth: depth)
-            }
-            return
-        }
-
-        // A control that owns its label stops the descent only when the value
-        // is in scope for the control itself — then it names the control, and
-        // handing it to the label would put the author's element inside the
-        // button instead of on it. A value the label introduced never reached
-        // the control's own update, so it belongs further down.
-        var site = widget
-        while let next = descentTarget(of: site),
-              !(site is StaticHTMLBackend.ViewLabelButton)
-              || site.pendingTags.count <= depth && site.pendingIdentifiedAttributes
-              .count <= depth,
-              sharedValue(in: next, at: depth, of: \.pendingTags) == tag,
-              sharedValue(in: next, at: depth, of: \.pendingIdentifiedAttributes) == block
-        {
-            site = next
-        }
-
-        // Stacking either modifier on one view produces one entry per call,
-        // and every one of them covers exactly this subtree rather than a
-        // narrower one. Those entries name the same element, so they resolve
-        // together here. The chain runs outermost-first, so each turn of this
-        // loop moves closer to the content and therefore wins: a tag replaces
-        // the one before it outright, and a block overwrites only the keys it
-        // sets. An entry whose coverage is narrower belongs to a descendant
-        // instead, and finding one ends the loop.
-        var placed = depth
-        while true {
-            let tag = sharedValue(in: site, at: placed, of: \.pendingTags)
-            let block = sharedValue(in: site, at: placed, of: \.pendingIdentifiedAttributes)
-            let coversWholeSubtree = descentTarget(of: site).map { next in
-                sharedValue(in: next, at: placed, of: \.pendingTags) == tag
-                    && sharedValue(
-                        in: next,
-                        at: placed,
-                        of: \.pendingIdentifiedAttributes
-                    ) == block
-            } ?? true
-            guard tag != nil || block != nil, coversWholeSubtree else {
-                break
-            }
-            if let tag {
-                site.explicitElement = tag.element
-            }
-            if let block {
-                site.authorAttributes.merge(block.attributes) { _, innermost in innermost }
-            }
-            placed += 1
-        }
-
-        for child in site.getChildren() {
-            distributeMaterializedValues(in: child, depth: placed)
-        }
-    }
-
     /// The child a value applied at a widget descends into, or `nil` where the
     /// widget is itself the element the value names.
     ///
@@ -607,63 +518,68 @@ public enum StaticHTMLRenderer {
         return children.count == 1 ? children[0] : nil
     }
 
-    /// The value every leaf of a subtree reports at one nesting depth, if they
-    /// all report the same one.
+    /// Gives each materializing value the element of the view it was applied
+    /// to.
     ///
-    /// - Parameters:
-    ///   - widget: The subtree to inspect.
-    ///   - depth: The position in each leaf's nest to read.
-    ///   - chain: The nest to read from.
-    /// - Returns: The shared value, or `nil` where the leaves disagree or none
-    ///   of them carry a value that deep.
-    private static func sharedValue<Value: Equatable>(
-        in widget: StaticHTMLBackend.Widget,
-        at depth: Int,
-        of chain: KeyPath<StaticHTMLBackend.Widget, [Value]>
-    ) -> Value? {
-        var shared: Value?
-        var sawLeaf = false
-        var agrees = true
-        func walk(_ widget: StaticHTMLBackend.Widget) {
-            let children = widget.getChildren()
-            guard !children.isEmpty else {
-                // A childless structural wrapper — an `if` without an `else`
-                // that evaluated false, an empty `Group` — holds no content,
-                // as opposed to content that happens to carry no value. It
-                // never received an environment, so reading it as "explicitly
-                // has none" would veto a value its real siblings all share.
-                guard !(widget is StaticHTMLBackend.Container),
-                      !(widget is StaticHTMLBackend.ScrollContainer)
-                else {
-                    return
-                }
-                let values = widget[keyPath: chain]
-                let value = depth < values.count ? values[depth] : nil
-                if sawLeaf {
-                    agrees = agrees && shared == value
-                } else {
-                    shared = value
-                    sawLeaf = true
-                }
-                return
-            }
-            for child in children {
-                walk(child)
-            }
+    /// A tag and an `id`-bearing block both name the author's modified view.
+    /// The modifier owns a wrapper *around* that view rather than the view's
+    /// own widget, so the value descends from the wrapper to what the author
+    /// was describing — never past it. Where that view emits a real element
+    /// the value lands on it (an `id` on a `Button` reaches the `<button>`
+    /// itself, minting no wrapper); where it would otherwise elide, carrying
+    /// the value is what keeps it.
+    ///
+    /// Descent follows single-child wrapping and a `.background()` pair's
+    /// content side, and stops at a control that owns its label subtree: the
+    /// control is the element the author named, so handing the value to the
+    /// label would put it inside the button rather than on it. A wrapper
+    /// carrying a value of its own doesn't stop it — stacked applications are
+    /// separate wrappers naming the same element, so they descend to the same
+    /// site and resolve there.
+    ///
+    /// Children resolve first, so an application closer to the content has
+    /// already claimed the site by the time one further out reaches it. That
+    /// is what makes the innermost call win a key two of them both set,
+    /// matching how nested environment overrides resolve generally.
+    ///
+    /// - Parameter widget: The subtree to walk.
+    private static func sinkMaterializedValues(in widget: StaticHTMLBackend.Widget) {
+        for child in widget.getChildren() {
+            sinkMaterializedValues(in: child)
         }
-        walk(widget)
-        return agrees ? shared : nil
+
+        let element = widget.pendingElement
+        let block = widget.pendingIdentifiedAttributes
+        guard element != nil || block != nil else {
+            return
+        }
+        widget.pendingElement = nil
+        widget.pendingIdentifiedAttributes = nil
+
+        var site = widget
+        while !(site is StaticHTMLBackend.ViewLabelButton), let next = descentTarget(of: site) {
+            site = next
+        }
+
+        if let element {
+            // A name already on the site was applied closer to the content,
+            // which is the more specific answer.
+            site.explicitElement = site.explicitElement ?? element
+        }
+        if let block {
+            site.authorAttributes.merge(block.attributes) { existing, _ in existing }
+        }
     }
 
     /// Moves each non-`id` attribute block onto the element that survives to
     /// carry it.
     ///
     /// A block without an `id` describes whatever element ends up holding the
-    /// content, not a node the author pinned, so it rides down through
-    /// wrappers that emit nothing and lands on the first one that materializes.
-    /// The consumer is unambiguous because only a single-child wrapper elides:
-    /// where descent could branch, this widget is a real element and consumes
-    /// the block itself.
+    /// content, not a node the author pinned, so it rides down from the
+    /// wrapper that captured it through wrappers that emit nothing, and lands
+    /// on the first one that materializes. The consumer is unambiguous because
+    /// only a single-child wrapper elides: where descent could branch, the
+    /// widget is a real element and consumes the block itself.
     ///
     /// Descent stops at a control that owns its label subtree. A view-label
     /// button is a single-child widget, but it becomes the element the reader
@@ -672,80 +588,17 @@ public enum StaticHTMLRenderer {
     ///
     /// - Parameter widget: The subtree to walk.
     private static func sinkAttributes(in widget: StaticHTMLBackend.Widget) {
-        // The block is in scope for every widget under the application site,
-        // so it has to be claimed at the outermost one that reports it —
-        // claiming it wherever it appears would copy one author's attributes
-        // onto every descendant as well.
-        guard let block = sharedAttributeBlock(in: widget) else {
-            for child in widget.getChildren() {
-                sinkAttributes(in: child)
-            }
-            return
-        }
-
-        clearPendingAttributes(in: widget, matching: block)
-        let consumer = consumer(from: widget)
-        consumer.authorAttributes.merge(block.attributes) { existing, _ in
-            // A block already resolved onto the consumer was applied closer
-            // to the content than this one, so it stays.
-            existing
-        }
-        for child in consumer.getChildren() {
-            sinkAttributes(in: child)
-        }
-    }
-
-    /// The non-`id` attribute block every leaf of a subtree reports, if they
-    /// all report the same one.
-    ///
-    /// - Parameter widget: The subtree to inspect.
-    /// - Returns: The shared block, or `nil` where the leaves disagree or
-    ///   carry none.
-    private static func sharedAttributeBlock(
-        in widget: StaticHTMLBackend.Widget
-    ) -> HTMLAttributeBlock? {
-        var shared: HTMLAttributeBlock?
-        var sawLeaf = false
-        var agrees = true
-        func walk(_ widget: StaticHTMLBackend.Widget) {
-            let children = widget.getChildren()
-            guard !children.isEmpty else {
-                guard !(widget is StaticHTMLBackend.Container),
-                      !(widget is StaticHTMLBackend.ScrollContainer)
-                else {
-                    return
-                }
-                if sawLeaf {
-                    agrees = agrees && shared == widget.pendingAttributes
-                } else {
-                    shared = widget.pendingAttributes
-                    sawLeaf = true
-                }
-                return
-            }
-            for child in children {
-                walk(child)
-            }
-        }
-        walk(widget)
-        return agrees ? shared : nil
-    }
-
-    /// Removes one attribute block from every widget in a subtree that
-    /// reported it, now that an ancestor has claimed it.
-    ///
-    /// - Parameters:
-    ///   - widget: The subtree to clear.
-    ///   - claimed: The block that was claimed.
-    private static func clearPendingAttributes(
-        in widget: StaticHTMLBackend.Widget,
-        matching claimed: HTMLAttributeBlock
-    ) {
-        if widget.pendingAttributes == claimed {
+        if let block = widget.pendingAttributes {
             widget.pendingAttributes = nil
+            let consumer = consumer(from: widget)
+            consumer.authorAttributes.merge(block.attributes) { existing, _ in
+                // A block already resolved onto the consumer was applied
+                // closer to the content than this one, so it stays.
+                existing
+            }
         }
         for child in widget.getChildren() {
-            clearPendingAttributes(in: child, matching: claimed)
+            sinkAttributes(in: child)
         }
     }
 
