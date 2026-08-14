@@ -814,14 +814,16 @@ public final class Gtk3Backend:
     ) {
         let textView = textView as! CustomLabel
         textView.label = content
+        // Text justification only has the three edge spellings, so a custom
+        // alignment guide justifies as leading.
         textView.justify =
-            switch environment.multilineTextAlignment {
-                case .leading:
-                    Justification.left
+            switch environment.multilineTextAlignment.asEdge {
                 case .center:
                     Justification.center
                 case .trailing:
                     Justification.right
+                case .leading, nil:
+                    Justification.left
             }
 
         textView.css.clear()

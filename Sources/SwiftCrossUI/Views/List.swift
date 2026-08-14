@@ -228,6 +228,11 @@ public struct List<SelectionValue: Hashable, RowView: View>: TypeSafeView, View 
             height
         )
 
+        // Guides deliberately stop here. Rows are handed to the backend as
+        // widgets plus heights and it places them itself, inside its own base
+        // item padding, so core never learns where a row actually lands; any
+        // transform applied here would be a guess each backend falsifies
+        // differently.
         return ViewLayoutResult(
             size: size,
             childResults: childResults

@@ -1274,9 +1274,10 @@ public struct HTMLEmitter {
         // At one child the wrapper shrink-wraps, so its own align-items has no
         // slack to place the child within — measured identical across every
         // parent × wrapper alignment pair except a stretching parent, which a
-        // StackAlignment can never produce (leading/center/trailing map to
-        // flex-start/center/flex-end). What still decides the child's sizing is
-        // whichever ancestor survives, hence parentIsFlex.
+        // stack alignment can never produce: every description resolves through
+        // `closestEdge` to flex-start/center/flex-end, custom guides included.
+        // What still decides the child's sizing is whichever ancestor survives,
+        // hence parentIsFlex.
         guard parentIsFlex else {
             return nil
         }
@@ -2224,8 +2225,12 @@ public struct HTMLEmitter {
     }
 
     /// Maps a stack's cross-axis alignment to its CSS equivalent.
-    nonisolated static func cssAlignment(_ alignment: StackAlignment) -> String {
-        switch alignment {
+    ///
+    /// A custom guide resolves per-child against geometry only SwiftCrossUI can
+    /// evaluate, and CSS has no channel for that, so it degrades to whichever
+    /// edge its line sits nearest — an approximation the static tier accepts.
+    nonisolated static func cssAlignment(_ alignment: StackAlignmentDescription) -> String {
+        switch alignment.closestEdge {
             case .leading: "flex-start"
             case .center: "center"
             case .trailing: "flex-end"
@@ -2233,11 +2238,14 @@ public struct HTMLEmitter {
     }
 
     /// Maps a declared multiline text alignment to its CSS equivalent.
+    ///
+    /// Text justification only has the three edge spellings, so a custom
+    /// alignment guide justifies as leading.
     nonisolated static func cssTextAlign(_ alignment: HorizontalAlignment) -> String {
-        switch alignment {
-            case .leading: "left"
+        switch alignment.asEdge {
             case .center: "center"
             case .trailing: "right"
+            case .leading, nil: "left"
         }
     }
 

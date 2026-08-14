@@ -51,10 +51,7 @@ public struct ZStack<Content: View>: View {
                 )
             }
 
-        let size = ViewSize(
-            childResults.map(\.size.width).max() ?? 0,
-            childResults.map(\.size.height).max() ?? 0
-        )
+        let size = alignment.frameSize(ofChildren: childResults)
 
         if !(children is TupleViewChildren || children is EmptyViewChildren) {
             logger.warning(
@@ -75,7 +72,38 @@ public struct ZStack<Content: View>: View {
             redistributeSpaceOnCommit: proposedSize.width == nil || proposedSize.height == nil
         )
 
-        return ViewLayoutResult(size: size, childResults: childResults)
+        return ViewLayoutResult(
+            size: size,
+            childResults: childResults,
+            explicitGuides: Self.guides(
+                of: childResults,
+                alignment: alignment,
+                in: size
+            )
+        )
+    }
+
+    /// The guides a ZStack reports, aggregated from its children's after
+    /// placing each one.
+    ///
+    /// - Parameters:
+    ///   - childResults: The children's layout results.
+    ///   - alignment: The alignment whose guides the children are placed by.
+    ///   - size: The stack's own size.
+    /// - Returns: The stack's guides, in its own coordinate space.
+    static func guides(
+        of childResults: [ViewLayoutResult],
+        alignment: Alignment,
+        in size: ViewSize
+    ) -> [AlignmentKey: Double] {
+        ViewLayoutResult.aggregateGuides(
+            children: Array(
+                zip(
+                    childResults,
+                    alignment.placements(ofDerivedChildren: childResults, in: size)
+                )
+            )
+        )
     }
 
     public func commit<Backend: BaseAppBackend>(
@@ -102,12 +130,20 @@ public struct ZStack<Content: View>: View {
             child.commit()
         }
 
-        for (i, layoutResult) in layoutResults.enumerated() {
-            let position = alignment.position(
-                ofChild: layoutResult.size.vector,
-                in: size.vector
+        // Re-derived from the committed sizes rather than reused from compute,
+        // for the same reason the axis stacks re-derive theirs: a redistribution
+        // pass may have resized children, and a guide is a function of the size
+        // it resolved against.
+        let placements = alignment.placements(ofDerivedChildren: layoutResults, in: size)
+        for (i, placement) in placements.enumerated() {
+            backend.setPosition(
+                ofChildAt: i,
+                in: widget,
+                to: SIMD2(
+                    LayoutSystem.roundSize(placement.x),
+                    LayoutSystem.roundSize(placement.y)
+                )
             )
-            backend.setPosition(ofChildAt: i, in: widget, to: position)
         }
 
         backend.setSize(of: widget, to: size.vector)

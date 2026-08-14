@@ -242,11 +242,11 @@ extension EnvironmentValues {
     /// affecting layout.
     @Entry public var layoutOrientation: Orientation = .vertical
 
-    /// The current stack alignment.
+    /// The guide the current stack aligns its children on, across its axis.
     ///
     /// Inherited by ``ForEach`` and ``Group`` so that they can be used without
     /// affecting layout.
-    @Entry public var layoutAlignment: StackAlignment = .center
+    @Entry public var layoutAlignment: AlignmentKey = HorizontalAlignment.center.key
 
     /// The current stack spacing.
     ///

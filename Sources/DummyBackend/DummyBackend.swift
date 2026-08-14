@@ -572,6 +572,41 @@ public final class DummyBackend:
         )
     }
 
+    /// Baselines for the synthetic text model above: each line box is
+    /// `lineHeight` tall and its glyphs are `pointSize` tall, so the baseline
+    /// sits at the bottom of the glyphs, centred in the line box's leading.
+    ///
+    /// Deterministic in the resolved font alone, so a test can predict it
+    /// without a font engine.
+    public func layoutMetrics(
+        ofText text: String,
+        whenDisplayedIn widget: Widget,
+        proposedWidth: Int?,
+        proposedHeight: Int?,
+        environment: EnvironmentValues
+    ) -> TextLayoutMetrics {
+        let size = size(
+            of: text,
+            whenDisplayedIn: widget,
+            proposedWidth: proposedWidth,
+            proposedHeight: proposedHeight,
+            environment: environment
+        )
+
+        let resolvedFont = environment.resolvedFont
+        let lineHeight = max(Double(Int(resolvedFont.lineHeight)), 1)
+        let characterHeight = Double(Int(resolvedFont.pointSize))
+        let ascent = characterHeight + max(lineHeight - characterHeight, 0) / 2
+
+        let lineCount = max(1, (Double(size.y) / lineHeight).rounded(.down))
+
+        return TextLayoutMetrics(
+            size: size,
+            firstBaseline: ascent,
+            lastBaseline: (lineCount - 1) * lineHeight + ascent
+        )
+    }
+
     public func createTextView() -> Widget {
         TextView()
     }

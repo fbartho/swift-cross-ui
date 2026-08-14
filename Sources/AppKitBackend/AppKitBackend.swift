@@ -656,6 +656,40 @@ public final class AppKitBackend: FullAppBackend {
         )
     }
 
+    public func layoutMetrics(
+        ofText text: String,
+        whenDisplayedIn widget: Widget,
+        proposedWidth: Int?,
+        proposedHeight: Int?,
+        environment: EnvironmentValues
+    ) -> TextLayoutMetrics {
+        let size = size(
+            of: text,
+            whenDisplayedIn: widget,
+            proposedWidth: proposedWidth,
+            proposedHeight: proposedHeight,
+            environment: environment
+        )
+
+        let resolvedFont = environment.resolvedFont
+        let nsFont = Self.font(for: resolvedFont)
+        let lineHeight = max(resolvedFont.lineHeight, 1)
+
+        // Every line box is pinned to the resolved line height by the paragraph
+        // style, so a baseline sits at the font's own ascent plus half of
+        // whatever leading that pinning added around the glyphs.
+        let naturalHeight = Double(nsFont.ascender - nsFont.descender)
+        let ascent = Double(nsFont.ascender) + max(lineHeight - naturalHeight, 0) / 2
+
+        let lineCount = max(1, (Double(size.y) / lineHeight).rounded(.down))
+
+        return TextLayoutMetrics(
+            size: size,
+            firstBaseline: ascent,
+            lastBaseline: (lineCount - 1) * lineHeight + ascent
+        )
+    }
+
     public func createTextView() -> Widget {
         let field = NSTextField(wrappingLabelWithString: "")
         // Somewhat unintuitively, this changes the behaviour of the text field even
@@ -1186,14 +1220,16 @@ public final class AppKitBackend: FullAppBackend {
         forTextIn environment: EnvironmentValues
     ) -> [NSAttributedString.Key: Any] {
         let paragraphStyle = NSMutableParagraphStyle()
+        // Text justification only has the three edge spellings, so a custom
+        // alignment guide justifies as leading.
         paragraphStyle.alignment =
-            switch environment.multilineTextAlignment {
-                case .leading:
-                    .left
+            switch environment.multilineTextAlignment.asEdge {
                 case .center:
                     .center
                 case .trailing:
                     .right
+                case .leading, nil:
+                    .left
             }
 
         let resolvedFont = environment.resolvedFont

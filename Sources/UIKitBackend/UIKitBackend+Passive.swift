@@ -8,14 +8,16 @@ extension UIKitBackend {
         defaultForegroundColor: UIColor = .label
     ) -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
+        // Text justification only has the three edge spellings, so a custom
+        // alignment guide justifies as leading.
         paragraphStyle.alignment =
-            switch environment.multilineTextAlignment {
+            switch environment.multilineTextAlignment.asEdge {
                 case .center:
                     .center
-                case .leading:
-                    .natural
                 case .trailing:
                     UITraitCollection.current.layoutDirection == .rightToLeft ? .left : .right
+                case .leading, nil:
+                    .natural
             }
         paragraphStyle.lineBreakMode = .byWordWrapping
 

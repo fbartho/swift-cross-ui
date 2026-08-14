@@ -143,6 +143,11 @@ public struct ScrollView<Content: View>: TypeSafeView, View {
             outerSize.height += horizontalScrollBarHeight
         }
 
+        // Guides deliberately stop here, matching SwiftUI, which refuses guide
+        // propagation out of a ScrollView even when the content is shorter than
+        // the viewport and no scrolling is possible — the refusal is
+        // structural, not a consequence of scroll offset. Reporting none
+        // leaves ancestors aligning on the scroll view's own edges.
         return ViewLayoutResult(
             size: outerSize,
             childResults: [finalChildResult],

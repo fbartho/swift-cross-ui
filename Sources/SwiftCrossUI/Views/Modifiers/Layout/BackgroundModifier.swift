@@ -78,11 +78,21 @@ struct BackgroundModifier<Background: View, Foreground: View>: TypeSafeView {
             max(backgroundSize.height, foregroundSize.height)
         )
 
+        let placements = Alignment.center.placements(
+            ofChildren: [backgroundResult, foregroundResult],
+            in: frameSize
+        )
+
+        // Only the foreground's guides propagate: a background decorates the
+        // view it sits behind and must not move an ancestor's alignment of it.
         // TODO: Investigate the ordering of SwiftUI's preference merging for
         //   the background modifier.
         return ViewLayoutResult(
             size: frameSize,
-            childResults: [backgroundResult, foregroundResult]
+            childResults: [backgroundResult, foregroundResult],
+            explicitGuides: ViewLayoutResult.aggregateGuides(
+                children: [(foregroundResult, placements[1])]
+            )
         )
     }
 
@@ -94,20 +104,24 @@ struct BackgroundModifier<Background: View, Foreground: View>: TypeSafeView {
         backend: Backend
     ) {
         let frameSize = layout.size
-        let backgroundSize = children.child0.commit().size
-        let foregroundSize = children.child1.commit().size
+        let backgroundResult = children.child0.commit()
+        let foregroundResult = children.child1.commit()
 
-        let backgroundPosition = Alignment.center.position(
-            ofChild: backgroundSize.vector,
-            in: frameSize.vector
-        )
-        let foregroundPosition = Alignment.center.position(
-            ofChild: foregroundSize.vector,
-            in: frameSize.vector
+        let placements = Alignment.center.placements(
+            ofChildren: [backgroundResult, foregroundResult],
+            in: frameSize
         )
 
-        backend.setPosition(ofChildAt: 0, in: widget, to: backgroundPosition)
-        backend.setPosition(ofChildAt: 1, in: widget, to: foregroundPosition)
+        for (index, placement) in placements.enumerated() {
+            backend.setPosition(
+                ofChildAt: index,
+                in: widget,
+                to: SIMD2(
+                    LayoutSystem.roundSize(placement.x),
+                    LayoutSystem.roundSize(placement.y)
+                )
+            )
+        }
 
         backend.setSize(of: widget, to: frameSize.vector)
         backend.describeBackground(of: widget)

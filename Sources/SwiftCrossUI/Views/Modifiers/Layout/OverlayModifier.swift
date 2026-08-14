@@ -74,9 +74,22 @@ struct OverlayModifier<Content: View, Overlay: View>: TypeSafeView {
             max(contentSize.height, overlaySize.height)
         )
 
+        // Both children share one line derived from both of them, so an overlay
+        // aligned on a guide the two resolve differently lands where each one's
+        // own guide actually sits.
+        let placements = alignment.placements(
+            ofChildren: [contentResult, overlayResult],
+            in: size
+        )
+
+        // Only the content's guides propagate: an overlay decorates the view
+        // it sits on and must not move an ancestor's alignment of it.
         return ViewLayoutResult(
             size: size,
-            childResults: [contentResult, overlayResult]
+            childResults: [contentResult, overlayResult],
+            explicitGuides: ViewLayoutResult.aggregateGuides(
+                children: [(contentResult, placements[0])]
+            )
         )
     }
 
@@ -87,16 +100,26 @@ struct OverlayModifier<Content: View, Overlay: View>: TypeSafeView {
         environment: EnvironmentValues,
         backend: Backend
     ) {
-        let frameSize = layout.size.vector
-        let contentSize = children.child0.commit().size.vector
-        let overlaySize = children.child1.commit().size.vector
+        let frameSize = layout.size
+        let contentResult = children.child0.commit()
+        let overlayResult = children.child1.commit()
 
-        let contentPosition = alignment.position(ofChild: contentSize, in: frameSize)
-        let overlayPosition = alignment.position(ofChild: overlaySize, in: frameSize)
+        let placements = alignment.placements(
+            ofChildren: [contentResult, overlayResult],
+            in: frameSize
+        )
 
-        backend.setPosition(ofChildAt: 0, in: widget, to: contentPosition)
-        backend.setPosition(ofChildAt: 1, in: widget, to: overlayPosition)
+        for (index, placement) in placements.enumerated() {
+            backend.setPosition(
+                ofChildAt: index,
+                in: widget,
+                to: SIMD2(
+                    LayoutSystem.roundSize(placement.x),
+                    LayoutSystem.roundSize(placement.y)
+                )
+            )
+        }
 
-        backend.setSize(of: widget, to: frameSize)
+        backend.setSize(of: widget, to: frameSize.vector)
     }
 }

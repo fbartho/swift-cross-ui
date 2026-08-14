@@ -85,12 +85,17 @@ extension BackendFeatures {
         /// - Parameters:
         ///   - widget: The container that was laid out as a stack.
         ///   - orientation: The axis the children were stacked along.
-        ///   - alignment: How the children were aligned across that axis.
+        ///   - alignment: How the children were aligned across that axis. A
+        ///     custom alignment guide is described as such rather than as the
+        ///     edge it happens to sit nearest, since only SwiftCrossUI can
+        ///     resolve where its line falls; see
+        ///     ``StackAlignmentDescription/closestEdge`` for the fallback a
+        ///     backend that can express nothing else should take.
         ///   - spacing: The gap left between adjacent children.
         func describeStackLayout(
             of widget: Widget,
             orientation: Orientation,
-            alignment: StackAlignment,
+            alignment: StackAlignmentDescription,
             spacing: Int
         )
 
@@ -253,7 +258,7 @@ extension BackendFeatures.Widgets {
     public func describeStackLayout(
         of widget: Widget,
         orientation: Orientation,
-        alignment: StackAlignment,
+        alignment: StackAlignmentDescription,
         spacing: Int
     ) {
         // Backends that position children themselves learn nothing from this.

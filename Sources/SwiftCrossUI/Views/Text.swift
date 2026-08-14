@@ -95,8 +95,8 @@ extension Text: ElementaryView {
         //
         // A zero height proposal should result in the text using at least one
         // line of height (if non-empty).
-        var size = backend.size(
-            of: string,
+        let metrics = backend.layoutMetrics(
+            ofText: string,
             whenDisplayedIn: widget,
             proposedWidth: proposedSize.width.flatMap {
                 // For text, an infinite proposal is the same as an unspecified
@@ -110,13 +110,22 @@ extension Text: ElementaryView {
             environment: environment
         )
 
+        var size = metrics.size
+
         // If the proposed width was 0 and the resuling width was 1, then set the
         // resulting width to 0. See above for more detail.
         if proposedSize.width == 0 && size.x == 1 {
             size.x = 0
         }
 
-        return ViewLayoutResult.leafView(size: ViewSize(size))
+        var result = ViewLayoutResult.leafView(size: ViewSize(size))
+        // Text is the only leaf that sources baselines; every container above it
+        // gets them by propagation.
+        result.explicitGuides = [
+            VerticalAlignment.firstTextBaseline.key: metrics.firstBaseline,
+            VerticalAlignment.lastTextBaseline.key: metrics.lastBaseline,
+        ]
+        return result
     }
 
     public func commit<Backend: BaseAppBackend>(

@@ -126,6 +126,10 @@ public struct Table<RowValue, RowContent: TableRowContent<RowValue>>: TypeSafeVi
         }
         children.rowHeights = rowHeights
 
+        // Guides deliberately stop here, as in ``List``. Cells are handed to the
+        // backend with their row heights and it lays the rows and columns out
+        // itself; core positions a cell only within its own cell container, and
+        // never learns where that container sits in the table.
         return ViewLayoutResult(
             size: size.replacingUnspecifiedDimensions(by: .zero),
             childResults: cellResults

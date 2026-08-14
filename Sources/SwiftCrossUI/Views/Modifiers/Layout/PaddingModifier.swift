@@ -151,7 +151,12 @@ struct PaddingModifierView<Child: View>: TypeSafeView {
 
         return ViewLayoutResult(
             size: size,
-            childResults: [childResult]
+            childResults: [childResult],
+            explicitGuides: ViewLayoutResult.aggregateGuides(
+                children: [
+                    (childResult, SIMD2(Double(insets.leading), Double(insets.top)))
+                ]
+            )
         )
     }
 

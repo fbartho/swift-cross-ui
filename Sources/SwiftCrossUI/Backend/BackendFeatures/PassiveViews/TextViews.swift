@@ -54,6 +54,34 @@ extension BackendFeatures {
             environment: EnvironmentValues
         ) -> SIMD2<Int>
 
+        /// Gets the size of the given text along with the position of its first
+        /// and last baselines, for the same proposal
+        /// ``size(of:whenDisplayedIn:proposedWidth:proposedHeight:environment:)``
+        /// takes.
+        ///
+        /// The baselines are what ``VerticalAlignment/firstTextBaseline`` and
+        /// ``VerticalAlignment/lastTextBaseline`` align on. A backend whose font
+        /// engine reports real baselines should implement this; the default
+        /// implementation derives them from the resolved font's metrics and the
+        /// line count implied by the measured size, which is exact for backends
+        /// whose line height matches the resolved font's and approximate
+        /// otherwise.
+        ///
+        /// - Parameters:
+        ///   - text: The text to measure.
+        ///   - widget: The target widget, as for the size query.
+        ///   - proposedWidth: The proposed width of the text.
+        ///   - proposedHeight: The proposed height of the text.
+        ///   - environment: The current environment.
+        /// - Returns: The text's size and baselines.
+        func layoutMetrics(
+            ofText text: String,
+            whenDisplayedIn widget: Widget,
+            proposedWidth: Int?,
+            proposedHeight: Int?,
+            environment: EnvironmentValues
+        ) -> TextLayoutMetrics
+
         /// Creates a non-editable text view with optional text wrapping.
         ///
         /// Predominantly used by ``Text``.
@@ -86,5 +114,54 @@ extension BackendFeatures.TextViews {
         _ textStyle: Font.TextStyle
     ) -> Font.TextStyle.Resolved {
         textStyle.resolve(for: deviceClass)
+    }
+
+    public func layoutMetrics(
+        ofText text: String,
+        whenDisplayedIn widget: Widget,
+        proposedWidth: Int?,
+        proposedHeight: Int?,
+        environment: EnvironmentValues
+    ) -> TextLayoutMetrics {
+        let size = size(
+            of: text,
+            whenDisplayedIn: widget,
+            proposedWidth: proposedWidth,
+            proposedHeight: proposedHeight,
+            environment: environment
+        )
+        return TextLayoutMetrics(
+            size: size,
+            derivedFrom: environment.resolvedFont
+        )
+    }
+}
+
+extension TextLayoutMetrics {
+    /// Derives baselines for a measured text size from the font's own metrics,
+    /// for backends that don't report baselines themselves.
+    ///
+    /// The baseline of a line box sits at the font's ascent, which the resolved
+    /// font doesn't carry; it is taken to be the point size plus the half of
+    /// the leading that sits above the text, which is where it lands for fonts
+    /// whose ascent and descent split the em box the conventional way.
+    ///
+    /// - Parameters:
+    ///   - size: The measured size of the text.
+    ///   - font: The font the text was measured in.
+    init(size: SIMD2<Int>, derivedFrom font: Font.Resolved) {
+        let lineHeight = max(font.lineHeight, 1)
+        let leading = max(lineHeight - font.pointSize, 0)
+        let ascent = font.pointSize + leading / 2
+
+        // A measured height shorter than one line still holds one baseline;
+        // anything taller is however many whole lines fit in it.
+        let lineCount = max(1, (Double(size.y) / lineHeight).rounded(.down))
+
+        self.init(
+            size: size,
+            firstBaseline: ascent,
+            lastBaseline: (lineCount - 1) * lineHeight + ascent
+        )
     }
 }

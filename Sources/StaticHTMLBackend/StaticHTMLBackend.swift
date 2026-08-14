@@ -361,7 +361,7 @@ public final class StaticHTMLBackend:
         /// The axis the children were stacked along.
         public var orientation: Orientation
         /// How the children were aligned across that axis.
-        public var alignment: StackAlignment
+        public var alignment: StackAlignmentDescription
         /// The gap left between adjacent children.
         public var spacing: Int
     }
@@ -780,7 +780,7 @@ public final class StaticHTMLBackend:
     public func describeStackLayout(
         of widget: Widget,
         orientation: Orientation,
-        alignment: StackAlignment,
+        alignment: StackAlignmentDescription,
         spacing: Int
     ) {
         (widget as? Container)?.stackLayout = StackLayout(
