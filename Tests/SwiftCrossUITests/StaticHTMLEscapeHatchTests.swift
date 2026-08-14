@@ -122,6 +122,29 @@ struct StaticHTMLEscapeHatchTests {
     }
 
     @MainActor
+    @Test("An id on an element-emitting view lands on that element, not a wrapper")
+    func identifiedAttributesAttachToTheViewsOwnElement() {
+        // Materialization vetoes elision of an existing container; it never
+        // generates one. A Button emits a real element, so the id belongs on
+        // it — a wrapper minted just to carry the id would put the name on a
+        // box the author never wrote.
+        let html = StaticHTMLRenderer.render(
+            Button("Press") {}.href("/go").htmlAttributes(["id": "foo"]),
+            context: "Identified button"
+        ).html
+
+        #expect(html.components(separatedBy: "id=\"foo\"").count - 1 == 1)
+        guard let range = html.range(of: "<[^>]*id=\"foo\"[^>]*>", options: .regularExpression)
+        else {
+            Issue.record("Expected an element carrying the id")
+            return
+        }
+        // The id's element is the button's own live anchor, not a div.
+        #expect(html[range].hasPrefix("<a "))
+        #expect(html[range].contains("href=\"/go\""))
+    }
+
+    @MainActor
     @Test("An attribute block with no id rides through an elided wrapper")
     func unidentifiedAttributesRideThroughElision() {
         let html = StaticHTMLRenderer.render(
