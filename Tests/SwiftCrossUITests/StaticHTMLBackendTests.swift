@@ -2745,6 +2745,129 @@ struct StaticHTMLBackendTests {
         #expect(html.contains("href=\"/t\""))
         #expect(html.contains(">Plain</a>"))
     }
+
+    @MainActor
+    @Test("An href on a shape-labelled button inside an HStack stays live")
+    func hrefOnShapeLabelledButtonInsideHStackStaysLive() {
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Button {} label: {
+                    Rectangle().frame(width: 16, height: 16)
+                }.href("/icon")
+            },
+            context: "Shape-labelled button in HStack"
+        ).html
+
+        #expect(html.contains("href=\"/icon\""))
+        #expect(!html.contains("aria-disabled=\"true\""))
+        #expect(!html.contains("disabled=\"disabled\""))
+    }
+
+    @MainActor
+    @Test("An href on a shape-labelled button stays live in every wrapper")
+    func hrefOnShapeLabelledButtonStaysLiveInEveryWrapper() {
+        // The HStack repro is one arrangement of a general shape: the label
+        // subtree's own leaf must not be read as introducing the button's
+        // inherited href. These pin the arrangements that already worked, so
+        // a fix at the routing seam can't restore one by breaking another.
+        func shapeButton() -> some View {
+            Button {} label: {
+                Rectangle().frame(width: 16, height: 16)
+            }.href("/icon")
+        }
+
+        let bare = StaticHTMLRenderer.render(
+            shapeButton(),
+            context: "Shape-labelled button, no wrapper"
+        ).html
+        #expect(bare.contains("href=\"/icon\""))
+        #expect(!bare.contains("aria-disabled=\"true\""))
+
+        let vertical = StaticHTMLRenderer.render(
+            VStack { shapeButton() },
+            context: "Shape-labelled button in VStack"
+        ).html
+        #expect(vertical.contains("href=\"/icon\""))
+        #expect(!vertical.contains("aria-disabled=\"true\""))
+
+        let layered = StaticHTMLRenderer.render(
+            ZStack { shapeButton() },
+            context: "Shape-labelled button in ZStack"
+        ).html
+        #expect(layered.contains("href=\"/icon\""))
+        #expect(!layered.contains("aria-disabled=\"true\""))
+    }
+
+    @MainActor
+    @Test("Attributes on a shape-labelled button inside an HStack reach its element")
+    func attributesOnShapeLabelledButtonInsideHStackAreKept() {
+        // Same seam as the href case: every escape-hatch request resolves by
+        // identity, so all of them drop together when a label leaf captures a
+        // different allocation than the control above it.
+        let result = StaticHTMLRenderer.render(
+            HStack {
+                Button {} label: {
+                    Rectangle().frame(width: 16, height: 16)
+                }.htmlAttributes(["data-role": "icon"])
+            },
+            context: "Attributed shape-labelled button in HStack"
+        )
+
+        #expect(result.html.contains("data-role=\"icon\""))
+        #expect(result.documentInfo.labelSubtreeRequestsRefused.isEmpty)
+    }
+
+    @MainActor
+    @Test("A request inherited by a label is never recorded as refused")
+    func inheritedLabelRequestIsNotRefused() {
+        // The refusal record exists for a request the label introduced on its
+        // own. A request applied at-or-above the button is inherited, so it
+        // must resolve silently — a refusal here means identity comparison
+        // mistook one for the other.
+        let result = StaticHTMLRenderer.render(
+            HStack {
+                Button {} label: {
+                    Rectangle().frame(width: 16, height: 16)
+                }.href("/icon")
+            },
+            context: "Inherited request on shape-labelled button"
+        )
+
+        #expect(result.documentInfo.labelSubtreeRequestsRefused.isEmpty)
+    }
+
+    @MainActor
+    @Test("A request a label introduces itself is still refused")
+    func labelIntroducedRequestIsStillRefused() {
+        // The guard the fix must not overshoot: a request originating inside
+        // the label would replace the control's own element, so it stays
+        // refused rather than resolving onto the button.
+        let result = StaticHTMLRenderer.render(
+            HStack {
+                Button {} label: {
+                    Rectangle().frame(width: 16, height: 16).href("/inner")
+                }
+            },
+            context: "Label-introduced request"
+        )
+
+        #expect(result.documentInfo.labelSubtreeRequestsRefused.contains("href"))
+        #expect(!result.html.contains("href=\"/inner\""))
+    }
+
+    @MainActor
+    @Test("An href on a text-labelled button inside an HStack stays live")
+    func hrefOnTextLabelledButtonInsideHStackStaysLive() {
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Button("Go") {}.href("/text")
+            },
+            context: "Text-labelled button in HStack"
+        ).html
+
+        #expect(html.contains("href=\"/text\""))
+        #expect(!html.contains("aria-disabled=\"true\""))
+    }
 }
 
 @Suite("Testing accessibility semantics in the static HTML backend")

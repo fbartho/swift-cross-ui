@@ -174,8 +174,8 @@ extension View {
     /// - Parameter element: The element to emit the view as.
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ element: HTMLElement) -> some View {
-        transformEnvironment(\.htmlTagRequest) { request in
-            request = HTMLTagRequest(element: element, enclosing: request)
+        htmlRequest(\.htmlTagRequest) { enclosing in
+            HTMLTagRequest(element: element, enclosing: enclosing)
         }
     }
 
@@ -188,8 +188,8 @@ extension View {
     /// - Parameter name: The element name, e.g. `"hgroup"`.
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ name: String) -> some View {
-        transformEnvironment(\.htmlTagRequest) { request in
-            request = HTMLTagRequest(element: .custom(name), enclosing: request)
+        htmlRequest(\.htmlTagRequest) { enclosing in
+            HTMLTagRequest(element: .custom(name), enclosing: enclosing)
         }
     }
 
@@ -248,8 +248,8 @@ extension View {
     ///   name.
     /// - Returns: The view, carrying the requested attributes.
     public func htmlAttributes(_ attributes: [String: HTMLAttributeOp]) -> some View {
-        transformEnvironment(\.htmlAttributesRequest) { request in
-            request = HTMLAttributesRequest(attributes: attributes, enclosing: request)
+        htmlRequest(\.htmlAttributesRequest) { enclosing in
+            HTMLAttributesRequest(attributes: attributes, enclosing: enclosing)
         }
     }
 
@@ -280,8 +280,71 @@ extension View {
     /// - Parameter href: The URL or path to navigate to.
     /// - Returns: The view, carrying the requested navigation intent.
     public func href(_ href: String) -> some View {
-        transformEnvironment(\.htmlHrefRequest) { request in
-            request = HTMLHrefRequest(href: href, enclosing: request)
+        htmlRequest(\.htmlHrefRequest) { enclosing in
+            HTMLHrefRequest(href: href, enclosing: enclosing)
         }
+    }
+
+    /// Puts an escape-hatch request in scope for this view's subtree, keeping
+    /// one request object per modifier application.
+    ///
+    /// The request types resolve by identity (see ``HTMLTagRequest``), so the
+    /// object a widget captures has to be the same one for every widget the
+    /// modifier covers. Allocating inside the transform breaks that: the
+    /// transform runs once per environment propagation, and a subtree isn't
+    /// guaranteed to be propagated to the same number of times as its parent —
+    /// an `HStack` re-runs its children's update during commit, so a control
+    /// updated in both passes ends up holding a later allocation than a leaf
+    /// updated only in the first. The cache makes the request identity depend
+    /// on the modifier application alone.
+    ///
+    /// - Parameters:
+    ///   - keyPath: The environment key the request lives under.
+    ///   - make: Builds the request, given the one already in scope.
+    /// - Returns: The view, carrying the request.
+    private func htmlRequest<Request: AnyObject & Sendable>(
+        _ keyPath: WritableKeyPath<EnvironmentValues, Request?>,
+        _ make: @escaping @Sendable (Request?) -> Request
+    ) -> some View {
+        let cache = HTMLRequestCache<Request>()
+        return transformEnvironment(keyPath) { request in
+            request = cache.request(enclosing: request, make: make)
+        }
+    }
+}
+
+/// Holds the one request object a single modifier application produces.
+///
+/// Keyed on the enclosing request's identity rather than storing a lone value:
+/// the same modifier application can legitimately be reached under different
+/// outer requests (a component carrying `.href()` used inside two differently
+/// wrapped parents), and each of those needs its own request so the chains stay
+/// distinct.
+///
+/// Synchronization is unnecessary rather than omitted: environment propagation
+/// runs on the main actor, so every call reaching this cache is already
+/// serialized by it.
+private final class HTMLRequestCache<Request: AnyObject & Sendable>: @unchecked Sendable {
+    /// The request produced for each enclosing request seen so far, with
+    /// `nil` — no enclosing request — keyed separately.
+    private var cached: [ObjectIdentifier?: Request] = [:]
+
+    /// The request for an enclosing scope, built once and reused after.
+    ///
+    /// - Parameters:
+    ///   - enclosing: The request already in scope, if any.
+    ///   - make: Builds the request when this scope hasn't been seen.
+    /// - Returns: The request for this scope.
+    func request(
+        enclosing: Request?,
+        make: @Sendable (Request?) -> Request
+    ) -> Request {
+        let key = enclosing.map(ObjectIdentifier.init)
+        if let existing = cached[key] {
+            return existing
+        }
+        let created = make(enclosing)
+        cached[key] = created
+        return created
     }
 }
