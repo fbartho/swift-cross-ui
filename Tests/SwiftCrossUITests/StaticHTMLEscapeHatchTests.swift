@@ -264,9 +264,9 @@ struct StaticHTMLEscapeHatchTests {
     }
 
     @MainActor
-    @Test("Under a backend that can't capture, the modifiers are plain wrappers")
-    func captureDegradesToAPassThroughWrapper() {
-        // The capture is a conditional conformance check, so a backend that
+    @Test("Under a backend that can't anchor, the modifiers are plain wrappers")
+    func anchoringDegradesToAPassThroughWrapper() {
+        // The anchoring is a conditional conformance check, so a backend that
         // doesn't answer it renders the content unchanged rather than
         // trapping — which is what keeps a tree carrying these modifiers
         // portable.

@@ -47,7 +47,7 @@ public enum HTMLAttributeOp: Sendable, Equatable, ExpressibleByStringLiteral {
 
 /// A block of attribute operations an author attached to one view.
 ///
-/// The block is captured onto the widget of the view it was applied to, so
+/// The block is anchored onto the widget of the view it was applied to, so
 /// which application it belongs to is settled structurally. Which *element* it
 /// lands on is decided during emission — see ``materializes``.
 public struct HTMLAttributeBlock: Sendable, Equatable {
@@ -124,7 +124,7 @@ extension View {
     /// - Parameter element: The element to emit the view as.
     /// - Returns: The view, tagged with the requested element.
     public func htmlTag(_ element: HTMLElement) -> some View {
-        HTMLCaptureModifier(self) { backend, widget in
+        HTMLAnchoringModifier(self) { backend, widget in
             backend.anchor(element: element, toAny: widget)
         }
     }
@@ -203,7 +203,7 @@ extension View {
     /// - Returns: The view, carrying the requested attributes.
     public func htmlAttributes(_ attributes: [String: HTMLAttributeOp]) -> some View {
         let block = HTMLAttributeBlock(attributes: attributes)
-        return HTMLCaptureModifier(self) { backend, widget in
+        return HTMLAnchoringModifier(self) { backend, widget in
             backend.anchor(attributes: block, toAny: widget)
         }
     }

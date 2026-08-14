@@ -491,7 +491,7 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A labelled wrapper whose every child is empty keeps its own attributes")
     func labelledWrapperWithOnlyEmptyChildrenKeepsItsAttributes() {
-        // The wrapper holds no leaf at all. The value is captured onto the
+        // The wrapper holds no leaf at all. The value is anchored onto the
         // modifier's own widget, so what the subtree contains has no bearing
         // on where it lands.
         let rows: [String] = []
