@@ -100,11 +100,8 @@ public struct Alignment: Hashable, Sendable {
     /// Where several children source the same guide explicitly, the line is
     /// pushed later — never earlier — far enough that none of them lands at a
     /// negative offset outside the container. A single child can't need that:
-    /// its own guide is the line by definition, which is why the flaw this
-    /// rules out stayed invisible while every consumer placed one primary
-    /// child. Children that merely resolve the guide to its default don't move
-    /// the line, so a guide-free tree lays out exactly as it did before guides
-    /// existed.
+    /// its own guide is the line by definition. Children that merely resolve
+    /// the guide to its default don't move the line.
     ///
     /// - Parameters:
     ///   - children: The children's layout results.

@@ -805,11 +805,11 @@ struct AlignmentGuideTests {
 
     // MARK: Multi-child guide consumers
 
-    /// The container side of an alignment used to resolve against the
-    /// container's own default for the guide, which is a value none of its
-    /// children reported. With two children both sourcing a custom guide, that
-    /// puts the one whose guide sits deepest in its own box at a negative
-    /// offset, outside the container.
+    /// Resolving the container side of an alignment against the container's
+    /// own default for the guide — a value none of its children reported —
+    /// would put the child whose guide sits deepest in its own box at a
+    /// negative offset, outside the container, when two children both source a
+    /// custom guide.
     @MainActor
     @Test("An overlay aligning a custom guide keeps both children inside itself")
     func overlayOnCustomGuideKeepsChildrenInside() {

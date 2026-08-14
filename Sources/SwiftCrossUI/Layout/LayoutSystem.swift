@@ -146,9 +146,9 @@ public enum LayoutSystem {
         // most room above it, so no child is pushed to a negative offset.
         let guideLine = visible.map { $0.resolvedGuide(alignment) }.max() ?? 0
 
-        // Behaviour 5: the stack grows to hold the largest extent above the
-        // line plus the largest below, which a guide-shifted child can push
-        // beyond the size of the tallest child on its own.
+        // The stack grows to hold the largest extent above the line plus the
+        // largest below, which a guide-shifted child can push beyond the size
+        // of the tallest child on its own.
         let below =
             visible.map { child in
                 child.size[component: perpendicular] - child.resolvedGuide(alignment)
@@ -537,10 +537,9 @@ public enum LayoutSystem {
     /// guide line and the space below, when its committed cross size exceeds
     /// what its children need.
     ///
-    /// The three built-in edge alignments keep their historical behaviour
-    /// exactly — leading pins to the near edge, trailing to the far edge,
-    /// center splits the difference. A custom guide has no edge to pin to, so
-    /// it splits like center.
+    /// Leading pins to the near edge, trailing to the far edge, and center
+    /// splits the difference. A custom guide has no edge to pin to, so it
+    /// splits like center.
     static func alignmentSlackFraction(_ alignment: AlignmentKey) -> Double {
         let unit = ViewDimensions(size: ViewSize(1, 1), explicitGuides: [:])
         // A guide's default value at unit size is exactly the fraction of the

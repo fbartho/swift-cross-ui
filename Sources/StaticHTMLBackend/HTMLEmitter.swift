@@ -2261,8 +2261,6 @@ public struct HTMLEmitter {
     /// A custom guide resolves per-child against geometry only SwiftCrossUI can
     /// evaluate, and CSS has no channel for that, so it degrades to whichever
     /// edge its line sits nearest — an approximation the static tier accepts.
-    /// Serialising the guide as an anchor reference, for a runtime to resolve
-    /// against real geometry, is a separate emission path this one predates.
     nonisolated static func cssAlignment(_ alignment: StackAlignmentDescription) -> String {
         switch alignment.closestEdge {
             case .leading: "flex-start"
