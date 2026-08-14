@@ -4,9 +4,7 @@ import SwiftCrossUI
 ///
 /// Resolved by identity, and a reference type for that reason. The request is
 /// in scope for exactly one zero-size leaf of the view's own making, so the
-/// leaf reporting it *is* the view the author wrote — unlike the escape-hatch
-/// modifiers, whose values travel to whichever element the consumption model
-/// designates, this one never leaves the view that made it.
+/// leaf reporting it *is* the view the author wrote.
 public final class HTMLRawFragmentRequest: Sendable {
     /// The markup to splice, verbatim.
     public let html: String

@@ -5,14 +5,14 @@ import SwiftCrossUI
 /// The value never enters the environment: this view's node owns a wrapper
 /// widget and receives that widget alongside the environment in
 /// ``commit(_:children:layout:environment:backend:)``, which is where the
-/// capture happens. One application is one node is one widget, so nothing has
-/// to recover which application a value came from — a `ForEach` body applying
-/// the same modifier to every row produces one wrapper per row by
+/// capture happens. One application is one node is one widget, so the
+/// application a value came from is settled structurally — a `ForEach` body
+/// applying the same modifier to every row produces one wrapper per row by
 /// construction.
 ///
-/// The wrapper is the one the modifier would have created anyway, and it stays
-/// elidable: capturing a value onto it is what an emitting backend consults to
-/// decide whether it survives, not a reason on its own for it to exist.
+/// The wrapper stays elidable: a captured value is something an emitting
+/// backend consults when deciding whether the wrapper survives, not a reason
+/// on its own for it to exist.
 ///
 /// Under a backend that doesn't conform to ``HTMLElementCapturing`` the capture
 /// is skipped and this is an ordinary pass-through wrapper, which is what makes

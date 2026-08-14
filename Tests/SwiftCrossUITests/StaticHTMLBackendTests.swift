@@ -36,12 +36,9 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A .background() Color sibling doesn't displace an ancestor's tag")
     func backgroundColorSiblingDoesNotDisplaceAncestorTag() {
-        // A Color leaf has to capture the tags in scope for it. A leaf
-        // reporting none reads as "explicitly untagged", and one such child
-        // makes the subtree disagree, so a .background(Color(...)) — which
-        // introduces exactly one extra leaf — would otherwise knock the tag
-        // off the container it was applied to and take any derived headings
-        // with it.
+        // The backdrop `.background(Color(...))` introduces is a sibling of
+        // the content, not of the tagged container's children, so it has no
+        // bearing on where the container's tag lands.
         let view = VStack {
             Text("Title").font(.largeTitle)
             Text("Code block").background(Color.gray)
@@ -431,10 +428,8 @@ struct StaticHTMLBackendTests {
     @Test("An empty if-without-else sibling doesn't push a container's tag onto its lone child")
     func emptyOptionalSiblingDoesNotDisplaceContainerTag() {
         // An if-without-else that evaluates false contributes a childless
-        // wrapper holding no content, as opposed to content that happens to
-        // carry no tag. Read as "explicitly untagged" it would veto the tag
-        // its real sibling shares, costing the container its own element and
-        // displacing the survivor's derived heading.
+        // wrapper. The container has two children either way, so the tag
+        // stays on the container rather than descending onto the survivor.
         let view = VStack {
             Text("Title").font(.title)
             if false {
@@ -454,9 +449,8 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A labelled sidebar keeps its attributes beside a populated detail pane")
     func labelledSidebarKeepsAttributesWhenPopulated() {
-        // The control shape for the empty-sidebar cases below: everything
-        // populated, so no early return is in play and both requests resolve
-        // through the ordinary path.
+        // The control shape for the empty-sidebar cases below: both panes
+        // populated, so both values resolve through the ordinary path.
         let view = HStack {
             VStack {
                 Text("Sidebar")
@@ -497,10 +491,9 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A labelled wrapper whose every child is empty keeps its own attributes")
     func labelledWrapperWithOnlyEmptyChildrenKeepsItsAttributes() {
-        // The wrapper holds no leaf at all, which is exactly the shape a value
-        // riding the environment could not reach: only leaves receive one.
-        // The modifier captures onto its own widget instead, so what the
-        // subtree contains never enters into it.
+        // The wrapper holds no leaf at all. The value is captured onto the
+        // modifier's own widget, so what the subtree contains has no bearing
+        // on where it lands.
         let rows: [String] = []
         let view = VStack {
             ForEach(rows) { row in
@@ -516,9 +509,8 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("An empty labelled sibling doesn't cost a populated pane its tag")
     func emptyLabelledSiblingDoesNotCostSiblingItsTag() {
-        // An empty sibling costs neither pane anything: each application owns
-        // its own wrapper, so what one pane's subtree contains cannot reach
-        // the other's value.
+        // Each application owns its own wrapper, so what one pane's subtree
+        // contains cannot reach the other's value.
         let rows: [String] = []
         let view = HStack {
             VStack {
@@ -543,12 +535,10 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("An empty NavigationSplitView sidebar doesn't cost the detail pane its tag")
     func emptySplitViewSidebarDoesNotCostDetailItsTag() {
-        // The deeper shape the original specimen-B trace came from: a real
-        // `SplitViewWidget` rather than a plain stack, which is where the
-        // reported second-order effect was said to surface. With the sidebar
-        // contributing no content, the detail pane's own tag is the only one
-        // the split's leaves report — the shape that could carry it up onto
-        // the split itself and leave the pane without one.
+        // A real `SplitViewWidget` rather than a plain stack. With the sidebar
+        // contributing no content, the detail pane's tag is the only one in
+        // the split — the shape that could otherwise carry it up onto the
+        // split itself and leave the pane without one.
         let rows: [String] = []
         let view = NavigationSplitView {
             ForEach(rows) { row in
@@ -570,9 +560,8 @@ struct StaticHTMLBackendTests {
     @Test("A tagged Group wrapping a single view still reaches that view")
     func taggedGroupStillReachesItsSingleChild() {
         // A Group wrapping exactly one child is the transparent-wrapper case
-        // the single-child collapse exists for; it must keep working once
-        // that collapse is restricted to widgets that only ever had one
-        // child in the tree (as opposed to one that merely rendered empty).
+        // descent exists for: the tag belongs on the view inside, not on the
+        // Group.
         let view = Group {
             Text("Solo")
         }

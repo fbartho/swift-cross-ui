@@ -291,12 +291,11 @@ public enum StaticHTMLRenderer {
     /// Resolves the escape-hatch values a tree captured onto the elements
     /// that carry them.
     ///
-    /// Only the kinds whose consumer isn't their application site need a pass
-    /// here. A tag and an `id`-bearing block already sit on the element they
-    /// name — the modifier captured them onto its own widget — so what's left
-    /// is a non-`id` block, consumed beneath its site, and a navigation
-    /// destination, consumed at every href-capable view within its scope
-    /// during the update.
+    /// A tag and an `id`-bearing block are captured onto the widget of the
+    /// view they name, so only the values whose consumer isn't their
+    /// application site need resolving here: a non-`id` block, consumed
+    /// beneath its site, and a navigation destination, consumed at every
+    /// href-capable view within its scope during the update.
     private static func resolveIntent(in root: StaticHTMLBackend.Widget) {
         resolveRawFragments(in: root)
         sinkMaterializedValues(in: root)
@@ -351,11 +350,10 @@ public enum StaticHTMLRenderer {
 
     /// Moves each tap marker down onto the element the author made tappable.
     ///
-    /// `OnTapGestureModifier` produces a wrapper widget of its own, so unlike
-    /// an href — which rides the environment to the consumers it lights up —
-    /// the flag starts on the wrapper rather than on the content. Left there
-    /// it would mark a `<div>` around a control that carries its own marker,
-    /// so a tapped `Button` would emit two markers for one interaction and the
+    /// `OnTapGestureModifier` produces a wrapper widget of its own, so the
+    /// flag starts on the wrapper rather than on the content. Left there it
+    /// would mark a `<div>` around a control that carries its own marker, so a
+    /// tapped `Button` would emit two markers for one interaction and the
     /// enlivening tier would have to guess which element it was meant to bind.
     ///
     /// Descent follows single-child wrapping only, the same shape
@@ -537,10 +535,9 @@ public enum StaticHTMLRenderer {
     /// separate wrappers naming the same element, so they descend to the same
     /// site and resolve there.
     ///
-    /// Children resolve first, so an application closer to the content has
-    /// already claimed the site by the time one further out reaches it. That
-    /// is what makes the innermost call win a key two of them both set,
-    /// matching how nested environment overrides resolve generally.
+    /// Children resolve first, so an application closer to the content claims
+    /// the site before one further out reaches it, which is what makes the
+    /// innermost call win a key two of them both set.
     ///
     /// - Parameter widget: The subtree to walk.
     private static func sinkMaterializedValues(in widget: StaticHTMLBackend.Widget) {
@@ -631,10 +628,9 @@ public enum StaticHTMLRenderer {
     /// Every navigation destination that reached no consumer.
     ///
     /// An `.href(_:)` whose subtree holds no href-capable view emits nothing
-    /// at all — no element becomes a link, since a container that merely holds
-    /// content is not itself a destination. That's a silent no-op in the
-    /// markup, so it is reported instead: the author asked for navigation and
-    /// got none, which they can only discover if something says so.
+    /// at all — a container that merely holds content is not itself a
+    /// destination. Nothing in the markup distinguishes that from a modifier
+    /// that was never written, so it is reported here instead.
     ///
     /// - Parameter widget: The subtree to walk.
     /// - Returns: The unconsumed destinations, in tree order, deduplicated.
@@ -651,6 +647,7 @@ public enum StaticHTMLRenderer {
         walk(widget)
         return found
     }
+
     /// Copies each widget's dark-scheme colors onto the corresponding widget
     /// from the light pass.
     ///

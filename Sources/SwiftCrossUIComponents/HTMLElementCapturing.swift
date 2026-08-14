@@ -5,12 +5,11 @@ import SwiftCrossUI
 ///
 /// The escape-hatch modifiers that never leave their application site —
 /// ``SwiftCrossUI/View/htmlTag(_:)`` and
-/// ``SwiftCrossUI/View/htmlAttributes(_:)`` — capture through this rather than
-/// putting their values in the environment. The modifier already creates a
-/// wrapper widget, and its own node receives both that widget and the
-/// environment in every core lifecycle call, so the value can land on the
-/// element the author modified without ever propagating past it. Structure is
-/// then the identity: two applications are two nodes with two widgets, so a
+/// ``SwiftCrossUI/View/htmlAttributes(_:)`` — capture through this. The
+/// modifier creates a wrapper widget, and its own node receives both that
+/// widget and the environment in every core lifecycle call, so the value lands
+/// on the element the author modified without propagating past it. Structure
+/// is the identity: two applications are two nodes with two widgets, so a
 /// `ForEach` body tagging every row needs nothing to tell the rows apart.
 ///
 /// Only StaticHTMLBackend conforms. Under any other backend the modifier's

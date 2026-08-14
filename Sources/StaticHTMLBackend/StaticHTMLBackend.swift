@@ -64,16 +64,13 @@ public final class StaticHTMLBackend:
         ///
         /// The modifier owns a wrapper around the view the author named, not
         /// that view's own widget, so the name descends from here to the
-        /// element the author was describing — the same local descent a
-        /// non-`id` attribute block takes, and stopping at the same places.
-        /// It never leaves the application site's subtree.
+        /// element the author was describing and never leaves that subtree.
         var pendingElement: HTMLElement?
         /// Attribute operations this widget's element carries.
         ///
-        /// Populated during emission as blocks are consumed — either here,
-        /// when the block names an `id`, or by the first element surviving
-        /// elision beneath the application site. See
-        /// ``HTMLAttributeBlock/materializes``.
+        /// Populated as blocks are resolved — either here, when the block
+        /// names an `id`, or by the first element surviving elision beneath
+        /// the application site. See ``HTMLAttributeBlock/materializes``.
         public var authorAttributes: [String: HTMLAttributeOp] = [:]
         /// The attribute block captured onto this widget that names no `id`.
         ///
@@ -139,11 +136,9 @@ public final class StaticHTMLBackend:
         /// *declared* counts, which ``Container/isStructuralWrapper`` answers
         /// for the one widget type that can carry one.
         ///
-        /// ``authorAttributes`` pins this element only because a block that
-        /// reaches it has already been resolved here: an `id`-bearing block
-        /// materializes its application site, and a block without one is
-        /// consumed by whichever element survives — so by the time this is
-        /// asked, carrying attributes means carrying them legitimately.
+        /// Only valid once attribute blocks have been resolved onto their
+        /// consumers, since ``authorAttributes`` is one of the things that
+        /// pins an element here.
         var carriesNoAuthoredIntent: Bool {
             if let container = self as? Container, !container.isStructuralWrapper {
                 return false
@@ -243,12 +238,11 @@ public final class StaticHTMLBackend:
 
         /// Records the authored intent in scope when this widget was updated.
         ///
-        /// Only the kinds that genuinely propagate are read here. An element
-        /// name and an attribute block reach their widget through
+        /// Only the values that propagate down a subtree arrive this way. An
+        /// element name and an attribute block are captured directly onto the
+        /// modifier's own widget by
         /// ``StaticHTMLBackend/captureElement(of:as:)`` and
-        /// ``StaticHTMLBackend/captureAttributes(of:to:)`` instead, because
-        /// they never leave the view they were applied to and the modifier
-        /// owns that view's widget.
+        /// ``StaticHTMLBackend/captureAttributes(of:to:)``.
         ///
         /// - Parameter environment: The environment the widget was updated in.
         func captureIntent(from environment: EnvironmentValues) {
@@ -261,9 +255,9 @@ public final class StaticHTMLBackend:
         ///
         /// Called by the href-capable widgets — the ones whose emission matrix
         /// has a live-anchor row — after they capture their intent. A widget
-        /// that never calls this leaves the destination to whatever consumers
-        /// lie below it, which is what lets one `.href(_:)` on a container
-        /// light up every link inside it.
+        /// that never calls this leaves the destination to the consumers below
+        /// it, which is what lets one `.href(_:)` on a container light up every
+        /// link inside it.
         func consumeHref() {
             href = pendingHref
             pendingHref = nil
@@ -703,8 +697,8 @@ public final class StaticHTMLBackend:
     ///   - widget: The modifier's wrapper widget.
     ///   - element: The element to emit it as.
     public func captureElement(of widget: Widget, as element: HTMLElement) {
-        // A tag applied closer to the content is the more specific answer, so
-        // an inner wrapper's name is already the one that reached this site.
+        // A name already here was applied closer to the content, which is the
+        // more specific answer.
         widget.pendingElement = widget.pendingElement ?? element
     }
 
@@ -950,13 +944,11 @@ public final class StaticHTMLBackend:
 
     /// Removes the navigation destination from a button label's environment.
     ///
-    /// A button consumes the `href` in scope for it, so its label subtree is
-    /// no longer within reach of that destination — a `Shape` or nested view
+    /// A button consumes the `href` in scope for it, so nothing in its label
+    /// subtree is within reach of that destination: a `Shape` or nested view
     /// inside the label must not see a value the control above it already
-    /// spent. Clearing it here rather than stamping a generation marker keeps
-    /// the environment itself truthful: nothing below this point inherits a
-    /// consumed destination, so no later reader has to distinguish an
-    /// inherited value from a re-applied one.
+    /// spent. Clearing it keeps the environment truthful, so no later reader
+    /// has to tell an inherited destination from a re-applied one.
     ///
     /// An `.href(_:)` applied *inside* the label re-enters the environment
     /// below this point and is unaffected, which is what makes a link nested

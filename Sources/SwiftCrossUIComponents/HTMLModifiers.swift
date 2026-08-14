@@ -100,11 +100,10 @@ public struct HTMLAttributeBlock: Sendable, Equatable {
 extension EnvironmentValues {
     /// Navigation intent requested by ``View/href(_:)``.
     ///
-    /// Unlike the other two, this flows down through everything that isn't a
-    /// consumer: an href names a destination, and every href-capable view in
-    /// scope navigates there. A consumer removes it from the environment its
-    /// own children see, so a link's label never inherits the link's
-    /// destination.
+    /// Flows down through everything that isn't a consumer: an href names a
+    /// destination, and every href-capable view in scope navigates there. A
+    /// consumer removes it from the environment its own children see, so a
+    /// link's label never inherits the link's destination.
     @Entry public var htmlHref: String?
 }
 
