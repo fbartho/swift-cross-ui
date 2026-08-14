@@ -497,14 +497,10 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A labelled wrapper whose every child is empty keeps its own attributes")
     func labelledWrapperWithOnlyEmptyChildrenKeepsItsAttributes() {
-        // An empty `ForEach` produces no leaf widget, and only leaf-widget
-        // constructors call `captureIntent` — a plain `Container` (what
-        // `VStack` becomes) is created through `createContainer()`, which
-        // takes no environment. So the author's request is never recorded on
-        // any widget in this shape: it is lost in the environment before the
-        // renderer's distribution pass runs, rather than dropped by it.
-        // Recovering it needs the container-environment seam tracked on task
-        // 41, so this stays a known issue here.
+        // The wrapper holds no leaf at all, which is exactly the shape a value
+        // riding the environment could not reach: only leaves receive one.
+        // The modifier captures onto its own widget instead, so what the
+        // subtree contains never enters into it.
         let rows: [String] = []
         let view = VStack {
             ForEach(rows) { row in
@@ -514,20 +510,15 @@ struct StaticHTMLBackendTests {
         .htmlAttributes(["aria-label": "Sections"])
         let html = StaticHTMLRenderer.render(view, context: "Empty sidebar").html
 
-        withKnownIssue("Containers can't capture intent; needs the task-41 seam") {
-            #expect(html.contains(#"aria-label="Sections""#))
-        }
+        #expect(html.contains(#"aria-label="Sections""#))
     }
 
     @MainActor
     @Test("An empty labelled sibling doesn't cost a populated pane its tag")
     func emptyLabelledSiblingDoesNotCostSiblingItsTag() {
-        // The sidebar's own label is lost for the reason the previous test
-        // records. The detail pane beside it is the part that must hold:
-        // measured here, the single-populated-child degeneracy does NOT cost
-        // this sibling its `.htmlTag` — the tag still lands. That guards the
-        // second-order effect against a future change to the empty-coverage
-        // path, which is where it would surface if it ever did.
+        // An empty sibling costs neither pane anything: each application owns
+        // its own wrapper, so what one pane's subtree contains cannot reach
+        // the other's value.
         let rows: [String] = []
         let view = HStack {
             VStack {
@@ -546,9 +537,7 @@ struct StaticHTMLBackendTests {
 
         #expect(html.components(separatedBy: "<section").count - 1 == 1)
         #expect(html.contains(">Detail</"))
-        withKnownIssue("Containers can't capture intent; needs the task-41 seam") {
-            #expect(html.contains(#"aria-label="Sections""#))
-        }
+        #expect(html.contains(#"aria-label="Sections""#))
     }
 
     @MainActor

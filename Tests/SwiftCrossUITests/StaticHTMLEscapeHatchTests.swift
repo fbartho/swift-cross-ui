@@ -1,5 +1,6 @@
 import Testing
 
+import DummyBackend
 import StaticHTMLBackend
 @_spi(Backends) import SwiftCrossUI
 import SwiftCrossUIComponents
@@ -260,5 +261,40 @@ struct StaticHTMLEscapeHatchTests {
 
         #expect(html.components(separatedBy: "<section").count - 1 == 1)
         #expect(html.contains(">Only</"))
+    }
+
+    @MainActor
+    @Test("Under a backend that can't capture, the modifiers are plain wrappers")
+    func captureDegradesToAPassThroughWrapper() {
+        // The capture is a conditional conformance check, so a backend that
+        // doesn't answer it renders the content unchanged rather than
+        // trapping — which is what keeps a tree carrying these modifiers
+        // portable.
+        let backend = DummyBackend()
+        let window = backend.createWindow(withDefaultSize: nil, id: "window")
+        let environment = EnvironmentValues(backend: backend).with(\.window, window)
+
+        let plain = ViewGraphNode(
+            for: Text("Only"),
+            backend: backend,
+            environment: environment
+        )
+        let modified = ViewGraphNode(
+            for: Text("Only")
+                .htmlTag(.section)
+                .htmlAttributes(["id": "x", "aria-label": "Nav"]),
+            backend: backend,
+            environment: environment
+        )
+
+        let plainSize = plain.computeLayout(proposedSize: .unspecified, environment: environment)
+        _ = plain.commit()
+        let modifiedSize = modified.computeLayout(
+            proposedSize: .unspecified,
+            environment: environment
+        )
+        _ = modified.commit()
+
+        #expect(modifiedSize.size == plainSize.size)
     }
 }
