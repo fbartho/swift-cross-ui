@@ -55,23 +55,39 @@ public final class StaticHTMLBackend:
         public var cornerRadius = 0
         /// An element name explicitly requested via ``View/htmlTag(_:)``.
         ///
-        /// Resolved from ``pendingTagRequest`` once the whole tree is built;
-        /// see ``StaticHTMLRenderer``.
+        /// Set on the widget the modifier was applied to, which is the element
+        /// it names: a tag never propagates past its application site.
         public var explicitElement: HTMLElement?
-        /// Attribute operations requested via ``View/htmlAttributes(_:)``.
-        public var authorAttributes: [String: HTMLAttributeOp] = [:]
-        /// The tag request that was in scope when this widget was updated.
+        /// Attribute operations this widget's element carries.
         ///
-        /// A request is in scope for every descendant of the modified view, so
-        /// this alone doesn't say which element should carry it. The renderer
-        /// resolves that by giving each request to the topmost widget that saw
-        /// it.
-        var pendingTagRequest: HTMLTagRequest?
-        /// The attributes request that was in scope when this widget was
+        /// Populated during emission as blocks are consumed — either here,
+        /// when the block names an `id`, or by the first element surviving
+        /// elision beneath the application site. See
+        /// ``HTMLAttributeBlock/materializes``.
+        public var authorAttributes: [String: HTMLAttributeOp] = [:]
+        /// The nested element names in scope when this widget was updated,
+        /// outermost first.
+        ///
+        /// Only a leaf receives an environment, so a tag applied to a
+        /// container arrives here rather than on the container. The renderer
+        /// distributes each entry to the element it names — see
+        /// ``StaticHTMLRenderer``.
+        var pendingTags: [HTMLTagApplication] = []
+        /// The nested `id`-bearing attribute blocks in scope when this widget
+        /// was updated, outermost first. Distributed like ``pendingTags``.
+        var pendingIdentifiedAttributes: [HTMLAttributeBlock] = []
+        /// The merged non-`id` attribute block in scope when this widget was
         /// updated.
-        var pendingAttributesRequest: HTMLAttributesRequest?
-        /// The href request that was in scope when this widget was updated.
-        var pendingHrefRequest: HTMLHrefRequest?
+        ///
+        /// This one names no element of its own, so it is consumed by the
+        /// first element surviving elision beneath the application site.
+        var pendingAttributes: HTMLAttributeBlock?
+        /// The navigation destination in scope when this widget was updated.
+        ///
+        /// Href-capable widgets consume this into ``href``; everything else
+        /// merely carries it so the emitter can tell an unconsumed
+        /// destination from an absent one.
+        var pendingHref: String?
         /// The raw-fragment request that was in scope when this widget was
         /// updated.
         var pendingRawFragmentRequest: HTMLRawFragmentRequest?
@@ -117,6 +133,12 @@ public final class StaticHTMLBackend:
         /// is not consulted — every widget has some — but a frame the author
         /// *declared* counts, which ``Container/isStructuralWrapper`` answers
         /// for the one widget type that can carry one.
+        ///
+        /// ``authorAttributes`` pins this element only because a block that
+        /// reaches it has already been resolved here: an `id`-bearing block
+        /// materializes its application site, and a block without one is
+        /// consumed by whichever element survives — so by the time this is
+        /// asked, carrying attributes means carrying them legitimately.
         var carriesNoAuthoredIntent: Bool {
             if let container = self as? Container, !container.isStructuralWrapper {
                 return false
@@ -205,21 +227,6 @@ public final class StaticHTMLBackend:
         /// `Text` case in
         /// ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``.
         var isInsideControlLabel = false
-        /// Element names an author requested via ``View/htmlTag(_:)`` or
-        /// ``View/htmlAttributes(_:)`` from inside this ``ViewLabelButton``'s
-        /// label subtree, refused rather than silently ignored.
-        ///
-        /// Only a request covering the label's element itself is refused —
-        /// the button already resolves its own element from the emission
-        /// matrix (see the `ViewLabelButton` case in
-        /// ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``),
-        /// and letting a request meant for the label reach the button instead
-        /// would silently replace `<button>`/`<a>` with whatever element the
-        /// label asked for, corrupting the control. A request covering only
-        /// part of the label (an icon beside the label text, say) is
-        /// unaffected and resolves normally within the subtree. See
-        /// ``StaticHTMLRenderer/hoistRequests(in:)``.
-        var refusedLabelRequests: [String] = []
 
         public var naturalSize: SIMD2<Int> {
             .zero
@@ -231,13 +238,35 @@ public final class StaticHTMLBackend:
 
         /// Records the authored intent in scope when this widget was updated.
         ///
+        /// The two materializing kinds resolve here rather than during
+        /// emission, because this widget is already the application site they
+        /// name: only a leaf receives an environment, and a materializing
+        /// value never propagates past the view it was applied to, so a leaf
+        /// seeing one is that view. What can't resolve here is what the
+        /// application site doesn't decide — a non-`id` attribute block, whose
+        /// consumer is whichever element survives elision, and an `href`,
+        /// whose consumers are the href-capable views below.
+        ///
         /// - Parameter environment: The environment the widget was updated in.
         func captureIntent(from environment: EnvironmentValues) {
-            pendingTagRequest = environment.htmlTagRequest
-            pendingAttributesRequest = environment.htmlAttributesRequest
-            pendingHrefRequest = environment.htmlHrefRequest
+            pendingTags = environment.htmlTags
+            pendingIdentifiedAttributes = environment.htmlIdentifiedAttributes
+            pendingAttributes = environment.htmlAttributes
+            pendingHref = environment.htmlHref
             pendingRawFragmentRequest = environment.htmlRawFragmentRequest
             isEnabled = environment.isEnabled
+        }
+
+        /// Takes the navigation destination in scope as this widget's own.
+        ///
+        /// Called by the href-capable widgets — the ones whose emission matrix
+        /// has a live-anchor row — after they capture their intent. A widget
+        /// that never calls this leaves the destination to whatever consumers
+        /// lie below it, which is what lets one `.href(_:)` on a container
+        /// light up every link inside it.
+        func consumeHref() {
+            href = pendingHref
+            pendingHref = nil
         }
     }
 
@@ -860,6 +889,7 @@ public final class StaticHTMLBackend:
         button.font = environment.resolvedFont
         button.style = environment.resolvedButtonStyle
         button.captureIntent(from: environment)
+        button.consumeHref()
     }
 
     public func createButton(wrapping widget: Widget) -> Widget {
@@ -874,6 +904,29 @@ public final class StaticHTMLBackend:
         let button = button as! ViewLabelButton
         button.buttonStyle = environment.resolvedButtonStyle
         button.captureIntent(from: environment)
+        button.consumeHref()
+    }
+
+    /// Removes the navigation destination from a button label's environment.
+    ///
+    /// A button consumes the `href` in scope for it, so its label subtree is
+    /// no longer within reach of that destination — a `Shape` or nested view
+    /// inside the label must not see a value the control above it already
+    /// spent. Clearing it here rather than stamping a generation marker keeps
+    /// the environment itself truthful: nothing below this point inherits a
+    /// consumed destination, so no later reader has to distinguish an
+    /// inherited value from a re-applied one.
+    ///
+    /// An `.href(_:)` applied *inside* the label re-enters the environment
+    /// below this point and is unaffected, which is what makes a link nested
+    /// in a button's label still resolve.
+    ///
+    /// - Parameter environment: The button's own environment.
+    /// - Returns: The environment its label is built in.
+    public func computeButtonLabelEnvironment(
+        from environment: EnvironmentValues
+    ) -> EnvironmentValues {
+        defaultButtonLabelEnvironment(from: environment).with(\.htmlHref, nil)
     }
 
     public func buttonPadding(in environment: EnvironmentValues) -> SIMD2<Int> {

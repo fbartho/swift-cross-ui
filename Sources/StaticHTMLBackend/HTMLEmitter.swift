@@ -90,21 +90,6 @@ public struct HTMLEmitter {
     /// fallback by reading the markup itself: an empty `alt` is
     /// indistinguishable from one an author deliberately set.
     private(set) var imagesMissingAltText: [String] = []
-    /// Descriptions of `.htmlTag(_:)`/`.htmlAttributes(_:)`/`.href(_:)`
-    /// requests that were refused because they were applied inside a
-    /// ``StaticHTMLBackend/ViewLabelButton``'s label subtree, in document
-    /// order.
-    ///
-    /// A button's own element comes from the emission matrix (see the
-    /// `ViewLabelButton` case below), not from a request its label happens
-    /// to be in scope for — letting one through would silently replace
-    /// `<button>`/`<a href>` with whatever the label asked for. Refused
-    /// rather than silently dropped, since nothing in the emitted markup
-    /// would otherwise show that the request existed at all. Surfaced on
-    /// ``DocumentInfo/labelSubtreeRequestsRefused`` — see
-    /// ``StaticHTMLRenderer/hoistRequests(in:)`` for where the refusal is
-    /// decided.
-    private(set) var labelSubtreeRequestsRefused: [String] = []
 
     /// How a parent is positioning one of its children.
     public enum Placement: Hashable, Sendable {
@@ -572,7 +557,6 @@ public struct HTMLEmitter {
                 // tier-activation reasoning is identical and documented there.
                 // What differs is the label: this button owns a child subtree
                 // rather than a string, so the label is emitted by walking it.
-                labelSubtreeRequestsRefused.append(contentsOf: button.refusedLabelRequests)
                 if let href = widget.href {
                     element = .custom("a")
                     controlAttributes["href"] = href
@@ -1028,22 +1012,6 @@ public struct HTMLEmitter {
         }
         if let headingCandidate, element.headingLevel == headingCandidate.level {
             headings.append(headingCandidate)
-        }
-
-        // Navigation intent has to reach the document from whatever widget
-        // ended up owning it. The control cases above consume `widget.href`
-        // themselves, because which element a control becomes depends on it
-        // (see the Button emission matrix); everything else — a container the
-        // author wrapped in `.href(_:)`, a `Text`, an `Image` — arrives here
-        // still carrying the request, and an href that reaches no element is
-        // indistinguishable to the author from one that was never written.
-        // `<a>` is legal around flow content, so wrapping is safe for the
-        // container case as well as the leaf one.
-        if widget.href != nil, controlAttributes["href"] == nil, element.name != "a" {
-            element = .custom("a")
-        }
-        if let href = widget.href, controlAttributes["href"] == nil {
-            controlAttributes["href"] = href
         }
 
         // A void element is replaced content: the browser sizes it from

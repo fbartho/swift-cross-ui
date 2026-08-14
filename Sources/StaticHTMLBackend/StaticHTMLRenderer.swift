@@ -120,7 +120,7 @@ public enum StaticHTMLRenderer {
             headings: emitter.headings,
             metadata: metadata(from: registry),
             imagesMissingAltText: emitter.imagesMissingAltText,
-            labelSubtreeRequestsRefused: emitter.labelSubtreeRequestsRefused
+            hrefsWithoutConsumer: unconsumedHrefs(in: light.widget)
         )
 
         return RenderResult(
@@ -288,32 +288,18 @@ public enum StaticHTMLRenderer {
         return (node.widget, layout.size.vector)
     }
 
-    /// Assigns every escape-hatch request in a tree to its owning widget.
+    /// Resolves the escape-hatch values a tree captured onto the elements
+    /// that carry them.
     ///
-    /// A request is in scope for the modified view and everything beneath it,
-    /// but only leaf widgets get an environment from the core, so a request is
-    /// only ever recorded on leaves. The widget that should actually carry it
-    /// is the modified view itself — the topmost widget whose entire subtree
-    /// is covered by that request.
-    ///
-    /// Hoisting each request to that widget recovers the intended element even
-    /// though containers never see an environment. See the seam note in
-    /// ``StaticHTMLBackend/Widget/pendingTagRequest``.
+    /// Each pass below handles one kind, distinguished by where its consumer
+    /// sits relative to the view the author modified: at it (the materializing
+    /// kinds), beneath it (a non-`id` attribute block), or at every
+    /// href-capable view within it (a navigation destination, already consumed
+    /// during the update).
     private static func resolveIntent(in root: StaticHTMLBackend.Widget) {
         resolveRawFragments(in: root)
-
-        let coverage = hoistRequests(in: root)
-        // A request covering the whole tree has no ancestor left to hoist to,
-        // so it belongs to the root.
-        if let tag = coverage.tag {
-            assign(tag, to: coverage)
-        }
-        if let attributes = coverage.attributes {
-            assign(attributes, to: coverage)
-        }
-        if let href = coverage.href {
-            assign(href, to: coverage)
-        }
+        distributeMaterializedValues(in: root)
+        sinkAttributes(in: root)
 
         sinkTapMarkers(in: root)
         sinkCornerRadii(in: root)
@@ -373,9 +359,10 @@ public enum StaticHTMLRenderer {
     /// element it was meant to bind.
     ///
     /// Descent follows single-child wrapping only, the same shape
-    /// ``hoistRequests(in:)`` hands ownership down through: a wrapper adds no
-    /// element worth marking, so the marker belongs to the one view beneath
-    /// it. A wrapper around several children keeps the marker itself — the
+    /// ``distributeMaterializedValues(in:depth:)`` hands ownership down
+    /// through: a wrapper adds no element worth marking, so the marker belongs
+    /// to the one view beneath it. A wrapper around several children keeps the
+    /// marker itself — the
     /// author made that whole group tappable, and picking one child would be a
     /// guess.
     ///
@@ -506,346 +493,311 @@ public enum StaticHTMLRenderer {
         }
     }
 
-    /// The requests covering an entire subtree.
-    private struct Coverage {
-        /// The widget the subtree is rooted at, which is the widget that takes
-        /// ownership of any request that covers exactly this subtree.
-        var owner: StaticHTMLBackend.Widget?
-        /// The tag request covering every leaf below, if they all share one.
-        var tag: HTMLTagRequest?
-        /// The attributes request covering every leaf below, if they all share
-        /// one.
-        var attributes: HTMLAttributesRequest?
-        /// The href request covering every leaf below, if they all share one.
-        var href: HTMLHrefRequest?
-        /// Whether the subtree contained any widget at all that could carry a
-        /// request.
-        var isEmpty = true
-    }
-
-    /// Assigns requests within a subtree, returning what still covers all of
-    /// it.
+    /// Gives each materializing value the element it names.
     ///
-    /// A request that covers the whole subtree is left unassigned so that an
-    /// ancestor can claim it instead; anything that only covers part of the
-    /// subtree has found its owner here.
-    private static func hoistRequests(in widget: StaticHTMLBackend.Widget) -> Coverage {
-        let children = widget.getChildren()
-
-        guard !children.isEmpty else {
-            // A structural wrapper (Container, ScrollContainer) with no
-            // children has no content, not "content that happens to carry no
-            // tag" — an empty OptionalView (if without else) or an empty
-            // Group is exactly this shape. Reporting isEmpty here, the same
-            // as a widget with no populated descendants at all, keeps it from
-            // vetoing a shared ancestor request the way a real, untagged leaf
-            // legitimately would: deepestCommonRequest reads any concrete
-            // (even nil) tag from every populated sibling as meaningful, so
-            // one that never had a chance to hold one has to be excluded
-            // instead of read as "explicitly untagged".
-            let isStructuralWrapper = widget is StaticHTMLBackend.Container
-                || widget is StaticHTMLBackend.ScrollContainer
-            return Coverage(
-                owner: widget,
-                tag: widget.pendingTagRequest,
-                attributes: widget.pendingAttributesRequest,
-                href: widget.pendingHrefRequest,
-                isEmpty: isStructuralWrapper
-            )
-        }
-
-        let childCoverages = children.map { child in hoistRequests(in: child) }
-        let populated = childCoverages.filter { !$0.isEmpty }
-
-        guard let first = populated.first else {
-            return Coverage()
-        }
-
-        // A widget wrapping a single child adds no element of its own worth
-        // naming — modifiers stack up several of these around one view. Keep
-        // the child as the owner so that a tag lands on the view the author
-        // applied it to rather than on one of its wrappers.
-        //
-        // This has to check the actual child count, not populated.count: a
-        // container holding an if-without-else or an empty Group alongside a
-        // real child also ends up with exactly one populated coverage, but
-        // it's a container the author gave multiple children, not a
-        // transparent wrapper around a single one — its own tag (if it has
-        // one) belongs on it, not hoisted past it onto the lone survivor.
-        // A view-label button has exactly one child, but unlike a wrapper it
-        // becomes an element of its own that consumes these requests — the
-        // emission matrix turns an href into the button's own `<a href>`.
-        // Handing ownership to its label would put the href on the text
-        // inside the control instead, emitting a link nested in a disabled
-        // button rather than a live one.
-        let ownsItsElement = widget is StaticHTMLBackend.ViewLabelButton
-
-        if children.count == 1, populated.count == 1, !ownsItsElement, let inner = first.owner {
-            return Coverage(
-                owner: inner,
-                tag: first.tag,
-                attributes: first.attributes,
-                href: first.href,
-                isEmpty: false
-            )
-        }
-
-        // A widget that owns its element (only `ViewLabelButton` today) has
-        // exactly one child and always falls into the "shared request" shape
-        // below: with one child, the deepest request common to all of them is
-        // just that child's own request. Left to the generic path, that
-        // request would return as this widget's *unassigned* coverage for an
-        // ancestor to claim — the same deferral the single-child collapse
-        // above performs deliberately. There is no legitimate ancestor for a
-        // view-label button's label to defer to, though: the button IS the
-        // element the label's request would land on, and whether that's
-        // correct depends entirely on where the request came from.
-        //
-        // `widget.pendingTagRequest` (etc.) is what the button's own view
-        // captured from the environment at its own update — identity-equal
-        // to the label's request only when the author applied `.htmlTag()`/
-        // `.htmlAttributes()`/`.href()` at-or-above the button itself, since
-        // `transformEnvironment` allocates a new request object every time
-        // one of those modifiers runs (see `HTMLModifiers.swift`). A request
-        // the label introduced on its own is a different object the button
-        // never saw, and letting it resolve here would replace the button's
-        // emission-matrix element (`<button>`/`<a href>`) with whatever the
-        // label asked for — corrupting the control rather than styling its
-        // label. That's refused rather than silently dropped: recorded on
-        // the widget so the emitter can surface it via
-        // ``DocumentInfo/labelSubtreeRequestsRefused``, the same
-        // never-silent principle ``DocumentInfo/imagesMissingAltText`` follows
-        // for its own fallback.
-        if ownsItsElement {
-            // A request that turns out to be the button's own — applied
-            // at-or-above it, inherited by the label rather than introduced
-            // there — is left unassigned here and returned in the coverage
-            // below, exactly like the ordinary shared-request path further
-            // down: an ancestor (a `.background()` pair's routing, most
-            // commonly) still needs to see it to know this subtree is
-            // already covered, or it would assign the same request to a
-            // decoration sibling too. Only a request the label introduced on
-            // its own is refused outright, since nothing above this widget
-            // is meant to resolve it.
-            var tag = first.tag
-            if let candidate = tag, candidate !== widget.pendingTagRequest {
-                widget.refusedLabelRequests.append("htmlTag(\(candidate.element.name))")
-                tag = nil
-            }
-            var attributes = first.attributes
-            if let candidate = attributes, candidate !== widget.pendingAttributesRequest {
-                widget.refusedLabelRequests.append("htmlAttributes")
-                attributes = nil
-            }
-            var href = first.href
-            if let candidate = href, candidate !== widget.pendingHrefRequest {
-                widget.refusedLabelRequests.append("href")
-                href = nil
-            }
-            return Coverage(
-                owner: widget,
-                tag: tag,
-                attributes: attributes,
-                href: href,
-                isEmpty: false
-            )
-        }
-
-        // A `.background()` pair has several children but only one of them is
-        // the view the author wrapped; the other is decoration the modifier
-        // supplied. Ownership follows the content child for the same reason
-        // the single-child case above hands ownership down: an element name,
-        // an href, or an attribute set the author applied outside the pair
-        // was applied to the content, not to the backdrop and not to the
-        // pair. Without this, a single-valued request stops at the pair and
-        // reaches no element at all, since nothing consumes one on a
-        // container.
-        if let contentIndex = contentChildIndex(of: widget),
-           childCoverages.indices.contains(contentIndex),
-           let content = childCoverages[contentIndex].owner
-        {
-            let contentCoverage = childCoverages[contentIndex]
-
-            // A request from outside the pair is in scope for every child, so
-            // the decoration children report it too. Only what a decoration
-            // child reports *beyond* that is genuinely its own — a
-            // `.htmlTag()` applied to the backdrop view itself, say — and
-            // only that gets assigned here. Assigning the shared request as
-            // well would put the author's single element name, or their
-            // single href, on the backdrop and the content both: two elements
-            // for one request, and nested anchors where there should be one.
-            for (index, coverage) in childCoverages.enumerated()
-                where index != contentIndex && !coverage.isEmpty
-            {
-                if let tag = coverage.tag, tag !== contentCoverage.tag {
-                    assign(tag, to: coverage)
-                }
-                if let attributes = coverage.attributes,
-                   attributes !== contentCoverage.attributes
-                {
-                    assign(attributes, to: coverage)
-                }
-                if let href = coverage.href, href !== contentCoverage.href {
-                    assign(href, to: coverage)
-                }
-            }
-
-            return Coverage(
-                owner: content,
-                tag: contentCoverage.tag,
-                attributes: contentCoverage.attributes,
-                href: contentCoverage.href,
-                isEmpty: false
-            )
-        }
-
-        // The request this widget owns is the innermost one that covers all of
-        // its children. A child that was given its own tag reports that one
-        // instead, but the request it shadowed is still in its chain, so the
-        // deepest request common to every chain is the one that belongs here.
-        let sharedTag = deepestCommonRequest(
-            populated.map(\.tag),
-            enclosing: \.enclosing
-        )
-        let sharedAttributes = deepestCommonRequest(
-            populated.map(\.attributes),
-            enclosing: \.enclosing
-        )
-        let sharedHref = deepestCommonRequest(
-            populated.map(\.href),
-            enclosing: \.enclosing
-        )
-
-        // Anything a child reports beyond the shared request is its own, so it
-        // is assigned to the child rather than hoisted any further.
-        for coverage in populated {
-            if let tag = coverage.tag, tag !== sharedTag {
-                assign(tag, to: coverage)
-            }
-            if let attributes = coverage.attributes, attributes !== sharedAttributes {
-                assign(attributes, to: coverage)
-            }
-            if let href = coverage.href, href !== sharedHref {
-                assign(href, to: coverage)
-            }
-        }
-
-        return Coverage(
-            owner: widget,
-            tag: sharedTag,
-            attributes: sharedAttributes,
-            href: sharedHref,
-            isEmpty: false
-        )
-    }
-
-    /// The index of the child that is a multi-child wrapper's content, if the
-    /// wrapper has a designated content side at all.
+    /// A tag and an `id`-bearing attribute block both name the element of the
+    /// view they were applied to. Only a leaf receives an environment, though,
+    /// so a value applied to a container arrives on the leaves beneath it and
+    /// never on the container itself. Each leaf reports the whole nest of
+    /// values in scope for it, outermost first, and that nesting is what
+    /// recovers the application sites: the outermost entry belongs to the
+    /// outermost widget whose every leaf reports it, the next entry to a
+    /// widget inside that one, and so on.
     ///
-    /// Only ``StaticHTMLBackend/Container/isBackgroundLayering`` pairs qualify
-    /// today: their children are always exactly `[backdrop, content]`, so the
-    /// content is index 1. Every other multi-child container in the backend
-    /// holds peers — a stack's children, a `ForEach`'s rows, the branches of
-    /// a `TupleView` — where no child is more "the" content than its
-    /// siblings, and a request covering all of them belongs to the container.
-    ///
-    /// - Parameter widget: The widget to classify.
-    /// - Returns: The content child's index, or `nil` for a widget whose
-    ///   children are peers.
-    private static func contentChildIndex(of widget: StaticHTMLBackend.Widget) -> Int? {
-        guard let container = widget as? StaticHTMLBackend.Container,
-              container.isBackgroundLayering,
-              container.children.count == 2
-        else {
-            return nil
-        }
-        return 1
-    }
-
-    /// Finds the innermost request that every one of a widget's children is
-    /// covered by.
-    ///
-    /// Each child reports the innermost request in scope for it, which is its
-    /// own if the author gave it one. Because a request keeps a reference to
-    /// the one it shadowed, walking a child's chain enumerates every request
-    /// covering that child, outermost last. The request a parent owns is then
-    /// the first entry of any child's chain that appears in all of them.
+    /// Ownership is decided structurally rather than by matching an object
+    /// back to the widget that captured it. Descent to the site follows
+    /// single-child wrapping only — a value covering several siblings was
+    /// applied above them — and stops at a control that owns its label, since
+    /// the control is the element the author named.
     ///
     /// - Parameters:
-    ///   - requests: The innermost request reported by each child, in order.
-    ///   - enclosing: The key path from a request to the one it shadowed.
-    /// - Returns: The innermost request covering every child, if there is one.
-    private static func deepestCommonRequest<Request: AnyObject>(
-        _ requests: [Request?],
-        enclosing: KeyPath<Request, Request?>
-    ) -> Request? {
-        guard let first = requests.first, requests.allSatisfy({ $0 != nil }) else {
-            // A child covered by no request at all rules out every candidate:
-            // nothing can cover the whole set.
-            return nil
-        }
-
-        let chains = requests.map { request in
-            sequence(first: request, next: { $0?[keyPath: enclosing] })
-                .compactMap { $0 }
-        }
-        let others = chains.dropFirst().map { chain in
-            chain.map(ObjectIdentifier.init)
-        }
-
-        return sequence(first: first, next: { $0?[keyPath: enclosing] })
-            .compactMap { $0 }
-            .first { candidate in
-                let identity = ObjectIdentifier(candidate)
-                return others.allSatisfy { $0.contains(identity) }
+    ///   - widget: The subtree to walk.
+    ///   - depth: How many enclosing values have already been placed above.
+    private static func distributeMaterializedValues(
+        in widget: StaticHTMLBackend.Widget,
+        depth: Int = 0
+    ) {
+        let tag = sharedValue(in: widget, at: depth, of: \.pendingTags)
+        let block = sharedValue(in: widget, at: depth, of: \.pendingIdentifiedAttributes)
+        guard tag != nil || block != nil else {
+            // Nothing at this depth covers the whole subtree, so every value
+            // still pending below was applied inside one of the children.
+            for child in widget.getChildren() {
+                distributeMaterializedValues(in: child, depth: depth)
             }
-    }
-
-    /// Records a request as belonging to the widget a coverage came from.
-    private static func assign(_ tag: HTMLTagRequest, to coverage: Coverage) {
-        coverage.owner?.explicitElement = tag.element
-    }
-
-    /// Records a request as belonging to the widget a coverage came from.
-    ///
-    /// Unlike the tag/href cases, this doesn't just take `attributes.attributes`
-    /// — it merges the whole `enclosing` chain (see `mergedAttributes(from:)`),
-    /// because `HTMLAttributesRequest` is dictionary-valued: several stacked
-    /// `.htmlAttributes(_:)` calls all deserve to reach the element, not just
-    /// the innermost one.
-    private static func assign(_ attributes: HTMLAttributesRequest, to coverage: Coverage) {
-        coverage.owner?.authorAttributes = mergedAttributes(from: attributes)
-    }
-
-    /// Unions a chain of `HTMLAttributesRequest`s into one dictionary.
-    ///
-    /// Walks from `request` outward through `enclosing`, so the request
-    /// closest to the content is visited first. A dictionary merge keeps the
-    /// FIRST value it sees per key (`uniquingKeysWith` never overwrites once
-    /// a key exists), which is exactly innermost-wins-per-key: the request
-    /// closest to the content sets a key before any outer request gets a
-    /// chance to.
-    ///
-    /// - Parameter request: The innermost request in the chain to merge.
-    /// - Returns: Every key from every request in the chain, each key's
-    ///   value taken from the innermost request that set it.
-    private static func mergedAttributes(
-        from request: HTMLAttributesRequest
-    ) -> [String: HTMLAttributeOp] {
-        var merged: [String: HTMLAttributeOp] = [:]
-        var current: HTMLAttributesRequest? = request
-        while let node = current {
-            merged.merge(node.attributes) { keepInner, _ in keepInner }
-            current = node.enclosing
+            return
         }
-        return merged
+
+        // A control that owns its label stops the descent only when the value
+        // is in scope for the control itself — then it names the control, and
+        // handing it to the label would put the author's element inside the
+        // button instead of on it. A value the label introduced never reached
+        // the control's own update, so it belongs further down.
+        var site = widget
+        while let next = descentTarget(of: site),
+              !(site is StaticHTMLBackend.ViewLabelButton)
+              || site.pendingTags.count <= depth && site.pendingIdentifiedAttributes
+              .count <= depth,
+              sharedValue(in: next, at: depth, of: \.pendingTags) == tag,
+              sharedValue(in: next, at: depth, of: \.pendingIdentifiedAttributes) == block
+        {
+            site = next
+        }
+
+        // Stacking either modifier on one view produces one entry per call,
+        // and every one of them covers exactly this subtree rather than a
+        // narrower one. Those entries name the same element, so they resolve
+        // together here. The chain runs outermost-first, so each turn of this
+        // loop moves closer to the content and therefore wins: a tag replaces
+        // the one before it outright, and a block overwrites only the keys it
+        // sets. An entry whose coverage is narrower belongs to a descendant
+        // instead, and finding one ends the loop.
+        var placed = depth
+        while true {
+            let tag = sharedValue(in: site, at: placed, of: \.pendingTags)
+            let block = sharedValue(in: site, at: placed, of: \.pendingIdentifiedAttributes)
+            let coversWholeSubtree = descentTarget(of: site).map { next in
+                sharedValue(in: next, at: placed, of: \.pendingTags) == tag
+                    && sharedValue(
+                        in: next,
+                        at: placed,
+                        of: \.pendingIdentifiedAttributes
+                    ) == block
+            } ?? true
+            guard tag != nil || block != nil, coversWholeSubtree else {
+                break
+            }
+            if let tag {
+                site.explicitElement = tag.element
+            }
+            if let block {
+                site.authorAttributes.merge(block.attributes) { _, innermost in innermost }
+            }
+            placed += 1
+        }
+
+        for child in site.getChildren() {
+            distributeMaterializedValues(in: child, depth: placed)
+        }
     }
 
-    /// Records a request as belonging to the widget a coverage came from.
-    private static func assign(_ href: HTMLHrefRequest, to coverage: Coverage) {
-        coverage.owner?.href = href.href
+    /// The child a value applied at a widget descends into, or `nil` where the
+    /// widget is itself the element the value names.
+    ///
+    /// A wrapper around one view adds no element worth naming, so the value
+    /// belongs to the view inside it. A `.background()` pair is the other
+    /// shape that has a single "the content": its children are always
+    /// `[backdrop, content]`, and a value applied outside the pair was applied
+    /// to the content, not to the decoration the modifier supplied. Every
+    /// other multi-child widget holds peers — a stack's children, a
+    /// `ForEach`'s rows — where no child is more the content than its
+    /// siblings, so the value stops at the widget itself.
+    ///
+    /// - Parameter widget: The widget to descend from.
+    /// - Returns: The child to descend into, if there is one.
+    private static func descentTarget(
+        of widget: StaticHTMLBackend.Widget
+    ) -> StaticHTMLBackend.Widget? {
+        let children = widget.getChildren()
+        if let container = widget as? StaticHTMLBackend.Container,
+           container.isBackgroundLayering, children.count == 2
+        {
+            return children[1]
+        }
+        return children.count == 1 ? children[0] : nil
     }
 
+    /// The value every leaf of a subtree reports at one nesting depth, if they
+    /// all report the same one.
+    ///
+    /// - Parameters:
+    ///   - widget: The subtree to inspect.
+    ///   - depth: The position in each leaf's nest to read.
+    ///   - chain: The nest to read from.
+    /// - Returns: The shared value, or `nil` where the leaves disagree or none
+    ///   of them carry a value that deep.
+    private static func sharedValue<Value: Equatable>(
+        in widget: StaticHTMLBackend.Widget,
+        at depth: Int,
+        of chain: KeyPath<StaticHTMLBackend.Widget, [Value]>
+    ) -> Value? {
+        var shared: Value?
+        var sawLeaf = false
+        var agrees = true
+        func walk(_ widget: StaticHTMLBackend.Widget) {
+            let children = widget.getChildren()
+            guard !children.isEmpty else {
+                // A childless structural wrapper — an `if` without an `else`
+                // that evaluated false, an empty `Group` — holds no content,
+                // as opposed to content that happens to carry no value. It
+                // never received an environment, so reading it as "explicitly
+                // has none" would veto a value its real siblings all share.
+                guard !(widget is StaticHTMLBackend.Container),
+                      !(widget is StaticHTMLBackend.ScrollContainer)
+                else {
+                    return
+                }
+                let values = widget[keyPath: chain]
+                let value = depth < values.count ? values[depth] : nil
+                if sawLeaf {
+                    agrees = agrees && shared == value
+                } else {
+                    shared = value
+                    sawLeaf = true
+                }
+                return
+            }
+            for child in children {
+                walk(child)
+            }
+        }
+        walk(widget)
+        return agrees ? shared : nil
+    }
+
+    /// Moves each non-`id` attribute block onto the element that survives to
+    /// carry it.
+    ///
+    /// A block without an `id` describes whatever element ends up holding the
+    /// content, not a node the author pinned, so it rides down through
+    /// wrappers that emit nothing and lands on the first one that materializes.
+    /// The consumer is unambiguous because only a single-child wrapper elides:
+    /// where descent could branch, this widget is a real element and consumes
+    /// the block itself.
+    ///
+    /// Descent stops at a control that owns its label subtree. A view-label
+    /// button is a single-child widget, but it becomes the element the reader
+    /// activates, so an attribute meant for it belongs on the control rather
+    /// than on the text inside it.
+    ///
+    /// - Parameter widget: The subtree to walk.
+    private static func sinkAttributes(in widget: StaticHTMLBackend.Widget) {
+        // The block is in scope for every widget under the application site,
+        // so it has to be claimed at the outermost one that reports it —
+        // claiming it wherever it appears would copy one author's attributes
+        // onto every descendant as well.
+        guard let block = sharedAttributeBlock(in: widget) else {
+            for child in widget.getChildren() {
+                sinkAttributes(in: child)
+            }
+            return
+        }
+
+        clearPendingAttributes(in: widget, matching: block)
+        let consumer = consumer(from: widget)
+        consumer.authorAttributes.merge(block.attributes) { existing, _ in
+            // A block already resolved onto the consumer was applied closer
+            // to the content than this one, so it stays.
+            existing
+        }
+        for child in consumer.getChildren() {
+            sinkAttributes(in: child)
+        }
+    }
+
+    /// The non-`id` attribute block every leaf of a subtree reports, if they
+    /// all report the same one.
+    ///
+    /// - Parameter widget: The subtree to inspect.
+    /// - Returns: The shared block, or `nil` where the leaves disagree or
+    ///   carry none.
+    private static func sharedAttributeBlock(
+        in widget: StaticHTMLBackend.Widget
+    ) -> HTMLAttributeBlock? {
+        var shared: HTMLAttributeBlock?
+        var sawLeaf = false
+        var agrees = true
+        func walk(_ widget: StaticHTMLBackend.Widget) {
+            let children = widget.getChildren()
+            guard !children.isEmpty else {
+                guard !(widget is StaticHTMLBackend.Container),
+                      !(widget is StaticHTMLBackend.ScrollContainer)
+                else {
+                    return
+                }
+                if sawLeaf {
+                    agrees = agrees && shared == widget.pendingAttributes
+                } else {
+                    shared = widget.pendingAttributes
+                    sawLeaf = true
+                }
+                return
+            }
+            for child in children {
+                walk(child)
+            }
+        }
+        walk(widget)
+        return agrees ? shared : nil
+    }
+
+    /// Removes one attribute block from every widget in a subtree that
+    /// reported it, now that an ancestor has claimed it.
+    ///
+    /// - Parameters:
+    ///   - widget: The subtree to clear.
+    ///   - claimed: The block that was claimed.
+    private static func clearPendingAttributes(
+        in widget: StaticHTMLBackend.Widget,
+        matching claimed: HTMLAttributeBlock
+    ) {
+        if widget.pendingAttributes == claimed {
+            widget.pendingAttributes = nil
+        }
+        for child in widget.getChildren() {
+            clearPendingAttributes(in: child, matching: claimed)
+        }
+    }
+
+    /// The element a value applied at `widget` is consumed by.
+    ///
+    /// Descent follows the widgets that describe the same content: a wrapper
+    /// around one view names the same thing the view does, so an attribute
+    /// meant for "this view" belongs on the innermost element rather than on
+    /// the box some modifier put around it. A frame is not a reason to stop —
+    /// `.frame()` sizes the content, it doesn't become a different subject —
+    /// but a control that owns its label is, since the control is the element
+    /// the reader interacts with and the author was describing.
+    ///
+    /// - Parameter widget: The application site.
+    /// - Returns: The widget whose element carries the value.
+    private static func consumer(
+        from widget: StaticHTMLBackend.Widget
+    ) -> StaticHTMLBackend.Widget {
+        var current = widget
+        while !(current is StaticHTMLBackend.ViewLabelButton),
+              current.authorAttributes.isEmpty,
+              current.explicitElement == nil,
+              let next = descentTarget(of: current)
+        {
+            current = next
+        }
+        return current
+    }
+
+    /// Every navigation destination that reached no consumer.
+    ///
+    /// An `.href(_:)` whose subtree holds no href-capable view emits nothing
+    /// at all — no element becomes a link, since a container that merely holds
+    /// content is not itself a destination. That's a silent no-op in the
+    /// markup, so it is reported instead: the author asked for navigation and
+    /// got none, which they can only discover if something says so.
+    ///
+    /// - Parameter widget: The subtree to walk.
+    /// - Returns: The unconsumed destinations, in tree order, deduplicated.
+    private static func unconsumedHrefs(in widget: StaticHTMLBackend.Widget) -> [String] {
+        var found: [String] = []
+        func walk(_ widget: StaticHTMLBackend.Widget) {
+            if let href = widget.pendingHref, !found.contains(href) {
+                found.append(href)
+            }
+            for child in widget.getChildren() {
+                walk(child)
+            }
+        }
+        walk(widget)
+        return found
+    }
     /// Copies each widget's dark-scheme colors onto the corresponding widget
     /// from the light pass.
     ///
