@@ -36,13 +36,12 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("A .background() Color sibling doesn't displace an ancestor's tag")
     func backgroundColorSiblingDoesNotDisplaceAncestorTag() {
-        // A Color leaf has to carry pendingTagRequest. A leaf reporting no
-        // request at all reads as "not covered by anything", and one
-        // uncovered child rules out every candidate tag for the whole
-        // subtree (see deepestCommonRequest) — so a .background(Color(...)),
-        // which introduces exactly one such sibling, would otherwise knock
-        // the tag off the container it was applied to and take any derived
-        // headings with it.
+        // A Color leaf has to capture the tags in scope for it. A leaf
+        // reporting none reads as "explicitly untagged", and one such child
+        // makes the subtree disagree, so a .background(Color(...)) — which
+        // introduces exactly one extra leaf — would otherwise knock the tag
+        // off the container it was applied to and take any derived headings
+        // with it.
         let view = VStack {
             Text("Title").font(.largeTitle)
             Text("Code block").background(Color.gray)
@@ -431,14 +430,11 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("An empty if-without-else sibling doesn't push a container's tag onto its lone child")
     func emptyOptionalSiblingDoesNotDisplaceContainerTag() {
-        // hoistRequests must not treat "exactly one populated child" as proof
-        // that a container is a transparent modifier wrapper: an
-        // if-without-else that evaluates false produces exactly that shape
-        // too — a real container with a genuine child, plus an empty
-        // OptionalView contributing nothing. Hoisting there would carry the
-        // author's tag past the container onto the lone survivor, costing
-        // the container its own element and displacing the survivor's
-        // derived heading.
+        // An if-without-else that evaluates false contributes a childless
+        // wrapper holding no content, as opposed to content that happens to
+        // carry no tag. Read as "explicitly untagged" it would veto the tag
+        // its real sibling shares, costing the container its own element and
+        // displacing the survivor's derived heading.
         let view = VStack {
             Text("Title").font(.title)
             if false {
@@ -505,10 +501,10 @@ struct StaticHTMLBackendTests {
         // constructors call `captureIntent` — a plain `Container` (what
         // `VStack` becomes) is created through `createContainer()`, which
         // takes no environment. So the author's request is never recorded on
-        // any widget in this shape: it is lost in the environment before
-        // `hoistRequests` runs, rather than dropped by the empty-children
-        // early return. Recovering it needs the container-environment seam
-        // tracked on task 41, so this stays a known issue here.
+        // any widget in this shape: it is lost in the environment before the
+        // renderer's distribution pass runs, rather than dropped by it.
+        // Recovering it needs the container-environment seam tracked on task
+        // 41, so this stays a known issue here.
         let rows: [String] = []
         let view = VStack {
             ForEach(rows) { row in
@@ -561,10 +557,9 @@ struct StaticHTMLBackendTests {
         // The deeper shape the original specimen-B trace came from: a real
         // `SplitViewWidget` rather than a plain stack, which is where the
         // reported second-order effect was said to surface. With the sidebar
-        // collapsed to an empty coverage the split has exactly one populated
-        // child, so `deepestCommonRequest` runs over a single-entry array and
-        // returns the detail pane's own tag as "shared by all" — the shape
-        // that would defer it upward and leave it unassigned.
+        // contributing no content, the detail pane's own tag is the only one
+        // the split's leaves report — the shape that could carry it up onto
+        // the split itself and leave the pane without one.
         let rows: [String] = []
         let view = NavigationSplitView {
             ForEach(rows) { row in
@@ -670,30 +665,23 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("An .htmlTag() inside a button's label is refused, not silently applied to the button")
-    func htmlTagInsideButtonLabelIsRefused() {
-        // The label's own element choice isn't reachable through .htmlTag():
-        // the button's element comes from the emission matrix
-        // (<button>/<a href>), and letting a request meant for the label
-        // resolve here would silently replace the control's element with
-        // whatever the label asked for instead. The refusal is surfaced
-        // rather than dropped, since nothing in the markup shows it happened.
+    @Test("An .htmlTag() inside a button's label tags the label, not the button")
+    func htmlTagInsideButtonLabelTagsTheLabel() {
+        // A tag names the element of the view it was applied to and never
+        // travels, so the label's own element becomes the span while the
+        // control above keeps the element its emission matrix chose.
         let view = Button(action: {}) {
             Text("fbartho").font(.title2).htmlTag(.span)
         }
         let result = StaticHTMLRenderer.render(view, context: "Tag inside label")
 
         #expect(result.html.contains("<button "))
-        #expect(!result.html.contains("<span aria-disabled"))
-        #expect(result.documentInfo.labelSubtreeRequestsRefused == ["htmlTag(span)"])
+        #expect(result.html.contains(">fbartho</span>"))
     }
 
     @MainActor
     @Test("An .htmlTag() applied to the Button itself still resolves normally")
     func htmlTagOnButtonItselfStillResolves() {
-        // The refusal above is scoped to requests introduced inside the
-        // label subtree. One applied to the button (or above it) is
-        // unaffected — this is the read side of the same identity check.
         let view = Button(action: {}) {
             Text("fbartho").font(.title2)
         }
@@ -2710,40 +2698,59 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("An href covering several siblings reaches the container as a live anchor")
-    func hrefCoveringSiblingsReachesContainer() {
-        // The content-side rule is scoped to wrappers that have a content
-        // side. A stack the author gave several children is not one: its
-        // children are peers, so a request covering all of them belongs to
-        // the container, which becomes the anchor wrapping them.
-        let html = StaticHTMLRenderer.render(
+    @Test("An href covering several plain siblings anchors none of them")
+    func hrefCoveringPlainSiblingsAnchorsNothing() {
+        // A container is not a link because it holds one, and plain text is
+        // not href-capable, so nothing here consumes the destination. The
+        // markup gets no anchor at all and the unconsumed destination is
+        // reported instead of vanishing.
+        let result = StaticHTMLRenderer.render(
             VStack {
                 Text("First")
                 Text("Second")
             }.href("/both"),
             context: "Href over siblings"
-        ).html
+        )
 
-        #expect(html.contains("href=\"/both\""))
-        #expect(html.contains(">First</"))
-        #expect(html.contains(">Second</"))
-        #expect(html.components(separatedBy: "href=\"/both\"").count == 2)
+        #expect(!result.html.contains("href=\"/both\""))
+        #expect(!result.html.contains("<a "))
+        #expect(result.html.contains(">First</"))
+        #expect(result.html.contains(">Second</"))
+        #expect(result.documentInfo.hrefsWithoutConsumer == ["/both"])
     }
 
     @MainActor
-    @Test("An href on a non-control leaf makes it a live anchor")
-    func hrefOnNonControlLeafEmitsAnchor() {
-        // Only the control cases consume `widget.href` themselves. Anything
-        // else used to carry the request to emission and drop it there, which
-        // is the same silent-loss failure as the wrapper case.
-        let html = StaticHTMLRenderer.render(
+    @Test("An href covering several buttons makes every one of them live")
+    func hrefCoveringSiblingButtonsAnchorsEach() {
+        // One destination, many consumers: each href-capable sibling
+        // navigates there, and the container stays a plain box.
+        let result = StaticHTMLRenderer.render(
+            VStack {
+                Button("First") {}
+                Button("Second") {}
+            }.href("/both"),
+            context: "Href over sibling buttons"
+        )
+
+        #expect(result.html.components(separatedBy: "href=\"/both\"").count == 3)
+        #expect(result.documentInfo.hrefsWithoutConsumer.isEmpty)
+    }
+
+    @MainActor
+    @Test("An href on a non-control leaf reaches no consumer")
+    func hrefOnNonControlLeafFindsNoConsumer() {
+        // Plain text is not href-capable: the destination has nothing to
+        // consume it, so no anchor is emitted and the diagnostic carries the
+        // fact instead.
+        let result = StaticHTMLRenderer.render(
             Text("Plain").href("/t"),
             context: "Href on text"
-        ).html
+        )
 
-        #expect(html.contains("<a "))
-        #expect(html.contains("href=\"/t\""))
-        #expect(html.contains(">Plain</a>"))
+        #expect(!result.html.contains("<a "))
+        #expect(!result.html.contains("href=\"/t\""))
+        #expect(result.html.contains(">Plain</span>"))
+        #expect(result.documentInfo.hrefsWithoutConsumer == ["/t"])
     }
 
     @MainActor
@@ -2801,9 +2808,8 @@ struct StaticHTMLBackendTests {
     @MainActor
     @Test("Attributes on a shape-labelled button inside an HStack reach its element")
     func attributesOnShapeLabelledButtonInsideHStackAreKept() {
-        // Same seam as the href case: every escape-hatch request resolves by
-        // identity, so all of them drop together when a label leaf captures a
-        // different allocation than the control above it.
+        // The attribute block rides down to the first element that survives
+        // elision, which for a button is the control itself.
         let result = StaticHTMLRenderer.render(
             HStack {
                 Button {} label: {
@@ -2814,45 +2820,47 @@ struct StaticHTMLBackendTests {
         )
 
         #expect(result.html.contains("data-role=\"icon\""))
-        #expect(result.documentInfo.labelSubtreeRequestsRefused.isEmpty)
     }
 
     @MainActor
-    @Test("A request inherited by a label is never recorded as refused")
-    func inheritedLabelRequestIsNotRefused() {
-        // The refusal record exists for a request the label introduced on its
-        // own. A request applied at-or-above the button is inherited, so it
-        // must resolve silently — a refusal here means identity comparison
-        // mistook one for the other.
+    @Test("An href applied to a shape-labelled button makes the control live")
+    func hrefOnShapeLabelledButtonIsConsumedByTheControl() {
+        // The button is the href-capable view in scope, so it consumes the
+        // destination and emits the live anchor rather than a disabled
+        // control.
         let result = StaticHTMLRenderer.render(
             HStack {
                 Button {} label: {
                     Rectangle().frame(width: 16, height: 16)
                 }.href("/icon")
             },
-            context: "Inherited request on shape-labelled button"
+            context: "Href on shape-labelled button"
         )
 
-        #expect(result.documentInfo.labelSubtreeRequestsRefused.isEmpty)
+        #expect(result.html.contains("href=\"/icon\""))
+        #expect(!result.html.contains("aria-disabled=\"true\""))
+        #expect(result.documentInfo.hrefsWithoutConsumer.isEmpty)
     }
 
     @MainActor
-    @Test("A request a label introduces itself is still refused")
-    func labelIntroducedRequestIsStillRefused() {
-        // The guard the fix must not overshoot: a request originating inside
-        // the label would replace the control's own element, so it stays
-        // refused rather than resolving onto the button.
+    @Test("An href applied inside a label reaches no consumer there")
+    func labelIntroducedHrefFindsNoConsumer() {
+        // A destination applied to the label's own content has no
+        // href-capable view beneath it — a Rectangle is not a link — so
+        // nothing consumes it and no anchor is emitted. The button above is
+        // unaffected: it consumed nothing, because the application sits
+        // inside it rather than around it.
         let result = StaticHTMLRenderer.render(
             HStack {
                 Button {} label: {
                     Rectangle().frame(width: 16, height: 16).href("/inner")
                 }
             },
-            context: "Label-introduced request"
+            context: "Label-introduced href"
         )
 
-        #expect(result.documentInfo.labelSubtreeRequestsRefused.contains("href"))
         #expect(!result.html.contains("href=\"/inner\""))
+        #expect(result.documentInfo.hrefsWithoutConsumer == ["/inner"])
     }
 
     @MainActor
