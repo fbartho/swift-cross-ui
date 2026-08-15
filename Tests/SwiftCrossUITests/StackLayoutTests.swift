@@ -102,9 +102,9 @@ struct StackLayoutTests {
         #expect(prioritizedResult.size == plainResult.size)
 
         // Reaching the end is the rest of the assertion: the hook's call
-        // site indexes per-child arrays, and the caches ZStack and the
-        // trivial-grouping path build carry none, so a shape mismatch would
-        // trap during commit rather than return a wrong size.
+        // site indexes per-child arrays, and ZStack's cache carries none, so
+        // a shape mismatch would trap during commit rather than return a
+        // wrong size.
         _ = committedNode(for: prioritized, proposedSize: proposedSize)
         _ = committedNode(for: ZStack { Text("Dummy") }, proposedSize: proposedSize)
     }

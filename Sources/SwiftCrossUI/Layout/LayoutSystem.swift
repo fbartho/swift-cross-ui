@@ -492,9 +492,10 @@ public enum LayoutSystem {
         }
         backend.describeChildLayoutPriorities(of: container, priorities: priorities)
 
-        // Guarded because ZStack and the trivial-grouping fast path build
-        // caches with no per-child endpoints at all, and a backend indexing
-        // these by child would read past the end.
+        // Guarded because ZStack and a cache that never ran a layout pass
+        // (``StackLayoutCache/initial``) carry no per-child endpoints at
+        // all, and a backend indexing these by child would read past the
+        // end.
         if cache.minimumLengths.count == children.count,
            cache.maximumLengths.count == children.count
         {
