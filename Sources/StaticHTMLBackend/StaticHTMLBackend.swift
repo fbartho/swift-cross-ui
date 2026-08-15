@@ -380,6 +380,11 @@ public final class StaticHTMLBackend:
         /// undeclared priority), which is a real, meaningful value the
         /// emitter still needs to see.
         public var childLayoutPriorities: [Double]?
+        /// How far each stack child can compress and stretch along the
+        /// stack's axis, indexed the same way as ``children``. `nil` for a
+        /// container whose layout never reported endpoints — a ZStack, or a
+        /// stack the layout system resolved without ranking its children.
+        public var childFlexibility: (minimums: [Double], maximums: [Double])?
         /// Whether this container is standing in for a
         /// ``SwiftCrossUI/View/background(_:)`` pair, from
         /// ``BackendFeatures/Widgets/describeBackground(of:)``.
@@ -792,6 +797,14 @@ public final class StaticHTMLBackend:
 
     public func describeChildLayoutPriorities(of widget: Widget, priorities: [Double]) {
         (widget as? Container)?.childLayoutPriorities = priorities
+    }
+
+    public func describeChildFlexibility(
+        of widget: Widget,
+        minimums: [Double],
+        maximums: [Double]
+    ) {
+        (widget as? Container)?.childFlexibility = (minimums, maximums)
     }
 
     public func describeFrame(of widget: Widget, width: Double?, height: Double?) {
