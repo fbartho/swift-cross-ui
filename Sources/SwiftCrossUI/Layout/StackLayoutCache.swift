@@ -16,6 +16,11 @@ struct StackLayoutCache {
     let totalReservedSpace: Double
     /// The minimum length of each view.
     let minimumLengths: [Double]
+    /// The maximum length of each view. Only read by
+    /// ``LayoutSystem/commitStackLayout(container:children:cache:layout:environment:backend:)``
+    /// when reporting flexibility to the backend; the allocation itself
+    /// derives what it needs from ``priorityGroups``.
+    let maximumLengths: [Double]
     /// Whether to redistribute space on commit or not. `true` if and only if the
     /// stack was provided a proposed size with an unspecified perpendicular axis.
     let redistributeSpaceOnCommit: Bool
@@ -27,6 +32,7 @@ struct StackLayoutCache {
         totalSpacing: 0,
         totalReservedSpace: 0,
         minimumLengths: [],
+        maximumLengths: [],
         redistributeSpaceOnCommit: false
     )
 }

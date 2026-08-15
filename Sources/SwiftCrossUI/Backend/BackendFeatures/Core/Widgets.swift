@@ -123,6 +123,39 @@ extension BackendFeatures {
         ///     way as the container's children.
         func describeChildLayoutPriorities(of widget: Widget, priorities: [Double])
 
+        /// Tells the backend how far each of a stack's children can stretch
+        /// and compress, in the same visual order as every other per-child
+        /// index.
+        ///
+        /// The endpoints are the sizes each child returned when proposed
+        /// zero and infinity along the stack's axis — the same two probes
+        /// the stack layout system orders children by. Priority alone
+        /// doesn't determine an allocation: a high-priority child that
+        /// cannot use more space hands the surplus down, so a backend
+        /// re-deriving the allocation needs the clamps as well as the
+        /// ordering (see
+        /// ``describeChildLayoutPriorities(of:priorities:)``).
+        ///
+        /// The default implementation does nothing. A backend that positions
+        /// children itself has already been told each child's committed
+        /// size, which is the only point on that range it will ever render.
+        ///
+        /// Called during commit, alongside
+        /// ``describeStackLayout(of:orientation:alignment:spacing:)``.
+        ///
+        /// - Parameters:
+        ///   - widget: The container that was laid out as a stack.
+        ///   - minimums: Each child's size when proposed zero along the
+        ///     stack's axis.
+        ///   - maximums: Each child's size when proposed infinity along the
+        ///     stack's axis. May be infinite for a child that grows without
+        ///     bound.
+        func describeChildFlexibility(
+            of widget: Widget,
+            minimums: [Double],
+            maximums: [Double]
+        )
+
         /// Tells the backend that a container's size was fixed by the author.
         ///
         /// The default implementation does nothing. As with
@@ -267,6 +300,15 @@ extension BackendFeatures.Widgets {
     public func describeChildLayoutPriorities(of widget: Widget, priorities: [Double]) {
         // As above: a backend that positions children itself already has
         // priority's effect baked into each child's committed size.
+    }
+
+    public func describeChildFlexibility(
+        of widget: Widget,
+        minimums: [Double],
+        maximums: [Double]
+    ) {
+        // As above: the committed size is the only point on each child's
+        // range that a backend placing children itself ever renders.
     }
 
     public func describeFrame(of widget: Widget, width: Double?, height: Double?) {

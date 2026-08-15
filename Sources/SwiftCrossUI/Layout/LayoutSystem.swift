@@ -283,6 +283,7 @@ public enum LayoutSystem {
                 totalSpacing: totalSpacing,
                 totalReservedSpace: totalSpacing,
                 minimumLengths: [Double](repeating: 0, count: children.count),
+                maximumLengths: results.map { $0.size[component: orientation] },
                 redistributeSpaceOnCommit: shouldRedistributeSpaceOnCommit(
                     proposedSize: proposedSize,
                     orientation: orientation
@@ -377,6 +378,7 @@ public enum LayoutSystem {
         var isHidden = [Bool](repeating: false, count: children.count)
         var priorities = [Double](repeating: 0, count: children.count)
         var minimums = [Double](repeating: 0, count: children.count)
+        var maximums = [Double](repeating: 0, count: children.count)
         var totalReservedSpace = 0.0
         let flexibilities = children.enumerated().map { i, child in
             let minimumResult = child.computeLayout(
@@ -393,6 +395,7 @@ public enum LayoutSystem {
             let minimum = minimumResult.size[component: orientation]
             totalReservedSpace += minimum
             minimums[i] = minimum
+            maximums[i] = maximum
             return maximum - minimum
         }
         let visibleChildrenCount = isHidden.filter { hidden in
@@ -442,6 +445,7 @@ public enum LayoutSystem {
             totalSpacing: totalSpacing,
             totalReservedSpace: totalReservedSpace,
             minimumLengths: minimums,
+            maximumLengths: maximums,
             redistributeSpaceOnCommit: shouldRedistributeSpaceOnCommit(
                 proposedSize: proposedSize,
                 orientation: orientation
@@ -487,6 +491,19 @@ public enum LayoutSystem {
             }
         }
         backend.describeChildLayoutPriorities(of: container, priorities: priorities)
+
+        // Guarded because ZStack and the trivial-grouping fast path build
+        // caches with no per-child endpoints at all, and a backend indexing
+        // these by child would read past the end.
+        if cache.minimumLengths.count == children.count,
+           cache.maximumLengths.count == children.count
+        {
+            backend.describeChildFlexibility(
+                of: container,
+                minimums: cache.minimumLengths,
+                maximums: cache.maximumLengths
+            )
+        }
 
         if cache.redistributeSpaceOnCommit {
             _ = computeLayouts(
