@@ -2432,9 +2432,12 @@ public struct HTMLEmitter {
     /// `<input type=range>` are otherwise indistinguishable from an author
     /// having actually asked for a fractional bound.
     nonisolated static func formatNumber(_ value: Double) -> String {
-        value == value.rounded() && value.isFinite
-            ? String(Int(value))
-            : String(value)
+        guard let exact = Int(exactly: value.rounded()), value == value.rounded() else {
+            // A magnitude past Int's range has no integer spelling to fall
+            // back to; Double's own description stays valid CSS.
+            return String(value)
+        }
+        return String(exact)
     }
 
     /// Recovers the text style a declared font names, if it names one plainly.
