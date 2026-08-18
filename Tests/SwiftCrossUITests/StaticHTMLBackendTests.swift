@@ -2386,6 +2386,91 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
+    @Test(
+        "An infinite maxWidth on a prioritized child keeps its priority weight instead of the stretch default"
+    )
+    func layoutPriorityGrowthSurvivesInfiniteStretch() {
+        // applyInfiniteStretch used to write flex-grow:1 unconditionally,
+        // running after the priority allocation had already written the
+        // child's weight into the same style — so a child carrying both
+        // layoutPriority and .frame(maxWidth: .infinity) on the stack's own
+        // axis lost its weight to the stretch default and grew identically
+        // to a priority-0 sibling. .frame(maxWidth: .infinity) wraps outside
+        // .layoutPriority, so it's the FlexibleFrameView element — not the
+        // PreferenceModifier — that carries both the stretch declaration and
+        // the priority weight.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Short")
+                Text("Label").layoutPriority(1).frame(maxWidth: .infinity)
+            }
+            .frame(width: 600),
+            context: "Prioritized stretch"
+        ).html
+
+        let frameRule = Self.styleRule(
+            forElementContaining: "data-scui=\"FlexibleFrameView\"",
+            in: html
+        )
+        #expect(Self.declaredNumber("flex-grow", in: frameRule) == 1e6)
+    }
+
+    @MainActor
+    @Test(
+        "A structural wrapper relaying a descendant's infinite stretch keeps its own priority weight"
+    )
+    func layoutPriorityGrowthSurvivesRelayedStretch() {
+        // The same overwrite reaches a second, distinct call site:
+        // relaysChildStretch (HTMLEmitter.swift, applyInfiniteStretch's
+        // caller for a structural wrapper whose descendant declares the
+        // infinite-stretch idiom). A Group wrapping a stretching Text is a
+        // structural wrapper in its own right, and layoutPriority on the
+        // Group makes its PreferenceModifier wrapper the element carrying
+        // both the relayed stretch and the priority weight.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Short")
+                Group {
+                    Text("Label").frame(maxWidth: .infinity)
+                }
+                .layoutPriority(1)
+            }
+            .frame(width: 600),
+            context: "Relayed prioritized stretch"
+        ).html
+
+        let wrapperRule = Self.styleRule(
+            forElementContaining: "data-scui=\"PreferenceModifier\"",
+            in: html
+        )
+        #expect(Self.declaredNumber("flex-grow", in: wrapperRule) == 1e6)
+    }
+
+    @MainActor
+    @Test(
+        "An infinite maxHeight on a prioritized child keeps its priority weight, on the vertical axis"
+    )
+    func layoutPriorityGrowthSurvivesInfiniteStretchVertically() {
+        // applyInfiniteStretch is called identically from both the maxWidth
+        // and maxHeight infinite branches, so the same guard covers a
+        // column's main axis without an axis-specific fix.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Text("Short")
+                Text("Label").layoutPriority(1).frame(maxHeight: .infinity)
+            }
+            .frame(height: 600),
+            context: "Prioritized vertical stretch"
+        ).html
+
+        let frameRule = Self.styleRule(
+            forElementContaining: "data-scui=\"FlexibleFrameView\"",
+            in: html
+        )
+        #expect(Self.declaredNumber("flex-grow", in: frameRule) == 1e6)
+    }
+
+    @MainActor
     @Test("Divider stretches via flex, not a pinned min-width that would overflow")
     func dividerStretchesWithoutOverflowing() {
         // Divider's un-declared axis (Divider only declares

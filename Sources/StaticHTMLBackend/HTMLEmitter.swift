@@ -2140,8 +2140,8 @@ public struct HTMLEmitter {
     /// container-driven), so an infinite maxHeight outside any stack is a
     /// known gap, consistent with this emitter's best-effort contract.
     ///
-    /// `flex-shrink`/`flex-basis` are only set when nothing already claimed
-    /// them: a layout-priority-derived allocation
+    /// `flex-grow`/`flex-shrink`/`flex-basis` are only set when nothing
+    /// already claimed them: a layout-priority-derived allocation
     /// (``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:priorityAllocation:)``)
     /// can already have written them into this same widget's style before
     /// this function runs, and the author's declared priority is the more
@@ -2149,15 +2149,13 @@ public struct HTMLEmitter {
     /// discard it whenever a stack child happened to carry both
     /// `maxWidth: .infinity` and a non-uniform sibling priority.
     ///
-    /// `flex-grow` carries no such guard: a stretching child of a
-    /// non-uniform stack takes the stretch weight of 1, overwriting the
-    /// priority weight and the hand-down ordering it encodes.
-    ///
     /// - Parameter style: The declaring widget's own style, mutated in
     ///   place.
     nonisolated static func applyInfiniteStretch(in style: inout Style) {
         style.set("stretch", for: "align-self")
-        style.set("1", for: "flex-grow")
+        if style.value(for: "flex-grow") == nil {
+            style.set("1", for: "flex-grow")
+        }
         if style.value(for: "flex-shrink") == nil {
             style.set("1", for: "flex-shrink")
         }
