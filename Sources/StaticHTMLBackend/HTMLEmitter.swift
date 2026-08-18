@@ -309,13 +309,14 @@ public struct HTMLEmitter {
 
         var style = Style()
         if let priorityAllocation {
-            // flex-basis:auto (the default) keeps the child's own natural/
-            // committed size as its starting point before shrinking — the
-            // same "committed size is the reflow starting point" principle
-            // this emitter already applies elsewhere (Rectangle's fallback,
-            // for one) — so only flex-shrink needs setting here; a bare
-            // flex-shrink declaration doesn't imply flex-basis:0% the way
-            // the `flex` shorthand would.
+            // A shrink-only child leaves flex-basis at auto, keeping its
+            // own natural/committed size as the starting point it shrinks
+            // from — the same "committed size is the reflow starting point"
+            // principle this emitter applies elsewhere (Rectangle's
+            // fallback, for one). A bare flex-shrink declaration doesn't
+            // imply flex-basis:0% the way the `flex` shorthand would, so
+            // that default survives unless the grow branch below overrides
+            // it.
             style.set("\(Self.formatNumber(priorityAllocation.shrink))", for: "flex-shrink")
 
             if let grow = priorityAllocation.grow,
@@ -2140,13 +2141,17 @@ public struct HTMLEmitter {
     /// known gap, consistent with this emitter's best-effort contract.
     ///
     /// `flex-shrink`/`flex-basis` are only set when nothing already claimed
-    /// them: a layout-priority-derived shrink weight
+    /// them: a layout-priority-derived allocation
     /// (``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:priorityAllocation:)``)
-    /// can already have written `flex-shrink` into this same widget's style
-    /// before this function runs, and the author's declared priority is the
-    /// more specific signal — an unconditional overwrite here would
-    /// silently discard it whenever a stack child happened to carry both
+    /// can already have written them into this same widget's style before
+    /// this function runs, and the author's declared priority is the more
+    /// specific signal — an unconditional overwrite here would silently
+    /// discard it whenever a stack child happened to carry both
     /// `maxWidth: .infinity` and a non-uniform sibling priority.
+    ///
+    /// `flex-grow` carries no such guard: a stretching child of a
+    /// non-uniform stack takes the stretch weight of 1, overwriting the
+    /// priority weight and the hand-down ordering it encodes.
     ///
     /// - Parameter style: The declaring widget's own style, mutated in
     ///   place.
