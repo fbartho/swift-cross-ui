@@ -2169,13 +2169,13 @@ public struct HTMLEmitter {
     /// isn't proportional — it processes children in strict descending-
     /// priority order, letting the highest-priority group claim all the
     /// space it wants before a lower one sees any leftovers — and
-    /// `flex-shrink` has no way to reach that ordering: every child carries
-    /// a positive shrink weight by construction (see the return
-    /// documentation), so shrinkage always spreads proportionally instead of
-    /// exhausting one tier before touching the next. The grow side does
-    /// reach it, by a route that depends on weights being allowed to reach
-    /// zero pressure — ``flexGrowWeight(priority:relativeToMin:)``. This is
-    /// the nearest proportional approximation of that ordering, not a
+    /// `flex-shrink` has no way to reach that ordering: shrinkage spreads
+    /// proportionally across every weight at once, never exhausting one
+    /// tier before touching the next. The grow side does reach it, by a
+    /// route with no shrink-side counterpart — a max-violated item releases
+    /// its unused space to the items still growing, which
+    /// ``flexGrowWeight(priority:relativeToMin:)`` turns into hand-down
+    /// ordering. This is the nearest proportional approximation of that
     /// reproduction of it: each whole point of priority below the group
     /// maximum doubles shrink resistance relative to the top group, so the
     /// highest-priority children give up the least space and lower-priority
