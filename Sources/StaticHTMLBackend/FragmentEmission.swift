@@ -10,9 +10,17 @@ extension HTMLDocumentItem {
     /// asset the static build already emitted is never injected twice. See
     /// ``HTMLFragmentRegistry``.
     ///
-    /// - Parameter indent: The indentation to write the markup at.
+    /// Byte-carrying content resolves here rather than at registration: the URL
+    /// a published asset gets doesn't exist until something writes the bytes,
+    /// and dedupe has to have already collapsed identical registrations before
+    /// anything is written.
+    ///
+    /// - Parameters:
+    ///   - indent: The indentation to write the markup at.
+    ///   - resolver: What turns byte-carrying content into a reference.
     /// - Returns: The item's markup.
-    func rendered(indent: String) -> String {
+    @MainActor
+    func rendered(indent: String, resolver: HTMLAssetResolver) -> String {
         let marker = " data-scui-head-id=\"\(HTMLEmitter.escape(key.markerValue))\""
 
         switch content {
@@ -53,7 +61,99 @@ extension HTMLDocumentItem {
                 // it means (a <div> around a <tr>, say), so raw items forgo the
                 // cross-tier marker rather than distort their payload.
                 return "\(indent)\(html)"
+
+            case .stylesheetBytes(let data, let disposition, let store):
+                // Inlined CSS becomes a <style> body rather than a data-URL
+                // <link>: both carry the bytes in the document, but a <link> is
+                // a render-blocking fetch of a URL the parser has to resolve,
+                // while the body is already parsed by the time it's seen.
+                guard disposition != .inline else {
+                    return Self.styleElement(
+                        css: Self.text(from: data),
+                        marker: marker,
+                        indent: indent
+                    )
+                }
+                let href = resolver.reference(
+                    for: data,
+                    fileExtension: "css",
+                    mediaType: "text/css",
+                    disposition: disposition,
+                    store: store
+                )
+                // A resolver with nowhere to publish hands back a data URL, so
+                // the bytes take the style-body form rather than becoming a
+                // <link> pointed at them.
+                guard !href.hasPrefix("data:") else {
+                    return Self.styleElement(
+                        css: Self.text(from: data),
+                        marker: marker,
+                        indent: indent
+                    )
+                }
+                return
+                    "\(indent)<link rel=\"stylesheet\" href=\"\(HTMLEmitter.escape(href))\"\(marker)>"
+
+            case .scriptBytes(let data, let disposition, let store, let attributes):
+                let extra = Self.renderAttributes(attributes)
+                guard disposition != .inline else {
+                    return Self.scriptElement(
+                        source: Self.text(from: data),
+                        attributes: extra,
+                        marker: marker,
+                        indent: indent
+                    )
+                }
+                let src = resolver.reference(
+                    for: data,
+                    fileExtension: "js",
+                    mediaType: "text/javascript",
+                    disposition: disposition,
+                    store: store
+                )
+                guard !src.hasPrefix("data:") else {
+                    return Self.scriptElement(
+                        source: Self.text(from: data),
+                        attributes: extra,
+                        marker: marker,
+                        indent: indent
+                    )
+                }
+                return
+                    "\(indent)<script src=\"\(HTMLEmitter.escape(src))\"\(extra)\(marker)></script>"
         }
+    }
+
+    /// Decodes asset bytes as the text they are.
+    ///
+    /// CSS and JavaScript are UTF-8 by specification. Bytes that aren't valid
+    /// UTF-8 aren't a stylesheet or a script, so the lossy replacement is a
+    /// visible corruption at the point of the mistake rather than a silent one.
+    private static func text(from data: [UInt8]) -> String {
+        String(decoding: data, as: UTF8.self)
+    }
+
+    /// Renders inline CSS as a style element.
+    private static func styleElement(css: String, marker: String, indent: String) -> String {
+        """
+        \(indent)<style\(marker)>
+        \(escapeStyleBody(css))
+        \(indent)</style>
+        """
+    }
+
+    /// Renders inline JavaScript as a script element.
+    private static func scriptElement(
+        source: String,
+        attributes: String,
+        marker: String,
+        indent: String
+    ) -> String {
+        """
+        \(indent)<script\(attributes)\(marker)>
+        \(escapeScriptBody(source))
+        \(indent)</script>
+        """
     }
 
     /// Renders an attribute dictionary, sorted for deterministic output.

@@ -101,6 +101,27 @@ public enum HTMLDocumentItemContent: Hashable, Sendable {
     /// The same caller-trusted stance as ``HTMLRawFragment``: whatever is
     /// written here reaches the document unchanged.
     case rawHTML(String)
+    /// A stylesheet the component carries as bytes.
+    ///
+    /// The component states what it needs the document to have; the pipeline
+    /// decides where the bytes live. At emission they resolve through the
+    /// render's asset store and the returned URL becomes the `href`, or the
+    /// bytes inline as a `<style>` body — see ``HTMLAssetDisposition``.
+    case stylesheetBytes(
+        [UInt8],
+        disposition: HTMLAssetDisposition = .automatic,
+        store: String? = nil
+    )
+    /// A script the component carries as bytes.
+    ///
+    /// Resolves the same way ``stylesheetBytes(_:disposition:store:)`` does,
+    /// becoming either a `src` or an inline `<script>` body.
+    case scriptBytes(
+        [UInt8],
+        disposition: HTMLAssetDisposition = .automatic,
+        store: String? = nil,
+        attributes: [String: String] = [:]
+    )
 
     /// The slots this content may be emitted into.
     ///
@@ -111,7 +132,8 @@ public enum HTMLDocumentItemContent: Hashable, Sendable {
         switch self {
             case .meta:
                 [.head]
-            case .script, .inlineScript, .stylesheet, .style, .rawHTML:
+            case .script, .inlineScript, .stylesheet, .style, .rawHTML,
+                 .stylesheetBytes, .scriptBytes:
                 nil
         }
     }
@@ -137,6 +159,13 @@ public enum HTMLDocumentItemContent: Hashable, Sendable {
                 .contentHash(Self.hash(of: "style:" + css))
             case .rawHTML(let html):
                 .contentHash(Self.hash(of: "raw:" + html))
+            // Keyed off the bytes rather than the eventual URL, which doesn't
+            // exist until emission publishes them: two components carrying
+            // identical bytes have to collapse before either one is written.
+            case .stylesheetBytes(let data, _, _):
+                .contentHash(Self.hash(of: "stylesheet-bytes:" + Self.digestInput(for: data)))
+            case .scriptBytes(let data, _, _, _):
+                .contentHash(Self.hash(of: "script-bytes:" + Self.digestInput(for: data)))
             case .meta(let attributes):
                 .contentHash(
                     Self.hash(
@@ -169,6 +198,25 @@ public enum HTMLDocumentItemContent: Hashable, Sendable {
             hash &*= 0x0000_0100_0000_01b3
         }
         return String(hash, radix: 36)
+    }
+
+    /// Builds the string ``hash(of:)`` is taken over for arbitrary bytes.
+    ///
+    /// FNV-1a runs over UTF-8, so the bytes are mapped into a lossless textual
+    /// form rather than being reinterpreted as text — arbitrary binary isn't
+    /// valid UTF-8, and lossy-decoding it would collapse distinct assets onto
+    /// one hash.
+    ///
+    /// - Parameter data: The bytes to encode.
+    /// - Returns: A lossless textual encoding of them.
+    public static func digestInput(for data: [UInt8]) -> String {
+        var input = String()
+        input.reserveCapacity(data.count * 2)
+        for byte in data {
+            input.append(Character(UnicodeScalar(0x41 + (byte >> 4))))
+            input.append(Character(UnicodeScalar(0x41 + (byte & 0x0f))))
+        }
+        return input
     }
 }
 
