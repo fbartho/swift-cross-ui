@@ -1,7 +1,7 @@
 import Foundation
 import SwiftCrossUIComponents
 
-extension HTMLHeadItem {
+extension HTMLDocumentItem {
     /// The item rendered as markup.
     ///
     /// Every emitted item carries `data-scui-head-id`, which is what makes
@@ -92,7 +92,7 @@ extension HTMLHeadItem {
 extension HTMLFragmentRegistry {
     /// The emitter's own baseline stylesheet, as a registrable item.
     ///
-    /// Registered under ``HTMLHeadItem/DedupeKey/reset`` so that a page owner
+    /// Registered under ``HTMLDocumentItem/DedupeKey/reset`` so that a page owner
     /// who registers their own item under that key replaces it outright.
     /// Because the registry keeps the *first* item per key and the emitter adds
     /// this one last, an override needs no special casing — it simply got there
@@ -131,8 +131,8 @@ extension HTMLFragmentRegistry {
     /// read as buttons, so an anchor wearing one drops the underline it would
     /// otherwise get as a link. The boxless styles keep it, since without it
     /// nothing would mark them followable.
-    static func resetItem() -> HTMLHeadItem {
-        HTMLHeadItem(
+    static func resetItem() -> HTMLDocumentItem {
+        HTMLDocumentItem(
             key: .reset,
             slot: .head,
             content: .style(

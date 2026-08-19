@@ -7,16 +7,16 @@ import SwiftCrossUI
 /// The item is placement-generic rather than head-specific: a script or a
 /// stylesheet is legal in several places, so the item names what it *is* and
 /// the content kind carries its own placement validity (see
-/// ``HTMLHeadItemContent/allowedSlots``). A meta tag, which the HTML parser only
+/// ``HTMLDocumentItemContent/allowedSlots``). A meta tag, which the HTML parser only
 /// honors inside `<head>`, is rejected at registration if it's aimed anywhere
 /// else rather than emitted somewhere it would be silently ignored.
-public struct HTMLHeadItem: Hashable, Sendable {
+public struct HTMLDocumentItem: Hashable, Sendable {
     /// What distinguishes this item from every other one.
     public var key: DedupeKey
     /// Where in the document the item should be emitted.
     public var slot: Slot
     /// The item itself.
-    public var content: HTMLHeadItemContent
+    public var content: HTMLDocumentItemContent
 
     /// Creates an item with an explicit dedupe key.
     ///
@@ -24,7 +24,7 @@ public struct HTMLHeadItem: Hashable, Sendable {
     ///   - key: The item's dedupe key.
     ///   - slot: Where to emit the item.
     ///   - content: The item itself.
-    public init(key: DedupeKey, slot: Slot, content: HTMLHeadItemContent) {
+    public init(key: DedupeKey, slot: Slot, content: HTMLDocumentItemContent) {
         self.key = key
         self.slot = slot
         self.content = content
@@ -46,7 +46,7 @@ public struct HTMLHeadItem: Hashable, Sendable {
     ///   - content: The item itself.
     ///   - slot: Where to emit the item.
     ///   - id: An author-supplied identity, which overrides the derived key.
-    public init(_ content: HTMLHeadItemContent, slot: Slot, id: String? = nil) {
+    public init(_ content: HTMLDocumentItemContent, slot: Slot, id: String? = nil) {
         self.init(
             key: id.map(DedupeKey.id) ?? content.derivedKey,
             slot: slot,
@@ -81,11 +81,11 @@ public struct HTMLHeadItem: Hashable, Sendable {
     }
 }
 
-/// The kinds of machinery a ``HTMLHeadItem`` can carry.
+/// The kinds of machinery a ``HTMLDocumentItem`` can carry.
 ///
 /// Each case knows where it is legal, so placement is a property of the content
 /// rather than a convention callers have to remember.
-public enum HTMLHeadItemContent: Hashable, Sendable {
+public enum HTMLDocumentItemContent: Hashable, Sendable {
     /// An external script, referenced by URL.
     case script(src: String, attributes: [String: String] = [:])
     /// A script whose source is written inline.
@@ -107,7 +107,7 @@ public enum HTMLHeadItemContent: Hashable, Sendable {
     /// `nil` means the content is legal anywhere. A meta tag is the case that
     /// isn't: the parser only honors it inside `<head>`, so aiming one at
     /// `bodyEnd` is a mistake worth catching rather than markup worth emitting.
-    public var allowedSlots: Set<HTMLHeadItem.Slot>? {
+    public var allowedSlots: Set<HTMLDocumentItem.Slot>? {
         switch self {
             case .meta:
                 [.head]
@@ -120,12 +120,12 @@ public enum HTMLHeadItemContent: Hashable, Sendable {
     ///
     /// - Parameter slot: The slot in question.
     /// - Returns: Whether the content is legal there.
-    public func allows(_ slot: HTMLHeadItem.Slot) -> Bool {
+    public func allows(_ slot: HTMLDocumentItem.Slot) -> Bool {
         allowedSlots?.contains(slot) ?? true
     }
 
     /// The dedupe key this content implies when the author supplies none.
-    var derivedKey: HTMLHeadItem.DedupeKey {
+    var derivedKey: HTMLDocumentItem.DedupeKey {
         switch self {
             case .script(let src, _):
                 .url(src)
@@ -172,7 +172,7 @@ public enum HTMLHeadItemContent: Hashable, Sendable {
     }
 }
 
-extension HTMLHeadItem.DedupeKey {
+extension HTMLDocumentItem.DedupeKey {
     /// The key the emitter's own baseline stylesheet registers itself under.
     ///
     /// Registering an item under this key before the reset would have been
@@ -180,7 +180,7 @@ extension HTMLHeadItem.DedupeKey {
     /// the emitter registers its own late. That makes dropping the baseline a
     /// deliberate, visible act in the page owner's code rather than something
     /// that can happen by accident.
-    public static let reset = HTMLHeadItem.DedupeKey.id("scui-reset")
+    public static let reset = HTMLDocumentItem.DedupeKey.id("scui-reset")
 
     /// The identity written into an emitted item's `data-scui-head-id`.
     ///

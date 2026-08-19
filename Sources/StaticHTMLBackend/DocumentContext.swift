@@ -32,7 +32,7 @@ public struct DocumentContext {
     /// The language written into `<html lang>`.
     public var language: String
     /// The page owner's own items, emitted after every contribution.
-    public var items: [HTMLHeadItem]
+    public var items: [HTMLDocumentItem]
     /// The names of the slots ``HTMLSlot`` may reference.
     ///
     /// Declaring a slot is what makes it addressable: a ``HTMLSlot`` for a
@@ -89,7 +89,7 @@ public struct DocumentContext {
         title: String,
         headingMap: HeadingMap = .default,
         language: String = "en",
-        items: [HTMLHeadItem] = [],
+        items: [HTMLDocumentItem] = [],
         customSlots: Set<String> = [],
         assetStore: (any AssetStore)? = nil,
         inlineAssetThreshold: Int? = nil,
@@ -113,12 +113,12 @@ public struct DocumentContext {
     ///   - id: An author-supplied identity, overriding the derived dedupe key.
     /// - Returns: The context, carrying the added item.
     public func with(
-        _ content: HTMLHeadItemContent,
-        slot: HTMLHeadItem.Slot,
+        _ content: HTMLDocumentItemContent,
+        slot: HTMLDocumentItem.Slot,
         id: String? = nil
     ) -> DocumentContext {
         var copy = self
-        copy.items.append(HTMLHeadItem(content, slot: slot, id: id))
+        copy.items.append(HTMLDocumentItem(content, slot: slot, id: id))
         return copy
     }
 
@@ -207,7 +207,7 @@ public final class DirectoryAssetStore: AssetStore {
     public private(set) var writtenFileNames: [String] = []
 
     public func publish(_ data: [UInt8], fileExtension: String) -> String? {
-        let digest = HTMLHeadItemContent.hash(of: Self.digestInput(for: data))
+        let digest = HTMLDocumentItemContent.hash(of: Self.digestInput(for: data))
         let name = "\(digest).\(fileExtension)"
 
         if let existing = published[name] {

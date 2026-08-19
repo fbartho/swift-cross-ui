@@ -9,7 +9,7 @@ import SwiftCrossUI
 ///
 /// ## Idempotency, and why it spans tiers
 ///
-/// Registration keeps the first item seen per ``HTMLHeadItem/DedupeKey`` — a
+/// Registration keeps the first item seen per ``HTMLDocumentItem/DedupeKey`` — a
 /// component that renders in fifty places contributes its script once. The same
 /// contract is what lets a future runtime backend reuse this type verbatim: a
 /// live registry checks the document for an element already carrying
@@ -20,9 +20,9 @@ import SwiftCrossUI
 @MainActor
 public final class HTMLFragmentRegistry {
     /// The registered items, in the order their keys were first seen.
-    private var items: [HTMLHeadItem] = []
+    private var items: [HTMLDocumentItem] = []
     /// The position in `items` of the item registered under each key.
-    private var indicesByKey: [HTMLHeadItem.DedupeKey: Int] = [:]
+    private var indicesByKey: [HTMLDocumentItem.DedupeKey: Int] = [:]
 
     /// Creates an empty registry.
     public init() {}
@@ -33,7 +33,7 @@ public final class HTMLFragmentRegistry {
     /// - Returns: Whether the item was added, as opposed to deduplicated away
     ///   against an earlier registration under the same key.
     @discardableResult
-    public func register(_ item: HTMLHeadItem) -> Bool {
+    public func register(_ item: HTMLDocumentItem) -> Bool {
         precondition(
             item.content.allows(item.slot),
             """
@@ -61,18 +61,18 @@ public final class HTMLFragmentRegistry {
     /// - Returns: Whether the item was added.
     @discardableResult
     public func register(
-        _ content: HTMLHeadItemContent,
-        slot: HTMLHeadItem.Slot,
+        _ content: HTMLDocumentItemContent,
+        slot: HTMLDocumentItem.Slot,
         id: String? = nil
     ) -> Bool {
-        register(HTMLHeadItem(content, slot: slot, id: id))
+        register(HTMLDocumentItem(content, slot: slot, id: id))
     }
 
     /// Whether an item is already registered under a key.
     ///
     /// - Parameter key: The key to check.
     /// - Returns: Whether the key is spoken for.
-    public func contains(_ key: HTMLHeadItem.DedupeKey) -> Bool {
+    public func contains(_ key: HTMLDocumentItem.DedupeKey) -> Bool {
         indicesByKey[key] != nil
     }
 
@@ -80,12 +80,12 @@ public final class HTMLFragmentRegistry {
     ///
     /// - Parameter slot: The slot to collect.
     /// - Returns: That slot's items.
-    public func items(in slot: HTMLHeadItem.Slot) -> [HTMLHeadItem] {
+    public func items(in slot: HTMLDocumentItem.Slot) -> [HTMLDocumentItem] {
         items.filter { $0.slot == slot }
     }
 
     /// Every registered item, in first-appearance order.
-    public var allItems: [HTMLHeadItem] {
+    public var allItems: [HTMLDocumentItem] {
         items
     }
 }
@@ -96,11 +96,11 @@ extension EnvironmentValues {
     ///
     /// Only StaticHTMLBackend seeds this. Under any other backend it stays
     /// `nil`, which makes every registration surface a no-op, so a view
-    /// hierarchy that contributes head items stays portable.
+    /// hierarchy that contributes document items stays portable.
     @Entry public var htmlFragmentRegistry: HTMLFragmentRegistry?
 }
 
-extension HTMLHeadItemContent {
+extension HTMLDocumentItemContent {
     /// A human-readable name for the content kind, for diagnostics.
     var kindName: String {
         switch self {
@@ -114,7 +114,7 @@ extension HTMLHeadItemContent {
     }
 }
 
-extension HTMLHeadItem.Slot {
+extension HTMLDocumentItem.Slot {
     /// A human-readable name for the slot, for diagnostics.
     var debugName: String {
         switch self {

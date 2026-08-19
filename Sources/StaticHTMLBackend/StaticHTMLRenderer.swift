@@ -85,7 +85,7 @@ public enum StaticHTMLRenderer {
         // bodyEnd items are drained after the body instead (see below), which
         // is what gives contributions their first-appearance position ahead of
         // the page owner's.
-        func isCustomSlot(_ item: HTMLHeadItem) -> Bool {
+        func isCustomSlot(_ item: HTMLDocumentItem) -> Bool {
             if case .custom = item.slot { true } else { false }
         }
         let documentItems = context.items.filter { !isCustomSlot($0) }
@@ -178,8 +178,8 @@ public enum StaticHTMLRenderer {
         // that guarantee independent of when the renderer happened to drain
         // each source.
         let ownerKeys = Set(context.items.map(\.key))
-        func partition(_ slot: HTMLHeadItem
-            .Slot) -> (contributed: [HTMLHeadItem], owned: [HTMLHeadItem])
+        func partition(_ slot: HTMLDocumentItem
+            .Slot) -> (contributed: [HTMLDocumentItem], owned: [HTMLDocumentItem])
         {
             let items = registry.items(in: slot)
             return (

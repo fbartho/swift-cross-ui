@@ -55,22 +55,24 @@ struct StaticHTMLFragmentTests {
     func contentHashIsStable() {
         // A per-process seed (Hasher) would give one asset a different
         // data-scui-head-id on every build, breaking the cross-tier check.
-        #expect(HTMLHeadItemContent.hash(of: "scui") == HTMLHeadItemContent.hash(of: "scui"))
-        #expect(HTMLHeadItemContent.hash(of: "scui") != HTMLHeadItemContent.hash(of: "scui2"))
+        #expect(HTMLDocumentItemContent.hash(of: "scui") == HTMLDocumentItemContent
+            .hash(of: "scui"))
+        #expect(HTMLDocumentItemContent.hash(of: "scui") != HTMLDocumentItemContent
+            .hash(of: "scui2"))
     }
 
     // MARK: - Placement validity
 
     @Test("A meta tag is only legal in the head")
     func metaIsHeadOnly() {
-        #expect(HTMLHeadItemContent.meta(["name": "x"]).allows(.head))
-        #expect(!HTMLHeadItemContent.meta(["name": "x"]).allows(.bodyEnd))
-        #expect(!HTMLHeadItemContent.meta(["name": "x"]).allows(.custom("aside")))
+        #expect(HTMLDocumentItemContent.meta(["name": "x"]).allows(.head))
+        #expect(!HTMLDocumentItemContent.meta(["name": "x"]).allows(.bodyEnd))
+        #expect(!HTMLDocumentItemContent.meta(["name": "x"]).allows(.custom("aside")))
     }
 
     @Test("Scripts and styles are legal in every slot")
     func scriptsAndStylesArePlacementFree() {
-        for content: HTMLHeadItemContent in [
+        for content: HTMLDocumentItemContent in [
             .script(src: "/a.js"),
             .inlineScript("x"),
             .stylesheet(href: "/a.css"),
@@ -87,19 +89,19 @@ struct StaticHTMLFragmentTests {
 
     @Test("Every emitted item carries the cross-tier marker")
     func emittedItemsCarryTheMarker() {
-        let script = HTMLHeadItem(.script(src: "/js/a.js"), slot: .bodyEnd)
+        let script = HTMLDocumentItem(.script(src: "/js/a.js"), slot: .bodyEnd)
         #expect(script.rendered(indent: "").contains("data-scui-head-id=\"url:/js/a.js\""))
 
-        let meta = HTMLHeadItem(.meta(["name": "author"]), slot: .head, id: "author")
+        let meta = HTMLDocumentItem(.meta(["name": "author"]), slot: .head, id: "author")
         #expect(meta.rendered(indent: "").contains("data-scui-head-id=\"id:author\""))
 
-        let style = HTMLHeadItem(.style("a{}"), slot: .head)
+        let style = HTMLDocumentItem(.style("a{}"), slot: .head)
         #expect(style.rendered(indent: "").contains("data-scui-head-id=\"sha:"))
     }
 
     @Test("A script body's closing tag is neutralized so it can't end the element early")
     func neutralizesClosingScriptTagInBody() {
-        let item = HTMLHeadItem(.inlineScript("var s = \"</script>\";"), slot: .bodyEnd)
+        let item = HTMLDocumentItem(.inlineScript("var s = \"</script>\";"), slot: .bodyEnd)
         let html = item.rendered(indent: "")
         #expect(html.contains("<\\/script>"))
         // Exactly one real closing tag: the element's own.
@@ -108,7 +110,7 @@ struct StaticHTMLFragmentTests {
 
     @Test("Script and style bodies aren't HTML-escaped, since entities don't decode there")
     func doesNotEscapeScriptBodies() {
-        let item = HTMLHeadItem(.inlineScript("if (a && b < c) {}"), slot: .bodyEnd)
+        let item = HTMLDocumentItem(.inlineScript("if (a && b < c) {}"), slot: .bodyEnd)
         #expect(item.rendered(indent: "").contains("if (a && b < c) {}"))
     }
 
@@ -118,7 +120,7 @@ struct StaticHTMLFragmentTests {
     func viewContributionReachesTheDocument() {
         let view = VStack {
             Text("Hello")
-                .htmlHeadItem(.stylesheet(href: "/css/widget.css"))
+                .htmlDocumentItem(.stylesheet(href: "/css/widget.css"))
         }
         let html = StaticHTMLRenderer.render(view, context: "Contribution").html
         #expect(html.contains("<link rel=\"stylesheet\" href=\"/css/widget.css\""))
@@ -128,7 +130,7 @@ struct StaticHTMLFragmentTests {
     func repeatedComponentContributesOnce() {
         let view = VStack {
             ForEach([1, 2, 3, 4, 5]) { _ in
-                Text("Row").htmlHeadItem(.stylesheet(href: "/css/row.css"))
+                Text("Row").htmlDocumentItem(.stylesheet(href: "/css/row.css"))
             }
         }
         let html = StaticHTMLRenderer.render(view, context: "Dedupe").html
@@ -139,7 +141,7 @@ struct StaticHTMLFragmentTests {
 
     @Test("Contributions targeting bodyEnd land after the content, not in the head")
     func bodyEndContributionsLandAfterContent() throws {
-        let view = Text("Hi").htmlHeadItem(.script(src: "/js/late.js"), slot: .bodyEnd)
+        let view = Text("Hi").htmlDocumentItem(.script(src: "/js/late.js"), slot: .bodyEnd)
         let html = StaticHTMLRenderer.render(view, context: "Tail").html
 
         let scriptIndex = try #require(html.range(of: "/js/late.js")).lowerBound
@@ -151,9 +153,9 @@ struct StaticHTMLFragmentTests {
 
     @Test("The protocol sugar registers the same items the modifier would")
     func protocolSugarRegistersItems() {
-        struct Highlighted: HTMLHeadContributing {
-            var headItems: [HTMLHeadItem] {
-                [HTMLHeadItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
+        struct Highlighted: HTMLDocumentContributing {
+            var documentItems: [HTMLDocumentItem] {
+                [HTMLDocumentItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
             }
 
             var body: some View {
@@ -177,7 +179,7 @@ struct StaticHTMLFragmentTests {
 
     @Test("The page owner's items emit after the view tree's contributions")
     func pageOwnerItemsWinOnSourceOrder() throws {
-        let view = Text("Hi").htmlHeadItem(.style("body { color: red }"))
+        let view = Text("Hi").htmlDocumentItem(.style("body { color: red }"))
         let context = DocumentContext(title: "Order")
             .with(.style("body { color: blue }"), slot: .head)
         let html = StaticHTMLRenderer.render(view, context: context).html
@@ -193,7 +195,7 @@ struct StaticHTMLFragmentTests {
         // beat an interned property on source order (the geometry selectors'
         // display:none gates depend on it), which only holds if contributions
         // come after the interned block.
-        let view = Text("Hi").font(.title).htmlHeadItem(.style(".override { font-size: 99px }"))
+        let view = Text("Hi").font(.title).htmlDocumentItem(.style(".override { font-size: 99px }"))
         let html = StaticHTMLRenderer.render(view, context: "Cascade").html
 
         let interned = try #require(html.range(of: ".scui-0 {")).lowerBound
@@ -709,10 +711,10 @@ struct StaticHTMLFragmentTests {
             Text("Heading").font(.title)
             Self.testImage()
             Text("Body")
-                .htmlHeadItem(.style(".contributed { color: red }"))
-                .htmlHeadItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
+                .htmlDocumentItem(.style(".contributed { color: red }"))
+                .htmlDocumentItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
             // Registered twice by two different views; one tag comes out.
-            Text("Twin").htmlHeadItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
+            Text("Twin").htmlDocumentItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
             HTMLSlot("aside")
             HTMLRawFragment("<hr id=\"raw\">")
         }
@@ -720,9 +722,9 @@ struct StaticHTMLFragmentTests {
         let context = DocumentContext(
             title: "Everything",
             items: [
-                HTMLHeadItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
-                HTMLHeadItem(.style(".owned { color: blue }"), slot: .head),
-                HTMLHeadItem(.inlineScript("console.log('tail')"), slot: .bodyEnd),
+                HTMLDocumentItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
+                HTMLDocumentItem(.style(".owned { color: blue }"), slot: .head),
+                HTMLDocumentItem(.inlineScript("console.log('tail')"), slot: .bodyEnd),
             ],
             customSlots: ["aside"],
             assetStore: DirectoryAssetStore(directory: directory)
@@ -811,9 +813,9 @@ struct StaticHTMLFragmentTests {
         let context = DocumentContext(
             title: "Metadata",
             items: [
-                HTMLHeadItem(.meta(["name": "description", "content": "A page."]), slot: .head),
-                HTMLHeadItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
-                HTMLHeadItem(
+                HTMLDocumentItem(.meta(["name": "description", "content": "A page."]), slot: .head),
+                HTMLDocumentItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
+                HTMLDocumentItem(
                     .meta(["property": "og:type", "content": "article"]),
                     slot: .head
                 ),
