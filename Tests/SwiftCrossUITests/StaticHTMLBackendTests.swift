@@ -2217,18 +2217,12 @@ struct StaticHTMLBackendTests {
     }
 
     @MainActor
-    @Test("layoutPriority routes surplus space to the higher-priority child (unimplemented)")
+    @Test("layoutPriority routes surplus space to the higher-priority child")
     func layoutPriorityWeightsSurplusGrowth() {
-        // The grow-side counterpart of the shrink test above, kept as a
-        // known issue so the gap cannot be forgotten: under surplus space,
-        // core's layout offers remaining room to higher priority groups
-        // first, but the emitter derives no growth declaration from
-        // priorities at all — only the shrink weights exist. The exact
-        // mechanism is a design decision for the web-tier layoutPriority
-        // work (lexicographic allocation is not expressible in proportional
-        // flex-grow; see the derivation comment on flexShrinkWeight), so
-        // this pins the contract, not the spelling: the two children of a
-        // surplus-width stack must emit *different* growth behavior.
+        // The grow-side counterpart of the shrink test above: under surplus
+        // space, core's layout offers remaining room to higher priority
+        // groups first, so the two children of a surplus-width stack must
+        // emit different growth behavior.
         let surplus = StaticHTMLRenderer.render(
             HStack {
                 Text("Short")
@@ -2238,13 +2232,242 @@ struct StaticHTMLBackendTests {
             context: "Surplus priority"
         ).html
 
-        withKnownIssue("priority-derived growth emission is not implemented") {
-            let highRule = Self.styleRule(
-                forElementContaining: "data-scui=\"PreferenceModifier\"",
-                in: surplus
-            )
-            #expect(highRule?.contains("flex-grow") == true)
+        let highRule = Self.styleRule(
+            forElementContaining: "data-scui=\"PreferenceModifier\"",
+            in: surplus
+        )
+        #expect(highRule?.contains("flex-grow") == true)
+    }
+
+    /// Reads a declaration's numeric value out of an interned style rule.
+    private static func declaredNumber(_ property: String, in rule: String?) -> Double? {
+        guard let rule, let range = rule.range(of: "\(property):") else {
+            return nil
         }
+        let rest = rule[range.upperBound...]
+        let digits = rest.prefix { $0.isNumber || $0 == "." || $0 == "e" || $0 == "+" }
+        return Double(digits)
+    }
+
+    /// The interned rules of a stack's two children, low priority first.
+    ///
+    /// layoutPriority wraps its view in a PreferenceModifier container, so
+    /// the two children are told apart by which element carries which: the
+    /// unwrapped `<span>` is the priority-0 child, the wrapping
+    /// `<div data-scui="PreferenceModifier">` the higher-priority one.
+    @MainActor
+    private static func twoChildRules(
+        _ html: String
+    ) -> (low: String?, high: String?) {
+        (
+            styleRule(forElementContaining: "<span", in: html),
+            styleRule(forElementContaining: "data-scui=\"PreferenceModifier\"", in: html)
+        )
+    }
+
+    @MainActor
+    @Test("A priority gap grows one tier per point, steeply enough to hand surplus down")
+    func layoutPriorityGrowWeightsScaleWithGap() {
+        // Each whole point of priority multiplies the grow weight by 1e6.
+        // The steepness is the mechanism, not a tuning choice: CSS hands a
+        // frozen item's unused space to whichever items still have positive
+        // grow, so a ratio this wide makes the higher tier absorb the
+        // surplus until its max clamps it, and only then does the remainder
+        // reach the tier below.
+        for gap in 1...3 {
+            let html = StaticHTMLRenderer.render(
+                HStack {
+                    Text("Short")
+                    Text("Label").layoutPriority(Double(gap))
+                }
+                .frame(width: 600),
+                context: "Priority gap"
+            ).html
+
+            let (lowRule, highRule) = Self.twoChildRules(html)
+            let low = Self.declaredNumber("flex-grow", in: lowRule)
+            let high = Self.declaredNumber("flex-grow", in: highRule)
+            #expect(low == 1)
+            #expect(high == pow(1e6, Double(gap)))
+        }
+    }
+
+    @MainActor
+    @Test("A grown child carries the clamps that let it hand surplus down")
+    func layoutPriorityGrowthCarriesFlexibilityClamps() {
+        // A weight alone reproduces nothing: the higher tier would absorb
+        // every pixel forever. The min/max pair is what freezes it at the
+        // size core would have stopped it at, releasing the rest downward.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Short")
+                Text("Label").layoutPriority(1)
+            }
+            .frame(width: 600),
+            context: "Clamped growth"
+        ).html
+
+        let (lowRule, highRule) = Self.twoChildRules(html)
+        for rule in [lowRule, highRule] {
+            let minimum = Self.declaredNumber("min-width", in: rule)
+            let maximum = Self.declaredNumber("max-width", in: rule)
+            let basis = Self.declaredNumber("flex-basis", in: rule)
+            #expect(minimum != nil)
+            #expect(maximum != nil)
+            // Growth starts from the floor so the weights divide the whole
+            // surplus rather than only what natural size left over.
+            #expect(basis == minimum)
+            if let minimum, let maximum {
+                #expect(minimum <= maximum)
+            }
+        }
+    }
+
+    @MainActor
+    @Test("A vertical stack clamps growth on the height axis")
+    func layoutPriorityGrowthFollowsStackAxis() {
+        // The clamps bound the axis space is distributed along, so a column
+        // must not emit the width family a row does.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Text("Short")
+                Text("Label").layoutPriority(1)
+            }
+            .frame(height: 600),
+            context: "Vertical growth"
+        ).html
+
+        let (_, highRule) = Self.twoChildRules(html)
+        #expect(highRule?.contains("min-height:") == true)
+        #expect(highRule?.contains("max-height:") == true)
+        #expect(highRule?.contains("min-width:") != true)
+        #expect(highRule?.contains("max-width:") != true)
+    }
+
+    @MainActor
+    @Test("Three priority tiers each out-weigh the one below")
+    func layoutPriorityGrowthOrdersMultipleTiers() {
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Low")
+                Text("Middle").layoutPriority(1)
+                Text("High").layoutPriority(2)
+            }
+            .frame(width: 800),
+            context: "Three tiers"
+        ).html
+
+        // Every priority-bearing child is wrapped, so the tiers are read off
+        // the wrappers in document order rather than by element kind.
+        let weights = html.split(separator: "\n")
+            .filter { $0.contains("flex-grow:") }
+            .compactMap { Self.declaredNumber("flex-grow", in: String($0)) }
+            .sorted()
+        #expect(weights.count >= 3)
+        #expect(weights.prefix(3) == [1, 1e6, 1e12])
+    }
+
+    @MainActor
+    @Test("A stack whose children share one priority emits no growth weights")
+    func layoutPriorityGrowthSkippedWhenUniform() {
+        // Symmetric with the shrink side's skip rule: there is nothing for
+        // the weights to modulate, and emitting them would only restate
+        // flexbox's own defaults.
+        let uniform = StaticHTMLRenderer.render(
+            HStack {
+                Text("One")
+                Text("Two")
+            }
+            .frame(width: 600),
+            context: "Uniform priority growth"
+        ).html
+
+        #expect(!uniform.contains("flex-grow"))
+    }
+
+    @MainActor
+    @Test(
+        "An infinite maxWidth on a prioritized child keeps its priority weight instead of the stretch default"
+    )
+    func layoutPriorityGrowthSurvivesInfiniteStretch() {
+        // applyInfiniteStretch used to write flex-grow:1 unconditionally,
+        // running after the priority allocation had already written the
+        // child's weight into the same style — so a child carrying both
+        // layoutPriority and .frame(maxWidth: .infinity) on the stack's own
+        // axis lost its weight to the stretch default and grew identically
+        // to a priority-0 sibling. .frame(maxWidth: .infinity) wraps outside
+        // .layoutPriority, so it's the FlexibleFrameView element — not the
+        // PreferenceModifier — that carries both the stretch declaration and
+        // the priority weight.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Short")
+                Text("Label").layoutPriority(1).frame(maxWidth: .infinity)
+            }
+            .frame(width: 600),
+            context: "Prioritized stretch"
+        ).html
+
+        let frameRule = Self.styleRule(
+            forElementContaining: "data-scui=\"FlexibleFrameView\"",
+            in: html
+        )
+        #expect(Self.declaredNumber("flex-grow", in: frameRule) == 1e6)
+    }
+
+    @MainActor
+    @Test(
+        "A structural wrapper relaying a descendant's infinite stretch keeps its own priority weight"
+    )
+    func layoutPriorityGrowthSurvivesRelayedStretch() {
+        // The same overwrite reaches a second, distinct call site:
+        // relaysChildStretch (HTMLEmitter.swift, applyInfiniteStretch's
+        // caller for a structural wrapper whose descendant declares the
+        // infinite-stretch idiom). A Group wrapping a stretching Text is a
+        // structural wrapper in its own right, and layoutPriority on the
+        // Group makes its PreferenceModifier wrapper the element carrying
+        // both the relayed stretch and the priority weight.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Short")
+                Group {
+                    Text("Label").frame(maxWidth: .infinity)
+                }
+                .layoutPriority(1)
+            }
+            .frame(width: 600),
+            context: "Relayed prioritized stretch"
+        ).html
+
+        let wrapperRule = Self.styleRule(
+            forElementContaining: "data-scui=\"PreferenceModifier\"",
+            in: html
+        )
+        #expect(Self.declaredNumber("flex-grow", in: wrapperRule) == 1e6)
+    }
+
+    @MainActor
+    @Test(
+        "An infinite maxHeight on a prioritized child keeps its priority weight, on the vertical axis"
+    )
+    func layoutPriorityGrowthSurvivesInfiniteStretchVertically() {
+        // applyInfiniteStretch is called identically from both the maxWidth
+        // and maxHeight infinite branches, so the same guard covers a
+        // column's main axis without an axis-specific fix.
+        let html = StaticHTMLRenderer.render(
+            VStack {
+                Text("Short")
+                Text("Label").layoutPriority(1).frame(maxHeight: .infinity)
+            }
+            .frame(height: 600),
+            context: "Prioritized vertical stretch"
+        ).html
+
+        let frameRule = Self.styleRule(
+            forElementContaining: "data-scui=\"FlexibleFrameView\"",
+            in: html
+        )
+        #expect(Self.declaredNumber("flex-grow", in: frameRule) == 1e6)
     }
 
     @MainActor

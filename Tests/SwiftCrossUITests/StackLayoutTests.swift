@@ -79,6 +79,36 @@ struct StackLayoutTests {
         #expect(result.size.vector.x == minimumWidthWithoutWrapping)
     }
 
+    @MainActor
+    @Test("A backend that ignores the flexibility hook lays stacks out unchanged")
+    func flexibilityHookDegradesToNoOp() {
+        // describeChildFlexibility is observability only: DummyBackend takes
+        // the protocol's no-op default, so committing a stack whose children
+        // carry diverging priorities must produce the same geometry as one
+        // whose children carry none.
+        let prioritized = VStack(spacing: 0) {
+            Text("Dummy")
+            Text("Dummy").layoutPriority(1)
+        }
+        let plain = VStack(spacing: 0) {
+            Text("Dummy")
+            Text("Dummy")
+        }
+
+        let proposedSize = ProposedViewSize(200, 400)
+        let prioritizedResult = computeLayout(of: prioritized, proposedSize: proposedSize)
+        let plainResult = computeLayout(of: plain, proposedSize: proposedSize)
+
+        #expect(prioritizedResult.size == plainResult.size)
+
+        // Reaching the end is the rest of the assertion: the hook's call
+        // site indexes per-child arrays, and ZStack's cache carries none, so
+        // a shape mismatch would trap during commit rather than return a
+        // wrong size.
+        _ = committedNode(for: prioritized, proposedSize: proposedSize)
+        _ = committedNode(for: ZStack { Text("Dummy") }, proposedSize: proposedSize)
+    }
+
     // MARK: Helpers
 
     @MainActor

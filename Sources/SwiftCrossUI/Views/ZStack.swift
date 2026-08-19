@@ -69,6 +69,7 @@ public struct ZStack<Content: View>: View {
             totalSpacing: 0,
             totalReservedSpace: 0,
             minimumLengths: [],
+            maximumLengths: [],
             redistributeSpaceOnCommit: proposedSize.width == nil || proposedSize.height == nil
         )
 

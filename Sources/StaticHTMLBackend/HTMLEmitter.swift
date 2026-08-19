@@ -211,11 +211,11 @@ public struct HTMLEmitter {
     ///     ``BackendFeatures/Widgets/describeDivider(of:)``), and the
     ///     matching flex/align-self handling in
     ///     ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
-    ///   - flexShrinkWeight: A layout-priority-derived shrink resistance for
-    ///     this widget specifically, when it's a direct child of a stack
+    ///   - priorityAllocation: The layout-priority-derived flex declarations
+    ///     for this widget specifically, when it's a direct child of a stack
     ///     whose children didn't all share the same
     ///     ``SwiftCrossUI/View/layoutPriority(_:)``. See
-    ///     ``HTMLEmitter/flexShrinkWeight(priority:relativeToMax:)``.
+    ///     ``HTMLEmitter/priorityAllocations(of:orientation:)``.
     ///   - parentIsFlex: Whether the element this widget will be emitted
     ///     inside is a flex container. Consulted only by
     ///     ``HTMLEmitter/elidableContainer(_:placement:parentIsFlex:)``, whose
@@ -229,7 +229,7 @@ public struct HTMLEmitter {
         indentLevel: Int = 0,
         inheritedFrame: InheritedFrame? = nil,
         stretchesUndeclaredAxis: Bool = false,
-        flexShrinkWeight: Double? = nil,
+        priorityAllocation: PriorityAllocation? = nil,
         childContentModel: ChildContentModel = .flow,
         parentIsFlex: Bool = false
     ) -> String {
@@ -268,7 +268,7 @@ public struct HTMLEmitter {
         if let elided = elidableContainer(
             widget,
             placement: placement,
-            flexShrinkWeight: flexShrinkWeight,
+            priorityAllocation: priorityAllocation,
             parentIsFlex: parentIsFlex
         ) {
             return emitChildren(
@@ -308,15 +308,33 @@ public struct HTMLEmitter {
         }
 
         var style = Style()
-        if let flexShrinkWeight {
-            // flex-basis:auto (the default) keeps the child's own natural/
-            // committed size as its starting point before shrinking — the
-            // same "committed size is the reflow starting point" principle
-            // this emitter already applies elsewhere (Rectangle's fallback,
-            // for one) — so only flex-shrink needs setting here; a bare
-            // flex-shrink declaration doesn't imply flex-basis:0% the way
-            // the `flex` shorthand would.
-            style.set("\(Self.formatNumber(flexShrinkWeight))", for: "flex-shrink")
+        if let priorityAllocation {
+            // A shrink-only child leaves flex-basis at auto, keeping its
+            // own natural/committed size as the starting point it shrinks
+            // from — the same "committed size is the reflow starting point"
+            // principle this emitter applies elsewhere (Rectangle's
+            // fallback, for one). A bare flex-shrink declaration doesn't
+            // imply flex-basis:0% the way the `flex` shorthand would, so
+            // that default survives unless the grow branch below overrides
+            // it.
+            style.set("\(Self.formatNumber(priorityAllocation.shrink))", for: "flex-shrink")
+
+            if let grow = priorityAllocation.grow,
+               let minimum = priorityAllocation.minimum,
+               let maximum = priorityAllocation.maximum
+            {
+                let axis = priorityAllocation.orientation == .horizontal
+                    ? "width" : "height"
+                style.set("\(Self.formatNumber(grow))", for: "flex-grow")
+                style.set("\(Self.formatNumber(minimum))px", for: "min-\(axis)")
+                // Growth starts from the floor rather than from the child's
+                // committed size, so the weights divide the whole surplus
+                // instead of whatever the build-host measurement left over.
+                style.set("\(Self.formatNumber(minimum))px", for: "flex-basis")
+                if maximum.isFinite {
+                    style.set("\(Self.formatNumber(maximum))px", for: "max-\(axis)")
+                }
+            }
         }
         if placement == .absolute {
             style.set("absolute", for: "position")
@@ -1209,18 +1227,18 @@ public struct HTMLEmitter {
     ///   - widget: The widget being emitted.
     ///   - placement: How the parent is positioning it. Anything but
     ///     ``Placement/flow`` writes coordinates, which are function.
-    ///   - flexShrinkWeight: The shrink resistance the parent stack derived
-    ///     for this child, if any. A weight is a real declaration on this
-    ///     element, so carrying one is function.
+    ///   - priorityAllocation: The flex declarations the parent stack derived
+    ///     for this child, if any. They are real declarations on this
+    ///     element, so carrying them is function.
     ///   - parentIsFlex: Whether the surviving parent is a flex container.
     /// - Returns: The container to splice away, or `nil` to emit the element.
     func elidableContainer(
         _ widget: StaticHTMLBackend.Widget,
         placement: Placement,
-        flexShrinkWeight: Double?,
+        priorityAllocation: PriorityAllocation?,
         parentIsFlex: Bool
     ) -> StaticHTMLBackend.Container? {
-        guard placement == .flow, flexShrinkWeight == nil else {
+        guard placement == .flow, priorityAllocation == nil else {
             return nil
         }
         // Only a plain container qualifies. Every other widget kind either
@@ -1546,7 +1564,7 @@ public struct HTMLEmitter {
                 style.set("relative", for: "position")
                 // The backdrop is z-index:-1 (see the .backgroundStretch
                 // branch in
-                // ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``),
+                // ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:priorityAllocation:)``),
                 // which without a stacking context here would put it behind
                 // this wrapper's own ancestors' backgrounds rather than just
                 // behind the foreground. isolation rather than z-index:0
@@ -1556,10 +1574,10 @@ public struct HTMLEmitter {
                 style.set("isolate", for: "isolation")
                 let backdrop = container.children[0].widget
                 let foreground = container.children[1].widget
-                // Matches the shape ``HTMLEmitter/emitChildren(_:placement:indent:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeights:)``
+                // Matches the shape ``HTMLEmitter/emitChildren(_:placement:indent:indentLevel:inheritedFrame:stretchesUndeclaredAxis:priorityAllocations:)``
                 // produces — a leading newline, each child's markup
                 // newline-terminated — since the closing tag this returns
-                // into (`isRawInner` branch, back in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``)
+                // into (`isRawInner` branch, back in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:priorityAllocation:)``)
                 // appends `indent` itself; that helper can't be reused
                 // directly because the two children need different
                 // placements, not one shared across the list.
@@ -1614,22 +1632,10 @@ public struct HTMLEmitter {
         // align-items controls.
         style.set(Self.cssAlignment(stack.alignment), for: "align-items")
 
-        // layoutPriority reaches the layout system as a strict ordering
-        // (the highest-priority group claims space first; a lower one only
-        // gets leftovers), which flex-shrink can't reproduce exactly — CSS
-        // only ever redistributes proportionally. Per-child flex-shrink
-        // weighted by relative priority is the nearest proportional
-        // approximation, and it's skipped entirely when every child shares
-        // one priority (the common case, and what an author who never
-        // touched layoutPriority gets): there's nothing for it to modulate,
-        // and it would just be redundant with flexbox's own default.
-        let flexShrinkWeights: [Double]? = container.childLayoutPriorities.flatMap { priorities in
-            guard let maxPriority = priorities.max(), priorities.min() != maxPriority else {
-                return nil
-            }
-            return priorities
-                .map { Self.flexShrinkWeight(priority: $0, relativeToMax: maxPriority) }
-        }
+        let allocations = Self.priorityAllocations(
+            of: container,
+            orientation: stack.orientation
+        )
 
         return emitChildren(
             container.children,
@@ -1637,7 +1643,7 @@ public struct HTMLEmitter {
             indent: indent,
             indentLevel: indentLevel,
             stretchesUndeclaredAxis: stretchesUndeclaredAxis,
-            flexShrinkWeights: flexShrinkWeights,
+            priorityAllocations: allocations,
             childContentModel: childContentModel,
             parentIsFlex: true
         )
@@ -1998,8 +2004,8 @@ public struct HTMLEmitter {
     ///     relays it past however many non-frame wrapper levels (Divider's
     ///     own stack-layout wrapper, for one) sit between the ancestor that
     ///     set it and the descendant that finally acts on it.
-    ///   - flexShrinkWeights: Each child's layout-priority-derived shrink
-    ///     resistance, indexed the same way as `children`. `nil` — not an
+    ///   - priorityAllocations: Each child's layout-priority-derived flex
+    ///     declarations, indexed the same way as `children`. `nil` — not an
     ///     all-equal array — is the common case (a stack whose children
     ///     never diverged on ``SwiftCrossUI/View/layoutPriority(_:)``, which
     ///     is most of them): see the call site in
@@ -2014,7 +2020,7 @@ public struct HTMLEmitter {
         indentLevel: Int,
         inheritedFrame: InheritedFrame? = nil,
         stretchesUndeclaredAxis: Bool = false,
-        flexShrinkWeights: [Double]? = nil,
+        priorityAllocations: [PriorityAllocation]? = nil,
         childContentModel: ChildContentModel = .flow,
         parentIsFlex: Bool = false
     ) -> String {
@@ -2031,7 +2037,7 @@ public struct HTMLEmitter {
                 indentLevel: indentLevel + 1,
                 inheritedFrame: inheritedFrame,
                 stretchesUndeclaredAxis: stretchesUndeclaredAxis,
-                flexShrinkWeight: flexShrinkWeights?[offset],
+                priorityAllocation: priorityAllocations?[offset],
                 childContentModel: childContentModel,
                 parentIsFlex: parentIsFlex
             )
@@ -2134,20 +2140,22 @@ public struct HTMLEmitter {
     /// container-driven), so an infinite maxHeight outside any stack is a
     /// known gap, consistent with this emitter's best-effort contract.
     ///
-    /// `flex-shrink`/`flex-basis` are only set when nothing already claimed
-    /// them: a layout-priority-derived shrink weight
-    /// (``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``)
-    /// can already have written `flex-shrink` into this same widget's style
-    /// before this function runs, and the author's declared priority is the
-    /// more specific signal — an unconditional overwrite here would
-    /// silently discard it whenever a stack child happened to carry both
+    /// `flex-grow`/`flex-shrink`/`flex-basis` are only set when nothing
+    /// already claimed them: a layout-priority-derived allocation
+    /// (``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:priorityAllocation:)``)
+    /// can already have written them into this same widget's style before
+    /// this function runs, and the author's declared priority is the more
+    /// specific signal — an unconditional overwrite here would silently
+    /// discard it whenever a stack child happened to carry both
     /// `maxWidth: .infinity` and a non-uniform sibling priority.
     ///
     /// - Parameter style: The declaring widget's own style, mutated in
     ///   place.
     nonisolated static func applyInfiniteStretch(in style: inout Style) {
         style.set("stretch", for: "align-self")
-        style.set("1", for: "flex-grow")
+        if style.value(for: "flex-grow") == nil {
+            style.set("1", for: "flex-grow")
+        }
         if style.value(for: "flex-shrink") == nil {
             style.set("1", for: "flex-shrink")
         }
@@ -2163,10 +2171,14 @@ public struct HTMLEmitter {
     /// The layout system's own algorithm (``LayoutSystem/computeLayouts``)
     /// isn't proportional — it processes children in strict descending-
     /// priority order, letting the highest-priority group claim all the
-    /// space it wants before a lower one sees any leftovers — and CSS
-    /// flex-shrink has no equivalent strict-ordering mode; it only ever
-    /// redistributes shrinkage proportionally to each item's weight. This is
-    /// the nearest proportional approximation of that ordering, not a
+    /// space it wants before a lower one sees any leftovers — and
+    /// `flex-shrink` has no way to reach that ordering: shrinkage spreads
+    /// proportionally across every weight at once, never exhausting one
+    /// tier before touching the next. The grow side does reach it, by a
+    /// route with no shrink-side counterpart — a max-violated item releases
+    /// its unused space to the items still growing, which
+    /// ``flexGrowWeight(priority:relativeToMin:)`` turns into hand-down
+    /// ordering. This is the nearest proportional approximation of that
     /// reproduction of it: each whole point of priority below the group
     /// maximum doubles shrink resistance relative to the top group, so the
     /// highest-priority children give up the least space and lower-priority
@@ -2190,13 +2202,116 @@ public struct HTMLEmitter {
     ) -> Double {
         // -infinity (Spacer's own layoutPriority, though Spacer is handled
         // by its own emitter case before reaching here — see the tag ==
-        // "Spacer" branch in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:flexShrinkWeight:)``)
+        // "Spacer" branch in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:priorityAllocation:)``)
         // would make `2^(maxPriority - priority)` infinite; clamping the
         // exponent keeps this total function for any input a future caller
         // might pass, rather than relying on that other case to always
         // intercept it first.
         let delta = min(maxPriority - priority, 32)
         return pow(2, delta)
+    }
+
+    /// Maps a stack child's ``SwiftCrossUI/View/layoutPriority(_:)`` to a
+    /// `flex-grow` weight, relative to the lowest priority among its
+    /// siblings.
+    ///
+    /// Unlike the shrink side, this reproduces the layout system's
+    /// descending-priority ordering rather than approximating it, as long as
+    /// each child also carries its own flexibility endpoints as `min-`/
+    /// `max-width` (or the height family, in a column). CSS grows every item
+    /// with a positive weight simultaneously, but an item that hits its
+    /// maximum freezes there and its unused share is redistributed among the
+    /// items still growing. A weight ratio this steep makes a higher tier
+    /// absorb effectively all surplus until its maximum freezes it, at which
+    /// point the remainder falls to the tier below — which is what claiming
+    /// space in priority order means.
+    ///
+    /// The steepness is load-bearing in both directions. Weights within an
+    /// order of magnitude of each other split surplus visibly rather than
+    /// handing it down; a lower tier weighted at zero (or near enough that
+    /// it rounds to zero) never receives the frozen tier's release at all
+    /// and the stack simply stops growing.
+    ///
+    /// - Parameters:
+    ///   - priority: This child's own layout priority.
+    ///   - minPriority: The lowest priority among this child's stack
+    ///     siblings (including itself).
+    /// - Returns: A `flex-grow` weight, always at least 1.
+    nonisolated static func flexGrowWeight(
+        priority: Double,
+        relativeToMin minPriority: Double
+    ) -> Double {
+        // Four points of separation is already past the width of any layout
+        // this can be asked about, and the clamp is what keeps the result a
+        // finite double for an author who wrote a priority in the thousands
+        // — or for Spacer's -infinity, were it ever to reach here.
+        let delta = min(priority - minPriority, 4)
+        return pow(1e6, delta)
+    }
+
+    /// The priority-derived flex declarations for one stack child.
+    public struct PriorityAllocation: Equatable, Sendable {
+        /// Resistance to giving up space, from
+        /// ``HTMLEmitter/flexShrinkWeight(priority:relativeToMax:)``.
+        public var shrink: Double
+        /// Claim on surplus space, from
+        /// ``HTMLEmitter/flexGrowWeight(priority:relativeToMin:)``. `nil`
+        /// when the child's flexibility endpoints never reached the backend,
+        /// which is what the grow construction needs to bound its tiers.
+        public var grow: Double?
+        /// The child's size at a zero proposal, and at an infinite one.
+        /// Emitted as the min/max pair on the stack's axis, giving the
+        /// growth weights the clamps they hand surplus down at.
+        public var minimum: Double?
+        public var maximum: Double?
+        /// The axis the stack distributes space along, which decides whether
+        /// the clamps are written as widths or heights.
+        public var orientation: Orientation
+    }
+
+    /// Derives each stack child's priority-driven flex declarations.
+    ///
+    /// Returns `nil` when every child shares one priority — the common case,
+    /// and what an author who never touched
+    /// ``SwiftCrossUI/View/layoutPriority(_:)`` gets. There is nothing for
+    /// the weights to modulate, and emitting them would only restate
+    /// flexbox's own defaults.
+    ///
+    /// - Parameters:
+    ///   - container: The container being emitted as a flex stack.
+    ///   - orientation: The axis the stack distributes space along.
+    /// - Returns: One allocation per child, indexed as `container.children`.
+    nonisolated static func priorityAllocations(
+        of container: StaticHTMLBackend.Container,
+        orientation: Orientation
+    ) -> [PriorityAllocation]? {
+        guard let priorities = container.childLayoutPriorities,
+              let maxPriority = priorities.max(),
+              let minPriority = priorities.min(),
+              minPriority != maxPriority
+        else {
+            return nil
+        }
+
+        // The endpoints are reported for the stack as a whole or not at all,
+        // and their absence only costs the grow side: shrink weights are a
+        // function of priority alone.
+        let flexibility = container.childFlexibility.flatMap {
+            $0.minimums.count == priorities.count && $0.maximums.count == priorities.count
+                ? $0 : nil
+        }
+
+        return priorities.enumerated().map { index, priority in
+            PriorityAllocation(
+                shrink: flexShrinkWeight(priority: priority, relativeToMax: maxPriority),
+                grow: flexibility.map { _ in
+                    flexGrowWeight(priority: priority, relativeToMin: minPriority)
+                },
+                minimum: flexibility?.minimums[index],
+                maximum: flexibility?.maximums[index],
+                orientation: orientation
+            )
+        }
     }
 
     /// Whether any two of a container's children share area.
@@ -2432,9 +2547,12 @@ public struct HTMLEmitter {
     /// `<input type=range>` are otherwise indistinguishable from an author
     /// having actually asked for a fractional bound.
     nonisolated static func formatNumber(_ value: Double) -> String {
-        value == value.rounded() && value.isFinite
-            ? String(Int(value))
-            : String(value)
+        guard let exact = Int(exactly: value.rounded()), value == value.rounded() else {
+            // A magnitude past Int's range has no integer spelling to fall
+            // back to; Double's own description stays valid CSS.
+            return String(value)
+        }
+        return String(exact)
     }
 
     /// Recovers the text style a declared font names, if it names one plainly.
