@@ -65,8 +65,21 @@ public enum StaticHTMLRenderer {
         // one is what keeps a contribution's first-appearance order meaningful.
         let registry = HTMLFragmentRegistry()
 
-        let light = layOut(view, size: size, colorScheme: .light, registry: registry)
-        let dark = layOut(view, size: size, colorScheme: .dark, registry: registry)
+        let stores = context.assetStores
+        let light = layOut(
+            view,
+            size: size,
+            colorScheme: .light,
+            registry: registry,
+            stores: stores
+        )
+        let dark = layOut(
+            view,
+            size: size,
+            colorScheme: .dark,
+            registry: registry,
+            stores: stores
+        )
 
         let mismatches = geometryMismatches(between: light.widget, and: dark.widget)
         mergeColors(from: dark.widget, into: light.widget)
@@ -74,7 +87,7 @@ public enum StaticHTMLRenderer {
 
         var emitter = HTMLEmitter(headingMap: context.headingMap)
         emitter.registry = registry
-        emitter.assetStore = context.assetStore
+        emitter.assetStores = stores
         emitter.inlineAssetThreshold = context.inlineAssetThreshold
         emitter.emitsViewIdentity = context.emitsViewIdentity
         emitter.declaredSlots = context.customSlots
@@ -93,11 +106,10 @@ public enum StaticHTMLRenderer {
             registry.register(item)
         }
 
-        // Emitting the body first is what makes built-in machinery conditional:
-        // the emitter registers a construct's assets as it emits that
-        // construct, so a page with no stacks carries no stack script. Draining
-        // the registry before the body ran would collect only what the view
-        // tree contributed.
+        // The body is emitted before the registry is drained so that anything
+        // the emitter registers while walking widgets still reaches the
+        // document, and so a custom slot's items are in hand when the emitter
+        // meets its marker.
         let body = emitter.emit(light.widget, at: .zero, placement: .flow, indentLevel: 1)
 
         // The reset registers last so that a page owner's item under the
@@ -212,7 +224,10 @@ public enum StaticHTMLRenderer {
         let properties = [palette, typeScale, document]
             .filter { !$0.isEmpty }
             .joined(separator: "\n\n")
-        let baseline = ([reset.map { $0.rendered(indent: "") }.joined(separator: "\n")]
+        let resolver = emitter.assetResolver
+        let baseline = ([
+            reset.map { $0.rendered(indent: "", resolver: resolver) }.joined(separator: "\n")
+        ]
             + [
                 properties.isEmpty && emitter.interner.stylesheet.isEmpty
                     ? "" : """
@@ -225,10 +240,10 @@ public enum StaticHTMLRenderer {
             .joined(separator: "\n")
 
         let headItems = (headContributions + head.owned)
-            .map { $0.rendered(indent: "") }
+            .map { $0.rendered(indent: "", resolver: resolver) }
             .joined(separator: "\n")
         let tailItems = (tail.contributed + tail.owned)
-            .map { $0.rendered(indent: "") }
+            .map { $0.rendered(indent: "", resolver: resolver) }
             .joined(separator: "\n")
 
         let headBlock = [baseline, headItems].filter { !$0.isEmpty }.joined(separator: "\n")
@@ -269,14 +284,20 @@ public enum StaticHTMLRenderer {
         _ view: some View,
         size: SIMD2<Int>,
         colorScheme: ColorScheme,
-        registry: HTMLFragmentRegistry
+        registry: HTMLFragmentRegistry,
+        stores: HTMLAssetStores
     ) -> (widget: StaticHTMLBackend.Widget, size: SIMD2<Int>) {
         let backend = StaticHTMLBackend(colorScheme: colorScheme)
         let window = backend.createWindow(withDefaultSize: size, id: "static-html")
+        // Injected here rather than through a modifier in the tree: every
+        // `.environment()` write mints a container widget elided only at page
+        // roots, so a per-write injection would cost a div wherever a view
+        // published bytes.
         let environment = EnvironmentValues(backend: backend)
             .with(\.window, window)
             .with(\.colorScheme, colorScheme)
             .with(\.htmlFragmentRegistry, registry)
+            .with(\.htmlAssetStores, stores)
 
         let node = ViewGraphNode(for: view, backend: backend, environment: environment)
         let layout = node.computeLayout(

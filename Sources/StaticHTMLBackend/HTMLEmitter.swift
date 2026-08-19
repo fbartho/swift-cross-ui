@@ -46,20 +46,25 @@ public struct HTMLEmitter {
     public var palette = ColorPalette()
     /// The type scale that turns declared text styles into custom properties.
     public var typeScale = TypeScale()
-    /// The registry the emitter registers built-in machinery into, and that
-    /// view-tree contributions have already been registered into.
+    /// The registry the view tree's contributions were registered into.
     ///
-    /// Registering here rather than in the views is what makes built-in
-    /// machinery conditional on a widget actually rendering: a retroactive
-    /// conformance on a core view would never fire (the core's update loop
-    /// knows nothing about the protocol), but the emitter sees every widget
-    /// that reaches the document, has the layout data to parameterize the
-    /// asset, and registers exactly once thanks to dedupe.
+    /// Read during emission to fill custom slots, whose items have to be in
+    /// hand as the emitter reaches the ``HTMLSlot`` marking them.
+    ///
+    /// It is also where the emitter would register machinery for the core's own
+    /// views, which cannot contribute for themselves: a retroactive conformance
+    /// to ``HTMLDocumentContributing`` on a core view would never fire, since
+    /// the core's update loop knows nothing about the protocol. Nothing
+    /// registers that way yet.
     public var registry: HTMLFragmentRegistry?
-    /// Where image data is published, and the size below which it's inlined
-    /// instead.
-    var assetStore: (any AssetStore)?
+    /// Where asset bytes are published, and the size below which they're
+    /// inlined instead.
+    var assetStores = HTMLAssetStores()
     var inlineAssetThreshold: Int?
+    /// What turns asset bytes into the reference the document carries.
+    var assetResolver: HTMLAssetResolver {
+        HTMLAssetResolver(stores: assetStores, inlineThreshold: inlineAssetThreshold)
+    }
     /// Whether to write the `data-scui` attribute naming each element's view
     /// type. See ``DocumentContext/emitsViewIdentity``, which sets it — and
     /// which documents why the `data-scui-*` protocol markers are not
@@ -300,8 +305,9 @@ public struct HTMLEmitter {
                     """
                 )
                 let items = registry?.items(in: .custom(slotName)) ?? []
+                let resolver = assetResolver
                 return items
-                    .map { $0.rendered(indent: indent) }
+                    .map { $0.rendered(indent: indent, resolver: resolver) }
                     .joined(separator: "\n")
             }
             return "\(indent)\(fragment.html)"
@@ -1305,33 +1311,16 @@ public struct HTMLEmitter {
     /// Decides how an encoded image reaches the document: as a published file,
     /// or inlined.
     ///
-    /// Publishing is the policy. A data URL carries the image on every page
-    /// that shows it, uncached, at roughly a third more bytes than the file —
-    /// so it's the fallback for renders with nowhere to publish to (tests,
-    /// previews, anything that has to be self-contained) rather than the
-    /// default.
-    ///
-    /// Small images invert that arithmetic: an icon costs more as a request
-    /// than as bytes, so anything at or under the configured threshold stays
-    /// inline even when a store exists.
-    ///
     /// - Parameter png: The encoded image.
     /// - Returns: The value for the element's `src`.
     private func source(forEncodedImage png: [UInt8]) -> String {
-        func inlined() -> String {
-            "data:image/png;base64,\(Data(png).base64EncodedString())"
-        }
-
-        guard let assetStore else {
-            return inlined()
-        }
-        if let inlineAssetThreshold, png.count <= inlineAssetThreshold {
-            return inlined()
-        }
-        // A store that couldn't write still has to yield a rendering page, so a
-        // failed publish degrades to the inline path rather than to a missing
-        // image.
-        return assetStore.publish(png, fileExtension: "png") ?? inlined()
+        assetResolver.reference(
+            for: png,
+            fileExtension: "png",
+            mediaType: "image/png",
+            disposition: .automatic,
+            store: nil
+        )
     }
 
     /// Emits a container's children, styling the container to arrange them.
