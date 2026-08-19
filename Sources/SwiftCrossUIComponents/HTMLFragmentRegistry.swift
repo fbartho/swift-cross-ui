@@ -44,12 +44,41 @@ public final class HTMLFragmentRegistry {
             """
         )
 
-        guard indicesByKey[item.key] == nil else {
-            return false
+        guard let existingIndex = indicesByKey[item.key] else {
+            indicesByKey[item.key] = items.count
+            items.append(item)
+            return true
         }
-        indicesByKey[item.key] = items.count
-        items.append(item)
-        return true
+
+        // Two registrations sharing a derived key but not their content mean
+        // the second one never reaches the document. Dropping it is the
+        // contract, so this can't throw — but the drop is invisible in the
+        // output, and the shape that causes it (content varying across the
+        // light/dark passes that share this registry) looks correct at the call
+        // site. Catching it in debug is the only place the mistake is legible.
+        //
+        // An `.id` key is exempt because overriding is what it's for: the
+        // author asserting two different items are one, so the first wins.
+        assert(
+            item.key.isAuthorSupplied || items[existingIndex].content == item.content,
+            """
+            Two different items registered under \(item.key.debugName). The \
+            first one wins and this one is dropped, so the document will carry \
+            \(items[existingIndex].content.kindName.lowercased()) that isn't \
+            the one this registration asked for.
+
+            The usual cause is content that varies with the environment: the \
+            light and dark render passes share one registry, so an item whose \
+            key doesn't vary but whose content is built from \\.colorScheme \
+            silently loses its second variant. Either make the content \
+            invariant across the passes, or derive the key from the varying \
+            value so each variant gets its own slot.
+
+            Where replacing the earlier item is the intent, say so with an \
+            explicit `id:`, which is exempt from this check.
+            """
+        )
+        return false
     }
 
     /// Registers an item built from content and a slot.
@@ -110,6 +139,8 @@ extension HTMLDocumentItemContent {
             case .style: "An inline style"
             case .meta: "A meta tag"
             case .rawHTML: "A raw HTML fragment"
+            case .stylesheetBytes: "A stylesheet carried as bytes"
+            case .scriptBytes: "A script carried as bytes"
         }
     }
 }
@@ -121,6 +152,26 @@ extension HTMLDocumentItem.Slot {
             case .head: ".head"
             case .bodyEnd: ".bodyEnd"
             case .custom(let name): ".custom(\"\(name)\")"
+        }
+    }
+}
+
+extension HTMLDocumentItem.DedupeKey {
+    /// Whether the author chose this key rather than it being derived from the
+    /// content.
+    ///
+    /// An author-chosen key is a claim about identity that outranks what the
+    /// content says, which is what makes deliberate replacement possible.
+    var isAuthorSupplied: Bool {
+        if case .id = self { true } else { false }
+    }
+
+    /// A human-readable name for the key, for diagnostics.
+    var debugName: String {
+        switch self {
+            case .url(let url): ".url(\"\(url)\")"
+            case .id(let id): ".id(\"\(id)\")"
+            case .contentHash(let hash): ".contentHash(\"\(hash)\")"
         }
     }
 }

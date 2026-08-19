@@ -58,6 +58,27 @@ extension View {
 /// core's update loop knows nothing about this protocol, so nothing would
 /// consult it. Machinery for the core's own views is registered by the emitter
 /// instead, when it emits one.
+///
+/// ## Items that vary with the environment
+///
+/// Reading `@Environment` to decide what to contribute is supported: the
+/// wrapper is populated before `body` runs, from the same snapshot `body` sees,
+/// and this getter runs inside that window. A component that contributes
+/// different items under different conditions works.
+///
+/// What needs care is content that varies while its *key* doesn't. A document
+/// renders twice, once per color scheme, and both passes register into one
+/// registry that keeps the first item per key. So an item whose content is
+/// built from `\.colorScheme` but whose key is invariant contributes its light
+/// variant and silently drops its dark one.
+///
+/// Two shapes are safe: content that is identical across the two passes (use
+/// `light-dark()` or a media query to express the difference in CSS rather than
+/// in Swift), or a key derived from the varying value, so each variant gets its
+/// own slot. ``GeometrySelector`` takes the second route.
+///
+/// A debug build traps on a collision whose content differs, so this is a
+/// caught mistake rather than a missing asset noticed in production.
 @MainActor
 public protocol HTMLDocumentContributing: View {
     /// The items this component needs the document to carry.
