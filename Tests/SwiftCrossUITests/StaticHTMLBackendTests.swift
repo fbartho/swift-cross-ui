@@ -2,7 +2,7 @@ import Testing
 
 import Foundation
 import ImageFormats
-import StaticHTMLBackend
+@testable import StaticHTMLBackend
 @_spi(Backends) import SwiftCrossUI
 import SwiftCrossUIComponents
 
@@ -2130,8 +2130,7 @@ struct StaticHTMLBackendTests {
         // siblings sit adjacent instead of being pushed apart.
         // Spacer has no dedicated Widget subclass, so recognising it here
         // relies on ``BackendFeatures/Widgets/describeSpacer(of:)`` (task
-        // #32), which is also what the real layoutPriority(-infinity)
-        // signal (never reaching the backend) is standing in for here.
+        // #32) rather than on its layoutPriority(-infinity).
         let html = StaticHTMLRenderer.render(
             HStack {
                 Text("Leading")
@@ -2140,6 +2139,107 @@ struct StaticHTMLBackendTests {
             },
             context: "Spacer"
         ).html
+
+        let spacerRule = Self.styleRule(forElementContaining: "data-scui=\"Spacer\"", in: html)
+        #expect(spacerRule?.contains("flex:1 1 0%") == true)
+    }
+
+    @Test("The weight functions stay finite at Spacer's -infinity priority")
+    func priorityWeightsAreTotalAtNegativeInfinity() {
+        // -infinity minus -infinity is NaN, and NaN survives both `min` and
+        // `pow`, so an unguarded clamp propagates it into the emitted
+        // declaration rather than bounding it.
+        let spacer = -Double.infinity
+        let selfRelative = HTMLEmitter.flexGrowWeight(
+            priority: spacer,
+            relativeToMin: spacer
+        )
+        #expect(selfRelative.isFinite)
+        #expect(selfRelative > 0)
+
+        let selfRelativeShrink = HTMLEmitter.flexShrinkWeight(
+            priority: spacer,
+            relativeToMax: spacer
+        )
+        #expect(selfRelativeShrink.isFinite)
+        #expect(selfRelativeShrink > 0)
+
+        // The other unbounded direction: a spacer measured against a finite
+        // sibling, where the true delta is infinite rather than NaN.
+        let againstFinite = HTMLEmitter.flexGrowWeight(
+            priority: spacer,
+            relativeToMin: 0
+        )
+        #expect(againstFinite.isFinite)
+        #expect(againstFinite > 0)
+
+        let againstFiniteShrink = HTMLEmitter.flexShrinkWeight(
+            priority: spacer,
+            relativeToMax: 0
+        )
+        #expect(againstFiniteShrink.isFinite)
+        #expect(againstFiniteShrink > 0)
+    }
+
+    @MainActor
+    @Test("A Spacer in a prioritized stack keeps flex:1 1 0% and takes no weights")
+    func spacerInPrioritizedStackEmitsValidCSS() {
+        // The priority allocation is applied before the switch that reaches
+        // the Spacer case, and both write the same Style — whose declarations
+        // sort alphabetically, putting every flex-* longhand after the `flex`
+        // shorthand. A Spacer that took an allocation would have its
+        // shorthand overridden by weights derived from -infinity.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Leading")
+                Spacer()
+                Text("Trailing").layoutPriority(1)
+            }
+            .frame(width: 600),
+            context: "Prioritized spacer"
+        ).html
+
+        let spacerRule = Self.styleRule(forElementContaining: "data-scui=\"Spacer\"", in: html)
+        #expect(spacerRule?.contains("flex:1 1 0%") == true)
+        #expect(spacerRule?.contains("nan") != true)
+        #expect(spacerRule?.contains("flex-grow") != true)
+        #expect(spacerRule?.contains("flex-shrink") != true)
+
+        // No rule anywhere may carry a NaN or a weight that only a spacer's
+        // -infinity could produce: an invalid declaration is dropped by the
+        // parser, but a finite absurd one is honoured.
+        #expect(!html.contains("nan"))
+        #expect(!html.contains("4294967296"))
+
+        // The siblings still rank against each other. Measuring the spread
+        // from -infinity would put both real children in one tier.
+        let highRule = Self.styleRule(
+            forElementContaining: "data-scui=\"PreferenceModifier\"",
+            in: html
+        )
+        #expect(highRule?.contains("flex-grow:1000000") == true)
+    }
+
+    @MainActor
+    @Test("A stack whose only priority spread is a Spacer emits no weights")
+    func spacerAloneDrivesNoPriorityWeights() {
+        // Every non-spacer child shares priority 0 here, so there is nothing
+        // for the weights to modulate and the emitter must stay on flexbox's
+        // own defaults — the same output an author who never touched
+        // layoutPriority gets.
+        let html = StaticHTMLRenderer.render(
+            HStack {
+                Text("Leading")
+                Spacer()
+                Text("Trailing")
+            }
+            .frame(width: 600),
+            context: "Spacer only spread"
+        ).html
+
+        #expect(!html.contains("flex-shrink"))
+        #expect(!html.contains("flex-grow"))
+        #expect(!html.contains("nan"))
 
         let spacerRule = Self.styleRule(forElementContaining: "data-scui=\"Spacer\"", in: html)
         #expect(spacerRule?.contains("flex:1 1 0%") == true)

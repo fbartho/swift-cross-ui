@@ -912,14 +912,16 @@ public struct HTMLEmitter {
                 // Spacer has no dedicated Widget subclass of its own — it's a
                 // plain empty Container, marked by
                 // ``BackendFeatures/Widgets/describeSpacer(of:)`` rather than
-                // by type. Its layoutPriority(-infinity) preference, which is
-                // what tells the layout system to shrink it first, is
-                // consumed entirely inside LayoutSystem and never reaches the
-                // backend, so there's no geometry-based way to infer "this is
-                // a spacer" after the fact. flex:1 1 0% reproduces the same
-                // greedy-but-shrinkable behaviour in the flex model: it grows
-                // to fill leftover space and yields before any sibling with a
-                // real minimum content size would be squeezed.
+                // by type, and the marker is the only thing that identifies
+                // one: nothing about its committed geometry says so. Its
+                // layoutPriority(-infinity) does reach the backend, in the
+                // stack's childLayoutPriorities, and
+                // ``HTMLEmitter/priorityAllocations(of:orientation:)`` drops
+                // it there so the shorthand below is the whole of what a
+                // Spacer gets. flex:1 1 0% reproduces the greedy-but-
+                // shrinkable behaviour in the flex model: it grows to fill
+                // leftover space and yields before any sibling with a real
+                // minimum content size would be squeezed.
                 style.set("1 1 0%", for: "flex")
 
             case let container as StaticHTMLBackend.Container:
@@ -1999,6 +2001,7 @@ public struct HTMLEmitter {
     ///     never diverged on ``SwiftCrossUI/View/layoutPriority(_:)``, which
     ///     is most of them): see the call site in
     ///     ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
+    ///     An element within the array is `nil` for a child that takes none.
     ///   - parentIsFlex: Whether the element these children are being emitted
     ///     inside is a flex container. Forwarded to each child's own ``emit``
     ///     call, which is where the elision guard reads it.
@@ -2009,7 +2012,7 @@ public struct HTMLEmitter {
         indentLevel: Int,
         inheritedFrame: InheritedFrame? = nil,
         stretchesUndeclaredAxis: Bool = false,
-        priorityAllocations: [PriorityAllocation]? = nil,
+        priorityAllocations: [PriorityAllocation?]? = nil,
         childContentModel: ChildContentModel = .flow,
         parentIsFlex: Bool = false
     ) -> String {
@@ -2026,7 +2029,7 @@ public struct HTMLEmitter {
                 indentLevel: indentLevel + 1,
                 inheritedFrame: inheritedFrame,
                 stretchesUndeclaredAxis: stretchesUndeclaredAxis,
-                priorityAllocation: priorityAllocations?[offset],
+                priorityAllocation: priorityAllocations.flatMap { $0[offset] },
                 childContentModel: childContentModel,
                 parentIsFlex: parentIsFlex
             )
@@ -2189,14 +2192,14 @@ public struct HTMLEmitter {
         priority: Double,
         relativeToMax maxPriority: Double
     ) -> Double {
-        // -infinity (Spacer's own layoutPriority, though Spacer is handled
-        // by its own emitter case before reaching here — see the tag ==
-        // "Spacer" branch in ``HTMLEmitter/emit(_:at:placement:indentLevel:inheritedFrame:stretchesUndeclaredAxis:priorityAllocation:)``)
-        // would make `2^(maxPriority - priority)` infinite; clamping the
-        // exponent keeps this total function for any input a future caller
-        // might pass, rather than relying on that other case to always
-        // intercept it first.
-        let delta = min(maxPriority - priority, 32)
+        // An unbounded gap — a Spacer's -infinity priority against a finite
+        // sibling maximum, or two -infinity spacers measured against each
+        // other — would make `2^(maxPriority - priority)` infinite or NaN.
+        // Clamping to the ends of the representable span keeps this total
+        // for every input, including the -infinity minus -infinity that is
+        // NaN before the clamp sees it.
+        let delta = (maxPriority - priority).isNaN
+            ? 0 : min(max(maxPriority - priority, 0), 32)
         return pow(2, delta)
     }
 
@@ -2232,9 +2235,12 @@ public struct HTMLEmitter {
     ) -> Double {
         // Four points of separation is already past the width of any layout
         // this can be asked about, and the clamp is what keeps the result a
-        // finite double for an author who wrote a priority in the thousands
-        // — or for Spacer's -infinity, were it ever to reach here.
-        let delta = min(priority - minPriority, 4)
+        // finite double for an author who wrote a priority in the thousands.
+        // The lower clamp covers the unbounded gaps: a Spacer's -infinity
+        // priority against a finite minimum, and the -infinity minus
+        // -infinity that is NaN before any comparison sees it.
+        let delta = (priority - minPriority).isNaN
+            ? 0 : min(max(priority - minPriority, 0), 4)
         return pow(1e6, delta)
     }
 
@@ -2260,23 +2266,36 @@ public struct HTMLEmitter {
 
     /// Derives each stack child's priority-driven flex declarations.
     ///
-    /// Returns `nil` when every child shares one priority — the common case,
-    /// and what an author who never touched
+    /// Returns `nil` when every ranked child shares one priority — the
+    /// common case, and what an author who never touched
     /// ``SwiftCrossUI/View/layoutPriority(_:)`` gets. There is nothing for
     /// the weights to modulate, and emitting them would only restate
-    /// flexbox's own defaults.
+    /// flexbox's own defaults. A stack whose only priority spread comes from
+    /// a Spacer lands here too, leaving both the Spacer and its siblings on
+    /// the declarations they emit outside this path.
     ///
     /// - Parameters:
     ///   - container: The container being emitted as a flex stack.
     ///   - orientation: The axis the stack distributes space along.
     /// - Returns: One allocation per child, indexed as `container.children`.
+    ///   `nil` at a child that takes no priority-derived declarations.
     nonisolated static func priorityAllocations(
         of container: StaticHTMLBackend.Container,
         orientation: Orientation
-    ) -> [PriorityAllocation]? {
-        guard let priorities = container.childLayoutPriorities,
-              let maxPriority = priorities.max(),
-              let minPriority = priorities.min(),
+    ) -> [PriorityAllocation?]? {
+        guard let priorities = container.childLayoutPriorities else {
+            return nil
+        }
+
+        // Spacers are excluded from the span the weights are measured
+        // against as well as from the output: -infinity as a group minimum
+        // would put every real child at the top of a range no author wrote,
+        // flattening the tiers that separate them from each other.
+        let ranked = zip(priorities, container.children)
+            .filter { !isSpacer($0.1.widget) }
+            .map(\.0)
+        guard let maxPriority = ranked.max(),
+              let minPriority = ranked.min(),
               minPriority != maxPriority
         else {
             return nil
@@ -2290,8 +2309,17 @@ public struct HTMLEmitter {
                 ? $0 : nil
         }
 
-        return priorities.enumerated().map { index, priority in
-            PriorityAllocation(
+        return priorities.enumerated().map { index, priority -> PriorityAllocation? in
+            // A Spacer carries no allocation, so its own emitter case keeps
+            // the `flex:1 1 0%` that expresses "take the leftovers, yield
+            // first". Weights derived from its -infinity priority would
+            // describe the opposite: the declarations here are longhands,
+            // and every one of them sorts after `flex` in the emitted rule,
+            // so they would override that shorthand rather than refine it.
+            guard !isSpacer(container.children[index].widget) else {
+                return nil
+            }
+            return PriorityAllocation(
                 shrink: flexShrinkWeight(priority: priority, relativeToMax: maxPriority),
                 grow: flexibility.map { _ in
                     flexGrowWeight(priority: priority, relativeToMin: minPriority)
@@ -2301,6 +2329,15 @@ public struct HTMLEmitter {
                 orientation: orientation
             )
         }
+    }
+
+    /// Whether a stack child is a ``SwiftCrossUI/Spacer``.
+    ///
+    /// Spacer has no dedicated Widget subclass — it's a plain empty
+    /// Container marked by ``BackendFeatures/Widgets/describeSpacer(of:)``,
+    /// so the marker is the only thing that identifies one.
+    nonisolated static func isSpacer(_ widget: StaticHTMLBackend.Widget) -> Bool {
+        (widget as? StaticHTMLBackend.Container)?.isSpacer == true
     }
 
     /// Whether any two of a container's children share area.
