@@ -64,7 +64,7 @@ public enum DocumentInfoKey: Hashable, Sendable {
 ///
 /// Every field here already exists as a value inside the render (the title on
 /// ``DocumentContext``, the heading elements ``HeadingMap`` derives, the
-/// ``HTMLHeadItem``s registered as `.meta`); this struct just carries them out
+/// ``HTMLDocumentItem``s registered as `.meta`); this struct just carries them out
 /// of the render alongside the markup instead of discarding them once emitted.
 public struct DocumentInfo: Hashable, Sendable {
     /// The document's title, as given to ``DocumentContext``.

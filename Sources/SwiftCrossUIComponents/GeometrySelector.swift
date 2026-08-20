@@ -68,7 +68,7 @@ public struct GeometrySelector: View {
     /// markers a later pass's `commit()` actually wrote onto the widget
     /// tree. Hashing the declared ranges (stable, known at construction)
     /// makes every reconstruction of the same selector converge on the same
-    /// ID, the same way `HTMLHeadItemContent`'s content-hash dedup keys already
+    /// ID, the same way `HTMLDocumentItemContent`'s content-hash dedup keys already
     /// need process-stable hashing (see its `hash(of:)`, which this reuses
     /// the same FNV-1a shape as, for the same reason).
     let selectorID: String
@@ -116,7 +116,7 @@ public struct GeometrySelector: View {
     /// an accepted consequence, not a bug: they'd emit byte-identical gating
     /// CSS anyway, so collapsing them via the registry's existing
     /// first-wins dedup is the same "identical content, one rule" behavior
-    /// `HTMLHeadItemContent`'s content-hash keys already rely on — not
+    /// `HTMLDocumentItemContent`'s content-hash keys already rely on — not
     /// different in kind from two components emitting the same stylesheet
     /// link twice.
     private static func deterministicSelectorID(
@@ -126,7 +126,7 @@ public struct GeometrySelector: View {
         let shape = ([container ?? ""] + branches.map { branch in
             "\(branch.id):\(branch.range.map(\.description) ?? "fallback")"
         }).joined(separator: "|")
-        return "gsel-\(HTMLHeadItemContent.hash(of: shape))"
+        return "gsel-\(HTMLDocumentItemContent.hash(of: shape))"
     }
 
     /// Rejects an empty branch list, overlapping ranges, and gaps unless a
@@ -344,7 +344,7 @@ public struct GeometrySelector: View {
         guard let registry = environment.htmlFragmentRegistry else {
             return
         }
-        let key = HTMLHeadItem.DedupeKey.id(selectorID)
+        let key = HTMLDocumentItem.DedupeKey.id(selectorID)
         guard !registry.contains(key) else {
             return
         }
@@ -384,7 +384,7 @@ public struct GeometrySelector: View {
         }
 
         registry.register(
-            HTMLHeadItem(
+            HTMLDocumentItem(
                 key: key,
                 slot: .head,
                 content: .style(rules.joined(separator: "\n"))

@@ -19,34 +19,34 @@ extension View {
     ///   - id: An identity for deduplication, overriding the one derived from
     ///     the content (its URL, or a hash of it).
     /// - Returns: The view, contributing the item whenever it renders.
-    public func htmlHeadItem(
-        _ content: HTMLHeadItemContent,
-        slot: HTMLHeadItem.Slot = .head,
+    public func htmlDocumentItem(
+        _ content: HTMLDocumentItemContent,
+        slot: HTMLDocumentItem.Slot = .head,
         id: String? = nil
     ) -> some View {
-        htmlHeadItems([HTMLHeadItem(content, slot: slot, id: id)])
+        htmlDocumentItems([HTMLDocumentItem(content, slot: slot, id: id)])
     }
 
     /// Contributes several fragment items at once.
     ///
     /// - Parameter items: The items to contribute.
     /// - Returns: The view, contributing the items whenever it renders.
-    public func htmlHeadItems(_ items: [HTMLHeadItem]) -> some View {
-        HTMLHeadContributionView(items: items, content: self)
+    public func htmlDocumentItems(_ items: [HTMLDocumentItem]) -> some View {
+        HTMLDocumentContributionView(items: items, content: self)
     }
 }
 
 /// A protocol that a component conforms to when it always needs the same
 /// document machinery.
 ///
-/// Pure sugar over ``SwiftCrossUI/View/htmlHeadItem(_:slot:id:)``: conforming
+/// Pure sugar over ``SwiftCrossUI/View/htmlDocumentItem(_:slot:id:)``: conforming
 /// and listing the items is equivalent to applying the modifier to the body,
 /// and it reads better on a component whose assets are part of what it is.
 ///
 /// ```swift
-/// struct SyntaxHighlightedCode: HTMLHeadContributing {
-///     var headItems: [HTMLHeadItem] {
-///         [HTMLHeadItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
+/// struct SyntaxHighlightedCode: HTMLDocumentContributing {
+///     var documentItems: [HTMLDocumentItem] {
+///         [HTMLDocumentItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
 ///     }
 ///
 ///     var body: some View { contributingBody { … } }
@@ -58,20 +58,41 @@ extension View {
 /// core's update loop knows nothing about this protocol, so nothing would
 /// consult it. Machinery for the core's own views is registered by the emitter
 /// instead, when it emits one.
+///
+/// ## Items that vary with the environment
+///
+/// Reading `@Environment` to decide what to contribute is supported: the
+/// wrapper is populated before `body` runs, from the same snapshot `body` sees,
+/// and this getter runs inside that window. A component that contributes
+/// different items under different conditions works.
+///
+/// What needs care is content that varies while its *key* doesn't. A document
+/// renders twice, once per color scheme, and both passes register into one
+/// registry that keeps the first item per key. So an item whose content is
+/// built from `\.colorScheme` but whose key is invariant contributes its light
+/// variant and silently drops its dark one.
+///
+/// Two shapes are safe: content that is identical across the two passes (use
+/// `light-dark()` or a media query to express the difference in CSS rather than
+/// in Swift), or a key derived from the varying value, so each variant gets its
+/// own slot. ``GeometrySelector`` takes the second route.
+///
+/// A debug build traps on a collision whose content differs, so this is a
+/// caught mistake rather than a missing asset noticed in production.
 @MainActor
-public protocol HTMLHeadContributing: View {
+public protocol HTMLDocumentContributing: View {
     /// The items this component needs the document to carry.
-    var headItems: [HTMLHeadItem] { get }
+    var documentItems: [HTMLDocumentItem] { get }
 }
 
-extension HTMLHeadContributing {
-    /// Wraps a body so that this component's ``headItems`` are contributed
+extension HTMLDocumentContributing {
+    /// Wraps a body so that this component's ``documentItems`` are contributed
     /// whenever it renders.
     ///
     /// - Parameter content: The component's actual body.
     /// - Returns: That body, contributing the component's items.
     public func contributingBody(@ViewBuilder _ content: () -> some View) -> some View {
-        content().htmlHeadItems(headItems)
+        content().htmlDocumentItems(documentItems)
     }
 }
 
@@ -83,9 +104,9 @@ extension HTMLHeadContributing {
 /// to reach it once per update. Reading it in a `transformEnvironment` closure
 /// would work too, but it would misrepresent the intent — nothing about the
 /// environment below this view differs.
-struct HTMLHeadContributionView<Content: View>: View {
+struct HTMLDocumentContributionView<Content: View>: View {
     /// The items to register.
-    var items: [HTMLHeadItem]
+    var items: [HTMLDocumentItem]
     /// The view being modified.
     var content: Content
 

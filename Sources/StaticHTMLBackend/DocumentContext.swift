@@ -32,24 +32,30 @@ public struct DocumentContext {
     /// The language written into `<html lang>`.
     public var language: String
     /// The page owner's own items, emitted after every contribution.
-    public var items: [HTMLHeadItem]
+    public var items: [HTMLDocumentItem]
     /// The names of the slots ``HTMLSlot`` may reference.
     ///
     /// Declaring a slot is what makes it addressable: a ``HTMLSlot`` for a
     /// name that was never declared is a typo, and this is what lets the
     /// renderer say so instead of emitting an empty hole.
     public var customSlots: Set<String>
-    /// Where image data should be published, if anywhere.
+    /// Where assets should be published, if anywhere.
     ///
-    /// With a store configured, images become files in the site output that the
-    /// document references by URL. Without one — tests, previews, any
-    /// self-contained render — image data is inlined as a data URL instead. See
-    /// ``AssetStore``.
-    public var assetStore: (any AssetStore)?
-    /// The size at or below which an image is inlined even when a store is
+    /// With a store configured, images and byte-carrying document items become
+    /// files in the site output that the document references by URL. Without
+    /// one — tests, previews, any self-contained render — their bytes are
+    /// inlined instead. See ``HTMLAssetStore``.
+    public var assetStore: (any HTMLAssetStore)?
+    /// Additional stores a publish can address by name.
+    ///
+    /// The common case is one output directory, which ``assetStore`` covers.
+    /// These exist for a site that routes some assets elsewhere — a CDN
+    /// bucket, a versioned directory — and needs to say which.
+    public var namedAssetStores: [String: any HTMLAssetStore]
+    /// The size at or below which an asset is inlined even when a store is
     /// configured.
     ///
-    /// Icons and other small images cost more as a request than as bytes, so
+    /// Icons and other small assets cost more as a request than as bytes, so
     /// they stay inline. `nil` inlines nothing when a store exists.
     ///
     /// The threshold belongs to whoever is publishing the site, not to the
@@ -80,8 +86,9 @@ public struct DocumentContext {
     ///   - language: The language for `<html lang>`.
     ///   - items: The page owner's own fragment items.
     ///   - customSlots: The names of slots ``HTMLSlot`` may reference.
-    ///   - assetStore: Where to publish image data, or `nil` to inline it.
-    ///   - inlineAssetThreshold: The byte size at or below which an image is
+    ///   - assetStore: Where to publish asset bytes, or `nil` to inline them.
+    ///   - namedAssetStores: Stores a publish can address by name.
+    ///   - inlineAssetThreshold: The byte size at or below which an asset is
     ///     inlined even when a store is configured.
     ///   - emitsViewIdentity: Whether to write the `data-scui` attribute
     ///     naming each element's view type.
@@ -89,9 +96,10 @@ public struct DocumentContext {
         title: String,
         headingMap: HeadingMap = .default,
         language: String = "en",
-        items: [HTMLHeadItem] = [],
+        items: [HTMLDocumentItem] = [],
         customSlots: Set<String> = [],
-        assetStore: (any AssetStore)? = nil,
+        assetStore: (any HTMLAssetStore)? = nil,
+        namedAssetStores: [String: any HTMLAssetStore] = [:],
         inlineAssetThreshold: Int? = nil,
         emitsViewIdentity: Bool = true
     ) {
@@ -101,8 +109,14 @@ public struct DocumentContext {
         self.items = items
         self.customSlots = customSlots
         self.assetStore = assetStore
+        self.namedAssetStores = namedAssetStores
         self.inlineAssetThreshold = inlineAssetThreshold
         self.emitsViewIdentity = emitsViewIdentity
+    }
+
+    /// The stores this context makes available to a render.
+    var assetStores: HTMLAssetStores {
+        HTMLAssetStores(default: assetStore, named: namedAssetStores)
     }
 
     /// Adds an item to the page owner's own items.
@@ -113,12 +127,12 @@ public struct DocumentContext {
     ///   - id: An author-supplied identity, overriding the derived dedupe key.
     /// - Returns: The context, carrying the added item.
     public func with(
-        _ content: HTMLHeadItemContent,
-        slot: HTMLHeadItem.Slot,
+        _ content: HTMLDocumentItemContent,
+        slot: HTMLDocumentItem.Slot,
         id: String? = nil
     ) -> DocumentContext {
         var copy = self
-        copy.items.append(HTMLHeadItem(content, slot: slot, id: id))
+        copy.items.append(HTMLDocumentItem(content, slot: slot, id: id))
         return copy
     }
 
@@ -152,38 +166,12 @@ extension DocumentContext: @MainActor ExpressibleByStringLiteral {
     }
 }
 
-/// Somewhere to publish binary assets that the document references by URL.
-///
-/// Inlining an asset as a data URL costs roughly a third more bytes than the
-/// file, and costs them on every page that carries it, uncached. Publishing to
-/// a store is therefore the policy and inlining the fallback — the reverse of
-/// where this backend started.
-///
-/// Implementations are expected to name files by a hash of their content, which
-/// buys deduplication (one file no matter how many pages use the image) and
-/// safe far-future caching (a changed image is a different URL).
-@MainActor
-public protocol AssetStore: AnyObject {
-    /// Publishes an asset and returns the URL the document should reference.
-    ///
-    /// Implementations must be idempotent: publishing identical bytes twice
-    /// yields one file and the same URL both times.
-    ///
-    /// - Parameters:
-    ///   - data: The asset's bytes.
-    ///   - fileExtension: The extension the file should carry, without a dot.
-    /// - Returns: The URL to reference the asset by, or `nil` if it couldn't be
-    ///   published — in which case the caller inlines instead, so a failing
-    ///   store degrades to a working document rather than a missing image.
-    func publish(_ data: [UInt8], fileExtension: String) -> String?
-}
-
-/// An ``AssetStore`` that writes content-hashed files into a directory.
+/// An ``HTMLAssetStore`` that writes content-hashed files into a directory.
 ///
 /// This is the store an SSG wants: files land in `directory`, and the document
 /// references them under `urlPrefix`.
 @MainActor
-public final class DirectoryAssetStore: AssetStore {
+public final class DirectoryAssetStore: HTMLAssetStore {
     /// The directory files are written into.
     public let directory: URL
     /// The URL prefix the document references files by.
@@ -207,7 +195,9 @@ public final class DirectoryAssetStore: AssetStore {
     public private(set) var writtenFileNames: [String] = []
 
     public func publish(_ data: [UInt8], fileExtension: String) -> String? {
-        let digest = HTMLHeadItemContent.hash(of: Self.digestInput(for: data))
+        let digest = HTMLDocumentItemContent.hash(
+            of: HTMLDocumentItemContent.digestInput(for: data)
+        )
         let name = "\(digest).\(fileExtension)"
 
         if let existing = published[name] {
@@ -229,29 +219,13 @@ public final class DirectoryAssetStore: AssetStore {
                 writtenFileNames.append(name)
             }
         } catch {
-            // The document still needs an image. Returning nil sends the caller
-            // down the data-URL path, which is worse for page size but is a
-            // rendering page rather than a broken one.
+            // The document still needs the asset. Returning nil sends the
+            // caller down the data-URL path, which is worse for page size but
+            // is a rendering page rather than a broken one.
             return nil
         }
 
         published[name] = url
         return url
-    }
-
-    /// Builds the string the content digest is taken over.
-    ///
-    /// FNV-1a runs over UTF-8, so the bytes are mapped into a lossless textual
-    /// form rather than being reinterpreted as text — arbitrary binary isn't
-    /// valid UTF-8, and lossy-decoding it would collapse distinct images onto
-    /// one hash.
-    private static func digestInput(for data: [UInt8]) -> String {
-        var input = String()
-        input.reserveCapacity(data.count * 2)
-        for byte in data {
-            input.append(Character(UnicodeScalar(0x41 + (byte >> 4))))
-            input.append(Character(UnicodeScalar(0x41 + (byte & 0x0f))))
-        }
-        return input
     }
 }

@@ -7,16 +7,16 @@ import SwiftCrossUI
 /// The item is placement-generic rather than head-specific: a script or a
 /// stylesheet is legal in several places, so the item names what it *is* and
 /// the content kind carries its own placement validity (see
-/// ``HTMLHeadItemContent/allowedSlots``). A meta tag, which the HTML parser only
+/// ``HTMLDocumentItemContent/allowedSlots``). A meta tag, which the HTML parser only
 /// honors inside `<head>`, is rejected at registration if it's aimed anywhere
 /// else rather than emitted somewhere it would be silently ignored.
-public struct HTMLHeadItem: Hashable, Sendable {
+public struct HTMLDocumentItem: Hashable, Sendable {
     /// What distinguishes this item from every other one.
     public var key: DedupeKey
     /// Where in the document the item should be emitted.
     public var slot: Slot
     /// The item itself.
-    public var content: HTMLHeadItemContent
+    public var content: HTMLDocumentItemContent
 
     /// Creates an item with an explicit dedupe key.
     ///
@@ -24,7 +24,7 @@ public struct HTMLHeadItem: Hashable, Sendable {
     ///   - key: The item's dedupe key.
     ///   - slot: Where to emit the item.
     ///   - content: The item itself.
-    public init(key: DedupeKey, slot: Slot, content: HTMLHeadItemContent) {
+    public init(key: DedupeKey, slot: Slot, content: HTMLDocumentItemContent) {
         self.key = key
         self.slot = slot
         self.content = content
@@ -46,7 +46,7 @@ public struct HTMLHeadItem: Hashable, Sendable {
     ///   - content: The item itself.
     ///   - slot: Where to emit the item.
     ///   - id: An author-supplied identity, which overrides the derived key.
-    public init(_ content: HTMLHeadItemContent, slot: Slot, id: String? = nil) {
+    public init(_ content: HTMLDocumentItemContent, slot: Slot, id: String? = nil) {
         self.init(
             key: id.map(DedupeKey.id) ?? content.derivedKey,
             slot: slot,
@@ -81,11 +81,11 @@ public struct HTMLHeadItem: Hashable, Sendable {
     }
 }
 
-/// The kinds of machinery a ``HTMLHeadItem`` can carry.
+/// The kinds of machinery a ``HTMLDocumentItem`` can carry.
 ///
 /// Each case knows where it is legal, so placement is a property of the content
 /// rather than a convention callers have to remember.
-public enum HTMLHeadItemContent: Hashable, Sendable {
+public enum HTMLDocumentItemContent: Hashable, Sendable {
     /// An external script, referenced by URL.
     case script(src: String, attributes: [String: String] = [:])
     /// A script whose source is written inline.
@@ -101,17 +101,39 @@ public enum HTMLHeadItemContent: Hashable, Sendable {
     /// The same caller-trusted stance as ``HTMLRawFragment``: whatever is
     /// written here reaches the document unchanged.
     case rawHTML(String)
+    /// A stylesheet the component carries as bytes.
+    ///
+    /// The component states what it needs the document to have; the pipeline
+    /// decides where the bytes live. At emission they resolve through the
+    /// render's asset store and the returned URL becomes the `href`, or the
+    /// bytes inline as a `<style>` body — see ``HTMLAssetDisposition``.
+    case stylesheetBytes(
+        [UInt8],
+        disposition: HTMLAssetDisposition = .automatic,
+        store: String? = nil
+    )
+    /// A script the component carries as bytes.
+    ///
+    /// Resolves the same way ``stylesheetBytes(_:disposition:store:)`` does,
+    /// becoming either a `src` or an inline `<script>` body.
+    case scriptBytes(
+        [UInt8],
+        disposition: HTMLAssetDisposition = .automatic,
+        store: String? = nil,
+        attributes: [String: String] = [:]
+    )
 
     /// The slots this content may be emitted into.
     ///
     /// `nil` means the content is legal anywhere. A meta tag is the case that
     /// isn't: the parser only honors it inside `<head>`, so aiming one at
     /// `bodyEnd` is a mistake worth catching rather than markup worth emitting.
-    public var allowedSlots: Set<HTMLHeadItem.Slot>? {
+    public var allowedSlots: Set<HTMLDocumentItem.Slot>? {
         switch self {
             case .meta:
                 [.head]
-            case .script, .inlineScript, .stylesheet, .style, .rawHTML:
+            case .script, .inlineScript, .stylesheet, .style, .rawHTML,
+                 .stylesheetBytes, .scriptBytes:
                 nil
         }
     }
@@ -120,12 +142,12 @@ public enum HTMLHeadItemContent: Hashable, Sendable {
     ///
     /// - Parameter slot: The slot in question.
     /// - Returns: Whether the content is legal there.
-    public func allows(_ slot: HTMLHeadItem.Slot) -> Bool {
+    public func allows(_ slot: HTMLDocumentItem.Slot) -> Bool {
         allowedSlots?.contains(slot) ?? true
     }
 
     /// The dedupe key this content implies when the author supplies none.
-    var derivedKey: HTMLHeadItem.DedupeKey {
+    var derivedKey: HTMLDocumentItem.DedupeKey {
         switch self {
             case .script(let src, _):
                 .url(src)
@@ -137,6 +159,13 @@ public enum HTMLHeadItemContent: Hashable, Sendable {
                 .contentHash(Self.hash(of: "style:" + css))
             case .rawHTML(let html):
                 .contentHash(Self.hash(of: "raw:" + html))
+            // Keyed off the bytes rather than the eventual URL, which doesn't
+            // exist until emission publishes them: two components carrying
+            // identical bytes have to collapse before either one is written.
+            case .stylesheetBytes(let data, _, _):
+                .contentHash(Self.hash(of: "stylesheet-bytes:" + Self.digestInput(for: data)))
+            case .scriptBytes(let data, _, _, _):
+                .contentHash(Self.hash(of: "script-bytes:" + Self.digestInput(for: data)))
             case .meta(let attributes):
                 .contentHash(
                     Self.hash(
@@ -170,9 +199,28 @@ public enum HTMLHeadItemContent: Hashable, Sendable {
         }
         return String(hash, radix: 36)
     }
+
+    /// Builds the string ``hash(of:)`` is taken over for arbitrary bytes.
+    ///
+    /// FNV-1a runs over UTF-8, so the bytes are mapped into a lossless textual
+    /// form rather than being reinterpreted as text — arbitrary binary isn't
+    /// valid UTF-8, and lossy-decoding it would collapse distinct assets onto
+    /// one hash.
+    ///
+    /// - Parameter data: The bytes to encode.
+    /// - Returns: A lossless textual encoding of them.
+    public static func digestInput(for data: [UInt8]) -> String {
+        var input = String()
+        input.reserveCapacity(data.count * 2)
+        for byte in data {
+            input.append(Character(UnicodeScalar(0x41 + (byte >> 4))))
+            input.append(Character(UnicodeScalar(0x41 + (byte & 0x0f))))
+        }
+        return input
+    }
 }
 
-extension HTMLHeadItem.DedupeKey {
+extension HTMLDocumentItem.DedupeKey {
     /// The key the emitter's own baseline stylesheet registers itself under.
     ///
     /// Registering an item under this key before the reset would have been
@@ -180,7 +228,7 @@ extension HTMLHeadItem.DedupeKey {
     /// the emitter registers its own late. That makes dropping the baseline a
     /// deliberate, visible act in the page owner's code rather than something
     /// that can happen by accident.
-    public static let reset = HTMLHeadItem.DedupeKey.id("scui-reset")
+    public static let reset = HTMLDocumentItem.DedupeKey.id("scui-reset")
 
     /// The identity written into an emitted item's `data-scui-head-id`.
     ///

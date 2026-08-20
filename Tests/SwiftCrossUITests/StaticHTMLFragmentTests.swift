@@ -55,22 +55,24 @@ struct StaticHTMLFragmentTests {
     func contentHashIsStable() {
         // A per-process seed (Hasher) would give one asset a different
         // data-scui-head-id on every build, breaking the cross-tier check.
-        #expect(HTMLHeadItemContent.hash(of: "scui") == HTMLHeadItemContent.hash(of: "scui"))
-        #expect(HTMLHeadItemContent.hash(of: "scui") != HTMLHeadItemContent.hash(of: "scui2"))
+        #expect(HTMLDocumentItemContent.hash(of: "scui") == HTMLDocumentItemContent
+            .hash(of: "scui"))
+        #expect(HTMLDocumentItemContent.hash(of: "scui") != HTMLDocumentItemContent
+            .hash(of: "scui2"))
     }
 
     // MARK: - Placement validity
 
     @Test("A meta tag is only legal in the head")
     func metaIsHeadOnly() {
-        #expect(HTMLHeadItemContent.meta(["name": "x"]).allows(.head))
-        #expect(!HTMLHeadItemContent.meta(["name": "x"]).allows(.bodyEnd))
-        #expect(!HTMLHeadItemContent.meta(["name": "x"]).allows(.custom("aside")))
+        #expect(HTMLDocumentItemContent.meta(["name": "x"]).allows(.head))
+        #expect(!HTMLDocumentItemContent.meta(["name": "x"]).allows(.bodyEnd))
+        #expect(!HTMLDocumentItemContent.meta(["name": "x"]).allows(.custom("aside")))
     }
 
     @Test("Scripts and styles are legal in every slot")
     func scriptsAndStylesArePlacementFree() {
-        for content: HTMLHeadItemContent in [
+        for content: HTMLDocumentItemContent in [
             .script(src: "/a.js"),
             .inlineScript("x"),
             .stylesheet(href: "/a.css"),
@@ -87,20 +89,23 @@ struct StaticHTMLFragmentTests {
 
     @Test("Every emitted item carries the cross-tier marker")
     func emittedItemsCarryTheMarker() {
-        let script = HTMLHeadItem(.script(src: "/js/a.js"), slot: .bodyEnd)
-        #expect(script.rendered(indent: "").contains("data-scui-head-id=\"url:/js/a.js\""))
+        let script = HTMLDocumentItem(.script(src: "/js/a.js"), slot: .bodyEnd)
+        #expect(script.rendered(indent: "", resolver: Self.storelessResolver)
+            .contains("data-scui-head-id=\"url:/js/a.js\""))
 
-        let meta = HTMLHeadItem(.meta(["name": "author"]), slot: .head, id: "author")
-        #expect(meta.rendered(indent: "").contains("data-scui-head-id=\"id:author\""))
+        let meta = HTMLDocumentItem(.meta(["name": "author"]), slot: .head, id: "author")
+        #expect(meta.rendered(indent: "", resolver: Self.storelessResolver)
+            .contains("data-scui-head-id=\"id:author\""))
 
-        let style = HTMLHeadItem(.style("a{}"), slot: .head)
-        #expect(style.rendered(indent: "").contains("data-scui-head-id=\"sha:"))
+        let style = HTMLDocumentItem(.style("a{}"), slot: .head)
+        #expect(style.rendered(indent: "", resolver: Self.storelessResolver)
+            .contains("data-scui-head-id=\"sha:"))
     }
 
     @Test("A script body's closing tag is neutralized so it can't end the element early")
     func neutralizesClosingScriptTagInBody() {
-        let item = HTMLHeadItem(.inlineScript("var s = \"</script>\";"), slot: .bodyEnd)
-        let html = item.rendered(indent: "")
+        let item = HTMLDocumentItem(.inlineScript("var s = \"</script>\";"), slot: .bodyEnd)
+        let html = item.rendered(indent: "", resolver: Self.storelessResolver)
         #expect(html.contains("<\\/script>"))
         // Exactly one real closing tag: the element's own.
         #expect(html.components(separatedBy: "</script>").count == 2)
@@ -108,8 +113,9 @@ struct StaticHTMLFragmentTests {
 
     @Test("Script and style bodies aren't HTML-escaped, since entities don't decode there")
     func doesNotEscapeScriptBodies() {
-        let item = HTMLHeadItem(.inlineScript("if (a && b < c) {}"), slot: .bodyEnd)
-        #expect(item.rendered(indent: "").contains("if (a && b < c) {}"))
+        let item = HTMLDocumentItem(.inlineScript("if (a && b < c) {}"), slot: .bodyEnd)
+        #expect(item.rendered(indent: "", resolver: Self.storelessResolver)
+            .contains("if (a && b < c) {}"))
     }
 
     // MARK: - Registration through the view tree
@@ -118,7 +124,7 @@ struct StaticHTMLFragmentTests {
     func viewContributionReachesTheDocument() {
         let view = VStack {
             Text("Hello")
-                .htmlHeadItem(.stylesheet(href: "/css/widget.css"))
+                .htmlDocumentItem(.stylesheet(href: "/css/widget.css"))
         }
         let html = StaticHTMLRenderer.render(view, context: "Contribution").html
         #expect(html.contains("<link rel=\"stylesheet\" href=\"/css/widget.css\""))
@@ -128,7 +134,7 @@ struct StaticHTMLFragmentTests {
     func repeatedComponentContributesOnce() {
         let view = VStack {
             ForEach([1, 2, 3, 4, 5]) { _ in
-                Text("Row").htmlHeadItem(.stylesheet(href: "/css/row.css"))
+                Text("Row").htmlDocumentItem(.stylesheet(href: "/css/row.css"))
             }
         }
         let html = StaticHTMLRenderer.render(view, context: "Dedupe").html
@@ -139,7 +145,7 @@ struct StaticHTMLFragmentTests {
 
     @Test("Contributions targeting bodyEnd land after the content, not in the head")
     func bodyEndContributionsLandAfterContent() throws {
-        let view = Text("Hi").htmlHeadItem(.script(src: "/js/late.js"), slot: .bodyEnd)
+        let view = Text("Hi").htmlDocumentItem(.script(src: "/js/late.js"), slot: .bodyEnd)
         let html = StaticHTMLRenderer.render(view, context: "Tail").html
 
         let scriptIndex = try #require(html.range(of: "/js/late.js")).lowerBound
@@ -151,9 +157,9 @@ struct StaticHTMLFragmentTests {
 
     @Test("The protocol sugar registers the same items the modifier would")
     func protocolSugarRegistersItems() {
-        struct Highlighted: HTMLHeadContributing {
-            var headItems: [HTMLHeadItem] {
-                [HTMLHeadItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
+        struct Highlighted: HTMLDocumentContributing {
+            var documentItems: [HTMLDocumentItem] {
+                [HTMLDocumentItem(.stylesheet(href: "/css/highlight.css"), slot: .head)]
             }
 
             var body: some View {
@@ -177,7 +183,7 @@ struct StaticHTMLFragmentTests {
 
     @Test("The page owner's items emit after the view tree's contributions")
     func pageOwnerItemsWinOnSourceOrder() throws {
-        let view = Text("Hi").htmlHeadItem(.style("body { color: red }"))
+        let view = Text("Hi").htmlDocumentItem(.style("body { color: red }"))
         let context = DocumentContext(title: "Order")
             .with(.style("body { color: blue }"), slot: .head)
         let html = StaticHTMLRenderer.render(view, context: context).html
@@ -193,7 +199,7 @@ struct StaticHTMLFragmentTests {
         // beat an interned property on source order (the geometry selectors'
         // display:none gates depend on it), which only holds if contributions
         // come after the interned block.
-        let view = Text("Hi").font(.title).htmlHeadItem(.style(".override { font-size: 99px }"))
+        let view = Text("Hi").font(.title).htmlDocumentItem(.style(".override { font-size: 99px }"))
         let html = StaticHTMLRenderer.render(view, context: "Cascade").html
 
         let interned = try #require(html.range(of: ".scui-0 {")).lowerBound
@@ -698,6 +704,234 @@ struct StaticHTMLFragmentTests {
         #expect(bare.documentInfo.imagesMissingAltText == ["Image"])
     }
 
+    // MARK: - Byte-carrying document items
+
+    @Test("A stylesheet carried as bytes becomes a published file the document links")
+    func publishesStylesheetBytes() throws {
+        let directory = Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let css = Array(".hero { color: red }".utf8)
+        let view = Text("Hero")
+            .htmlDocumentItem(.stylesheetBytes(css, disposition: .published))
+        let context = DocumentContext(
+            title: "Bytes",
+            assetStore: DirectoryAssetStore(directory: directory)
+        )
+        let html = StaticHTMLRenderer.render(view, context: context).html
+
+        #expect(html.contains("<link rel=\"stylesheet\" href=\"assets/"))
+        // The bytes are in the file, not the document.
+        #expect(!html.contains(".hero { color: red }"))
+
+        let written = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        let name = try #require(written.first)
+        #expect(name.hasSuffix(".css"))
+        #expect(html.contains("assets/\(name)"))
+
+        let contents = try String(
+            contentsOf: directory.appendingPathComponent(name),
+            encoding: .utf8
+        )
+        #expect(contents == ".hero { color: red }")
+    }
+
+    @Test("An inline-disposition stylesheet carries its bytes as a style body")
+    func inlinesStylesheetBytes() throws {
+        let directory = Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let css = Array(".hero { color: red }".utf8)
+        let view = Text("Hero")
+            .htmlDocumentItem(.stylesheetBytes(css, disposition: .inline))
+        let context = DocumentContext(
+            title: "Inline",
+            assetStore: DirectoryAssetStore(directory: directory)
+        )
+        let html = StaticHTMLRenderer.render(view, context: context).html
+
+        #expect(html.contains(".hero { color: red }"))
+        // A style body rather than a data-URL link, which would be a
+        // render-blocking fetch of bytes already in hand.
+        #expect(!html.contains("data:text/css"))
+        #expect(!html.contains("<link rel=\"stylesheet\""))
+        // An inline disposition asks for no file, so the store stays untouched.
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    @Test("With nowhere to publish, byte-carrying items fall back to an inline body")
+    func fallsBackToInlineWithoutAStore() {
+        let script = Array("console.log('hi')".utf8)
+        let view = Text("Body")
+            .htmlDocumentItem(.scriptBytes(script, disposition: .published), slot: .bodyEnd)
+        let html = StaticHTMLRenderer.render(view, context: "No store").html
+
+        #expect(html.contains("console.log('hi')"))
+        #expect(!html.contains("<script src="))
+    }
+
+    @Test("A script carried as bytes becomes a published file the document sources")
+    func publishesScriptBytes() throws {
+        let directory = Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let script = Array("console.log('hi')".utf8)
+        let view = Text("Body")
+            .htmlDocumentItem(
+                .scriptBytes(script, disposition: .published, attributes: ["defer": ""]),
+                slot: .bodyEnd
+            )
+        let context = DocumentContext(
+            title: "Script",
+            assetStore: DirectoryAssetStore(directory: directory)
+        )
+        let html = StaticHTMLRenderer.render(view, context: context).html
+
+        #expect(html.contains("<script src=\"assets/"))
+        #expect(html.contains("defer=\"\""))
+        #expect(!html.contains("console.log('hi')"))
+
+        let written = try FileManager.default.contentsOfDirectory(atPath: directory.path)
+        #expect(try #require(written.first).hasSuffix(".js"))
+    }
+
+    @Test("The automatic disposition honors the inline threshold the page owner set")
+    func automaticDispositionHonorsTheThreshold() throws {
+        let directory = Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let css = Array(".a{}".utf8)
+        let view = Text("Hero").htmlDocumentItem(.stylesheetBytes(css))
+        let context = DocumentContext(
+            title: "Threshold",
+            assetStore: DirectoryAssetStore(directory: directory),
+            // Far above these few bytes, so the threshold is what decides.
+            inlineAssetThreshold: 100_000
+        )
+        let html = StaticHTMLRenderer.render(view, context: context).html
+
+        #expect(html.contains(".a{}"))
+        #expect(!FileManager.default.fileExists(atPath: directory.path))
+    }
+
+    @Test("Byte-carrying items dedupe on their bytes, before anything is written")
+    func deduplicatesByteItemsByContent() throws {
+        let directory = Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let css = Array(".shared{}".utf8)
+        // Two unrelated views carrying identical bytes: one file, one link.
+        let view = VStack {
+            Text("One").htmlDocumentItem(.stylesheetBytes(css, disposition: .published))
+            Text("Two").htmlDocumentItem(.stylesheetBytes(css, disposition: .published))
+        }
+        let context = DocumentContext(
+            title: "Dedupe",
+            assetStore: DirectoryAssetStore(directory: directory)
+        )
+        let html = StaticHTMLRenderer.render(view, context: context).html
+
+        #expect(html.components(separatedBy: "<link rel=\"stylesheet\"").count == 2)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).count == 1)
+    }
+
+    @Test("A named store takes the bytes aimed at it, leaving the default store alone")
+    func routesToANamedStore() throws {
+        let defaultDirectory = Self.temporaryDirectory()
+        let namedDirectory = Self.temporaryDirectory()
+        defer {
+            try? FileManager.default.removeItem(at: defaultDirectory)
+            try? FileManager.default.removeItem(at: namedDirectory)
+        }
+
+        let css = Array(".cdn{}".utf8)
+        let view = Text("Hero")
+            .htmlDocumentItem(
+                .stylesheetBytes(css, disposition: .published, store: "cdn")
+            )
+        let context = DocumentContext(
+            title: "Named",
+            assetStore: DirectoryAssetStore(directory: defaultDirectory),
+            namedAssetStores: [
+                "cdn": DirectoryAssetStore(directory: namedDirectory, urlPrefix: "cdn")
+            ]
+        )
+        let html = StaticHTMLRenderer.render(view, context: context).html
+
+        #expect(html.contains("href=\"cdn/"))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: namedDirectory.path).count == 1)
+        #expect(!FileManager.default.fileExists(atPath: defaultDirectory.path))
+    }
+
+    @Test("An unregistered store name falls back to the default rather than dropping bytes")
+    func unknownStoreNameFallsBackToTheDefault() throws {
+        let directory = Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let css = Array(".fallback{}".utf8)
+        let view = Text("Hero")
+            .htmlDocumentItem(
+                .stylesheetBytes(css, disposition: .published, store: "never-configured")
+            )
+        let context = DocumentContext(
+            title: "Fallback",
+            assetStore: DirectoryAssetStore(directory: directory)
+        )
+        let html = StaticHTMLRenderer.render(view, context: context).html
+
+        #expect(html.contains("href=\"assets/"))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).count == 1)
+    }
+
+    // MARK: - Publishing from the view tree
+
+    @Test("A view reaches the render's store through the environment and gets a URL back")
+    func viewPublishesThroughTheEnvironment() throws {
+        let directory = Self.temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let context = DocumentContext(
+            title: "Publishing",
+            assetStore: DirectoryAssetStore(directory: directory)
+        )
+        let html = StaticHTMLRenderer.render(Self.publishingView(), context: context).html
+
+        // The view wove the URL it received into its own markup, which is what
+        // the environment surface exists for.
+        #expect(html.contains("href=\"assets/"))
+        #expect(try FileManager.default.contentsOfDirectory(atPath: directory.path).count == 1)
+    }
+
+    @Test("Under a backend with no store, publishing yields nil and the view stays portable")
+    func publishingIsANoOpWithoutAStore() {
+        let html = StaticHTMLRenderer.render(Self.publishingView(), context: "Portable").html
+        #expect(html.contains("data-unpublished"))
+    }
+
+    // MARK: - Collision guard
+
+    @Test("A derived-key collision carrying identical content dedupes without tripping the guard")
+    func matchingContentUnderADerivedKeyIsSilent() {
+        // The guard traps only where the content differs, which can't be
+        // asserted here: an assertion failure takes the process down rather
+        // than recording an issue. This pins the other side of the branch —
+        // the collision the guard must stay silent about.
+        let registry = HTMLFragmentRegistry()
+        #expect(registry.register(.script(src: "/js/a.js"), slot: .bodyEnd))
+        #expect(!registry.register(.script(src: "/js/a.js"), slot: .bodyEnd))
+        #expect(registry.items(in: .bodyEnd).count == 1)
+    }
+
+    @Test("An author id stays exempt from the guard, since overriding is what it's for")
+    func authorIDIsExemptFromTheCollisionGuard() {
+        let registry = HTMLFragmentRegistry()
+        registry.register(.script(src: "/js/v1.js"), slot: .bodyEnd, id: "analytics")
+        // Different content under one author-chosen key is a deliberate
+        // override, so this must not trip the guard.
+        registry.register(.script(src: "/js/v2.js"), slot: .bodyEnd, id: "analytics")
+        #expect(registry.items(in: .bodyEnd).count == 1)
+    }
+
     // MARK: - Integration
 
     @Test("A page using every surface emits them in the designed source order")
@@ -709,10 +943,10 @@ struct StaticHTMLFragmentTests {
             Text("Heading").font(.title)
             Self.testImage()
             Text("Body")
-                .htmlHeadItem(.style(".contributed { color: red }"))
-                .htmlHeadItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
+                .htmlDocumentItem(.style(".contributed { color: red }"))
+                .htmlDocumentItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
             // Registered twice by two different views; one tag comes out.
-            Text("Twin").htmlHeadItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
+            Text("Twin").htmlDocumentItem(.script(src: "/js/widget.js"), slot: .bodyEnd)
             HTMLSlot("aside")
             HTMLRawFragment("<hr id=\"raw\">")
         }
@@ -720,9 +954,9 @@ struct StaticHTMLFragmentTests {
         let context = DocumentContext(
             title: "Everything",
             items: [
-                HTMLHeadItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
-                HTMLHeadItem(.style(".owned { color: blue }"), slot: .head),
-                HTMLHeadItem(.inlineScript("console.log('tail')"), slot: .bodyEnd),
+                HTMLDocumentItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
+                HTMLDocumentItem(.style(".owned { color: blue }"), slot: .head),
+                HTMLDocumentItem(.inlineScript("console.log('tail')"), slot: .bodyEnd),
             ],
             customSlots: ["aside"],
             assetStore: DirectoryAssetStore(directory: directory)
@@ -811,9 +1045,9 @@ struct StaticHTMLFragmentTests {
         let context = DocumentContext(
             title: "Metadata",
             items: [
-                HTMLHeadItem(.meta(["name": "description", "content": "A page."]), slot: .head),
-                HTMLHeadItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
-                HTMLHeadItem(
+                HTMLDocumentItem(.meta(["name": "description", "content": "A page."]), slot: .head),
+                HTMLDocumentItem(.meta(["name": "author", "content": "fbartho"]), slot: .head),
+                HTMLDocumentItem(
                     .meta(["property": "og:type", "content": "article"]),
                     slot: .head
                 ),
@@ -871,5 +1105,43 @@ struct StaticHTMLFragmentTests {
     private static func temporaryDirectory() -> URL {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("scui-assets-\(UUID().uuidString)")
+    }
+
+    /// A resolver with nowhere to publish, for items carrying no bytes.
+    private static var storelessResolver: HTMLAssetResolver {
+        HTMLAssetResolver(stores: HTMLAssetStores(), inlineThreshold: nil)
+    }
+
+    /// A view that publishes bytes during its own body evaluation and writes
+    /// the URL it gets back into its markup.
+    private static func publishingView() -> some View {
+        PublishingView()
+    }
+
+    /// Publishes bytes from the view tree, marking the markup with whichever
+    /// outcome it got so a test can tell them apart.
+    private struct PublishingView: View {
+        @Environment(\.self) var environment
+
+        /// The attributes naming what the publish returned.
+        ///
+        /// A computed property rather than a `let` inside `body`: `body` is
+        /// `@ViewBuilder`, and a multi-statement body opts out of the builder,
+        /// which loses the anchoring modifier's association with the widget.
+        private var attributes: [String: HTMLAttributeOp] {
+            guard
+                let url = environment.publishHTMLAsset(
+                    Array(".published{}".utf8),
+                    fileExtension: "css"
+                )
+            else {
+                return ["data-unpublished": .set("")]
+            }
+            return ["href": .set(url)]
+        }
+
+        var body: some View {
+            Text("Published").htmlAttributes(attributes)
+        }
     }
 }

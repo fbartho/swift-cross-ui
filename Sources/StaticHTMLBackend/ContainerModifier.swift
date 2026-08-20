@@ -42,7 +42,7 @@ extension View {
                 + "happened to produce, not the container you meant."
         )
         return htmlAttributes([containerMarkerAttribute: .set(name)])
-            .htmlHeadItem(
+            .htmlDocumentItem(
                 .style(
                     """
                     [\(containerMarkerAttribute)="\(GSelCSS.attributeSelectorLiteral(name))"] { \

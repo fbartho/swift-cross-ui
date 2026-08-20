@@ -374,7 +374,7 @@ struct GeometrySelectorTests {
 
     @Test("No data-gsel markers or gating CSS exist on a measuring tier")
     func measuringTierEmitsNoStaticMachinery() {
-        // htmlAttributes/.container's htmlHeadItem are both StaticHTMLBackend
+        // htmlAttributes/.container's htmlDocumentItem are both StaticHTMLBackend
         // environment-registry no-ops under any other backend (documented on
         // both modifiers) — this asserts that portability contract holds for
         // GeometrySelector's own emission, not just the modifiers it's built
