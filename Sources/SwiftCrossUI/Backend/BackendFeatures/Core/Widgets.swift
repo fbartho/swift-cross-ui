@@ -239,6 +239,23 @@ extension BackendFeatures {
         /// - Parameter widget: The container standing in for the spacer.
         func describeSpacer(of widget: Widget)
 
+        /// Tells the backend that a container exists only to pass context to
+        /// its child, as with ``SwiftCrossUI/View/environment(_:_:)``.
+        ///
+        /// The default implementation does nothing, for the same reason as
+        /// ``describeSpacer(of:)``: a backend that positions children itself
+        /// has nothing to do differently. It matters to a backend
+        /// re-expressing layout as flow, which would otherwise give the
+        /// container arranging declarations nothing asked for — a
+        /// context-passing view forwards to its body and so becomes a
+        /// single-child stack that
+        /// ``describeStackLayout(of:orientation:alignment:spacing:)``
+        /// describes like any other, and nothing in that description says
+        /// the arrangement is incidental rather than authored.
+        ///
+        /// - Parameter widget: The container passing context to its child.
+        func describeContextInheritance(of widget: Widget)
+
         /// Tells the backend that a container is standing in for a
         /// ``SwiftCrossUI/Divider``.
         ///
@@ -337,6 +354,11 @@ extension BackendFeatures.Widgets {
     public func describeSpacer(of widget: Widget) {
         // As above: a backend that positions children itself already has
         // the spacer's effect baked into its committed size.
+    }
+
+    public func describeContextInheritance(of widget: Widget) {
+        // As above: a backend that positions children itself arranges nothing
+        // on the container's behalf, so it has nothing to suppress.
     }
 
     public func describeDivider(of widget: Widget) {

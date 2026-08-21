@@ -1297,6 +1297,12 @@ public struct HTMLEmitter {
         guard container.children.count == 1 else {
             return nil
         }
+        // A percentage-width child resolves against whichever ancestor
+        // survives, so this wrapper is the box it is sizing against even
+        // though the wrapper declares nothing itself.
+        guard !container.children[0].widget.emitsPercentageWidth else {
+            return nil
+        }
         // At one child the wrapper shrink-wraps, so its own align-items has no
         // slack to place the child within — measured identical across every
         // parent × wrapper alignment pair except a stretching parent, which a
@@ -1435,7 +1441,14 @@ public struct HTMLEmitter {
                 || (container.declaredMaxHeight == .infinity && container.declaredHeight == nil)
         let stretchesUndeclaredAxis = stretchesUndeclaredAxis || declaresInfiniteStretch
 
-        guard let stack = container.stackLayout else {
+        // A context-passing container's stack description is incidental: it
+        // forwards to a single-child body, and that is the only reason the
+        // layout system described an arrangement at all. Writing the flex
+        // declarations for it is what makes an otherwise inert element change
+        // its child's sizing, so this container arranges nothing and takes the
+        // undescribed path below like any other plain wrapper.
+        let inheritsContext = container.inheritsContext && container.children.count == 1
+        guard let stack = inheritsContext ? nil : container.stackLayout else {
             // A single child inset from every edge is padding, which flow
             // expresses directly. The insets are exactly recoverable: the
             // child's offset gives the leading and top ones, and whatever of

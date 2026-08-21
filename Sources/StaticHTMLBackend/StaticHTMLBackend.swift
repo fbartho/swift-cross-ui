@@ -149,6 +149,20 @@ public final class StaticHTMLBackend:
                 && !isSpacer && !isDivider && declaredAspectRatio == nil
         }
 
+        /// Whether this widget emits a width expressed as a percentage of
+        /// whatever box contains it.
+        ///
+        /// Such a widget resolves its width against the nearest surviving
+        /// ancestor, so a wrapper above it is load-bearing even when the
+        /// wrapper carries nothing of its own: splicing the wrapper away
+        /// re-resolves the percentage against a different box. The
+        /// declaration is written in the emitter's control arm, after the
+        /// elision decision has already been taken, so the decision reads
+        /// the widget kind here rather than the emitted style.
+        var emitsPercentageWidth: Bool {
+            self is Slider
+        }
+
         /// Whether ``View/disabled(_:)`` was in scope when this widget was
         /// updated.
         ///
@@ -215,6 +229,14 @@ public final class StaticHTMLBackend:
         /// from ``BackendFeatures/Widgets/describeDivider(of:)``. See
         /// ``isSpacer`` for why this replaces a ``tag`` string match.
         public var isDivider = false
+        /// Whether this widget exists only to pass context to its child, from
+        /// ``BackendFeatures/Widgets/describeContextInheritance(of:)``.
+        ///
+        /// The stack description such a container carries is incidental —
+        /// forwarding to a single-child body is what produced it — so the
+        /// emitter writes no arranging declarations for it. See
+        /// ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
+        public var inheritsContext = false
         /// Whether this widget sits inside a ``ViewLabelButton``'s label
         /// subtree, from ``StaticHTMLRenderer``'s label-boundary pass.
         ///
@@ -839,6 +861,10 @@ public final class StaticHTMLBackend:
 
     public func describeSpacer(of widget: Widget) {
         widget.isSpacer = true
+    }
+
+    public func describeContextInheritance(of widget: Widget) {
+        widget.inheritsContext = true
     }
 
     public func describeDivider(of widget: Widget) {
