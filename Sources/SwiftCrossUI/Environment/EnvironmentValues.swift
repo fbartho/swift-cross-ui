@@ -240,19 +240,19 @@ extension EnvironmentValues {
     ///
     /// Inherited by ``ForEach`` and ``Group`` so that they can be used without
     /// affecting layout.
-    @Entry public var layoutOrientation: Orientation = .vertical
+    @Entry public var layoutOrientation: Orientation = StackLayoutContext.default.orientation
 
     /// The guide the current stack aligns its children on, across its axis.
     ///
     /// Inherited by ``ForEach`` and ``Group`` so that they can be used without
     /// affecting layout.
-    @Entry public var layoutAlignment: AlignmentKey = HorizontalAlignment.center.key
+    @Entry public var layoutAlignment: AlignmentKey = StackLayoutContext.default.alignment
 
     /// The current stack spacing.
     ///
     /// Inherited by ``ForEach`` and ``Group`` so that they can be used without
     /// affecting layout.
-    @Entry public var layoutSpacing: Int = 10
+    @Entry public var layoutSpacing: Int = StackLayoutContext.default.spacing
 
     /// The current font.
     @Entry public var font: Font = .body
@@ -268,6 +268,11 @@ extension EnvironmentValues {
 
     /// How lines should be aligned relative to each other when line wrapped.
     @Entry public var multilineTextAlignment: HorizontalAlignment = .leading
+
+    /// Whether to override the case of displayed ``Text`` views.
+    ///
+    /// `nil` displays the text without any case changes.
+    @Entry public var textCase: Text.Case?
 
     /// The current color scheme of the current view scope.
     @Entry public var colorScheme: ColorScheme = .light
@@ -423,6 +428,9 @@ extension EnvironmentValues {
     /// The current time zone that views should use when handling dates.
     @Entry public var timeZone: TimeZone = .current
 
+    /// The current locale.
+    @Entry public var locale: Locale = .current
+
     /// The display style used by ``Picker``.
     @Entry public var pickerStyle: any PickerStyle = .automatic
 
@@ -469,6 +477,20 @@ extension EnvironmentValues {
     /// The device class of the current device.
     @MainActor
     public var deviceClass: DeviceClass { backend.deviceClass }
+}
+
+extension EnvironmentValues {
+    func applyingTextTransforms(to string: String) -> String {
+        var string = string
+
+        switch textCase {
+            case .lowercase: string = string.lowercased(with: locale)
+            case .uppercase: string = string.uppercased(with: locale)
+            case nil: break
+        }
+
+        return string
+    }
 }
 
 /// A key that can be used to extend the environment with new properties.
