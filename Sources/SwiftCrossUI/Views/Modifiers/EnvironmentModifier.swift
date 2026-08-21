@@ -49,6 +49,11 @@ struct EnvironmentModifier<Child: View>: View {
             environment: modification(environment),
             backend: backend
         )
+        // Forwarding to `body` makes this a single-child stack, which the
+        // layout system describes as an arrangement like any other. Only this
+        // view knows the arrangement is incidental — it exists to carry an
+        // environment value, not to place anything.
+        backend.describeContextInheritance(of: widget)
     }
 
     public var _asMenuItems: [MenuItem] {

@@ -46,6 +46,9 @@ public struct AnyView: TypeSafeView {
         let container = backend.createContainer()
         backend.insert(children.node.getWidget().into(), into: container, at: 0)
         backend.setPosition(ofChildAt: 0, in: container, to: .zero)
+        // This container exists to hold the erased child, not to place it:
+        // the child is inserted at the origin and sized to this view.
+        backend.describeContextInheritance(of: container)
         return container
     }
 

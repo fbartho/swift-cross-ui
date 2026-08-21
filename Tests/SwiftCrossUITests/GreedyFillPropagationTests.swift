@@ -36,18 +36,15 @@ struct GreedyFillPropagationTests {
     }
 
     @MainActor
-    @Test("Padded, colored Slider fill propagation (known issue)")
-    func paddedSliderFillPropagationKnownIssue() {
-        // The defect this suite pins: .foregroundColor(.gray).padding() on a
-        // Slider inside VStack(alignment: .leading) renders the slider at
-        // its natural ~100px width in a browser, not filling the stack, even
-        // though SwiftCrossUI's own layout system commits it at full width
-        // (1180x10 for a 1200-wide proposal against DummyBackend). The
-        // surviving PaddingModifierView and EnvironmentModifier wrappers
-        // between the stack and the <input> carry only padding/flex-trio
-        // declarations, none of which is a fill declaration, so the leaf's
-        // width:100% resolves against their shrink-wrapped box instead of
-        // the stack's.
+    @Test("Fill reaches a padded, colored Slider through every wrapper above it")
+    func paddedSliderFillPropagates() {
+        // .foregroundColor(.gray).padding() on a Slider inside
+        // VStack(alignment: .leading) has to render the slider filling the
+        // stack, matching what SwiftCrossUI's own layout system commits for
+        // the same composition: 1180x10 for a 1200-wide proposal against
+        // DummyBackend. Every wrapper the leaf's width:100% resolves through
+        // therefore has to be as wide as the stack — one that shrink-wraps is
+        // the box the percentage lands against, and the fill stops there.
         let html = StaticHTMLRenderer.render(
             VStack(alignment: .leading) {
                 Slider(value: Self.box(0.5), in: 0.0...1.0)
@@ -59,33 +56,30 @@ struct GreedyFillPropagationTests {
 
         let lines = html.split(separator: "\n").map(String.init)
         guard
-            let stackIndex = lines.firstIndex(where: { $0.contains(#"data-scui="VStack""#) }),
+            let rootIndex = lines.firstIndex(where: { $0.contains(#"id="root""#) }),
             let inputIndex = lines.firstIndex(where: { $0.contains("<input") }),
-            stackIndex < inputIndex
+            rootIndex < inputIndex
         else {
-            Issue.record("Expected a VStack ancestor line before the input element")
+            Issue.record("Expected the root element before the input element")
             return
         }
 
-        // Every div strictly between the stack and the input is an
-        // intermediate wrapper. The fix (deferred) will make fill propagate
-        // through each of them; its exact declaration is undecided, so any
-        // of these three spellings satisfies it.
+        // Every div strictly between the root and the input is an
+        // intermediate wrapper — whichever of them survive elision are what
+        // the leaf's percentage resolves through. Any of these spellings
+        // makes a wrapper as wide as its own parent, which is what the
+        // contract asks for; the emitter picks one.
         let fillMarkers = ["align-self:stretch", "width:100%", "flex-grow"]
-        let wrapperLines = lines[(stackIndex + 1)..<inputIndex].filter { $0.contains("<div") }
+        let wrapperLines = lines[(rootIndex + 1)..<inputIndex].filter { $0.contains("<div") }
 
         #expect(!wrapperLines.isEmpty, "Expected at least one intermediate wrapper div")
 
-        withKnownIssue(
-            "Fill doesn't yet propagate through surviving wrappers — deferred to the elision-redesign wave"
-        ) {
-            for wrapperLine in wrapperLines {
-                let rule = Self.internedRule(forClassOn: wrapperLine, in: html)
-                let carriesFill = fillMarkers.contains { marker in
-                    rule?.contains(marker) == true
-                }
-                #expect(carriesFill, "Wrapper line carries no fill declaration: \(wrapperLine)")
+        for wrapperLine in wrapperLines {
+            let rule = Self.internedRule(forClassOn: wrapperLine, in: html)
+            let carriesFill = fillMarkers.contains { marker in
+                rule?.contains(marker) == true
             }
+            #expect(carriesFill, "Wrapper line carries no fill declaration: \(wrapperLine)")
         }
     }
 

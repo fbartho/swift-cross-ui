@@ -221,11 +221,6 @@ public struct HTMLEmitter {
     ///     whose children didn't all share the same
     ///     ``SwiftCrossUI/View/layoutPriority(_:)``. See
     ///     ``HTMLEmitter/priorityAllocations(of:orientation:)``.
-    ///   - parentIsFlex: Whether the element this widget will be emitted
-    ///     inside is a flex container. Consulted only by
-    ///     ``HTMLEmitter/elidableContainer(_:placement:parentIsFlex:)``, whose
-    ///     guard is a property of the surviving parent rather than of the
-    ///     wrapper being considered — see that method for why.
     /// - Returns: The widget's markup.
     public mutating func emit(
         _ widget: StaticHTMLBackend.Widget,
@@ -235,8 +230,7 @@ public struct HTMLEmitter {
         inheritedFrame: InheritedFrame? = nil,
         stretchesUndeclaredAxis: Bool = false,
         priorityAllocation: PriorityAllocation? = nil,
-        childContentModel: ChildContentModel = .flow,
-        parentIsFlex: Bool = false
+        childContentModel: ChildContentModel = .flow
     ) -> String {
         let indent = String(repeating: "  ", count: indentLevel + 1)
 
@@ -250,10 +244,10 @@ public struct HTMLEmitter {
         //
         // This is not subsumed by the elision rule below, which answers a
         // different question: elision asks whether an element does any work,
-        // and a wrapper under a `<ul>` is refused there precisely because the
-        // list is not a flex container, so its child's sizing would change.
-        // Validity is the stronger claim, and it holds whatever the style
-        // says — so the two rules coexist rather than one retiring the other.
+        // and a wrapper that does some — an authored tag, a declared frame —
+        // is kept there while still being invalid inside a `<ul>`. Validity
+        // is the stronger claim, and it holds whatever the style says, so the
+        // two rules coexist rather than one retiring the other.
         if childContentModel.excludes(widget, emitter: self) {
             return emitChildren(
                 widget.getChildren().map { ($0, SIMD2<Int>.zero) },
@@ -273,8 +267,7 @@ public struct HTMLEmitter {
         if let elided = elidableContainer(
             widget,
             placement: placement,
-            priorityAllocation: priorityAllocation,
-            parentIsFlex: parentIsFlex
+            priorityAllocation: priorityAllocation
         ) {
             return emitChildren(
                 elided.children,
@@ -282,8 +275,7 @@ public struct HTMLEmitter {
                 indent: indent,
                 indentLevel: indentLevel - 1,
                 stretchesUndeclaredAxis: stretchesUndeclaredAxis,
-                childContentModel: childContentModel,
-                parentIsFlex: parentIsFlex
+                childContentModel: childContentModel
             )
             .trimmingCharacters(in: CharacterSet(charactersIn: "\n"))
         }
@@ -615,9 +607,7 @@ public struct HTMLEmitter {
                         placement: .flow,
                         indent: indent,
                         indentLevel: indentLevel,
-                        childContentModel: childModel,
-                        // The control is display:inline-flex, set above.
-                        parentIsFlex: true
+                        childContentModel: childModel
                     )
                     isRawInner = true
                 }
@@ -1212,19 +1202,17 @@ public struct HTMLEmitter {
     /// the view tree's shape rather than the document's, and the reader has no
     /// use for it.
     ///
-    /// Two conditions here are not local properties of the wrapper, and both
-    /// were established by measurement rather than derived:
+    /// A wrapper reaching the end of this test carries no declarations at all,
+    /// and an element with no declarations is measured byte-identical to no
+    /// element: its child's position, size, computed `display`, margins, and
+    /// descendants all match with the wrapper spliced out, under every parent
+    /// formatting context. So the surviving parent does not enter the
+    /// decision — what would have made it matter is the flex trio, which a
+    /// wrapper that arranges nothing never writes.
     ///
-    /// - `align-items` is functional at any child count except at
-    ///   `flex-start`. It places the child on the cross axis *within this
-    ///   element's own box*, so a lone centered child moves when the wrapper
-    ///   goes; only `flex-start` names the position block flow already gives.
-    /// - A `display:flex` wrapper may only go when its parent is also flex.
-    ///   Whether the child is a flex item or a block box decides both its
-    ///   cross-axis sizing (a flex item shrink-wraps; a block box fills) and
-    ///   whether an inline child is blockified, and that is settled by
-    ///   whichever ancestor survives — hence `parentIsFlex`, not a property of
-    ///   this element.
+    /// What does remain is a property of the *child*: one that resolves its
+    /// sizing against its container is sizing against this wrapper, so
+    /// splicing the wrapper away re-resolves it against a different box.
     ///
     /// The test is by construction rather than by inspecting the finished
     /// style: every branch that would contribute a declaration is refused
@@ -1238,13 +1226,11 @@ public struct HTMLEmitter {
     ///   - priorityAllocation: The flex declarations the parent stack derived
     ///     for this child, if any. They are real declarations on this
     ///     element, so carrying them is function.
-    ///   - parentIsFlex: Whether the surviving parent is a flex container.
     /// - Returns: The container to splice away, or `nil` to emit the element.
     func elidableContainer(
         _ widget: StaticHTMLBackend.Widget,
         placement: Placement,
-        priorityAllocation: PriorityAllocation?,
-        parentIsFlex: Bool
+        priorityAllocation: PriorityAllocation?
     ) -> StaticHTMLBackend.Container? {
         guard placement == .flow, priorityAllocation == nil else {
             return nil
@@ -1297,14 +1283,10 @@ public struct HTMLEmitter {
         guard container.children.count == 1 else {
             return nil
         }
-        // At one child the wrapper shrink-wraps, so its own align-items has no
-        // slack to place the child within — measured identical across every
-        // parent × wrapper alignment pair except a stretching parent, which a
-        // stack alignment can never produce: every description resolves through
-        // `closestEdge` to flex-start/center/flex-end, custom guides included.
-        // What still decides the child's sizing is whichever ancestor survives,
-        // hence parentIsFlex.
-        guard parentIsFlex else {
+        // A percentage-width child resolves against whichever ancestor
+        // survives, so this wrapper is the box it is sizing against even
+        // though the wrapper declares nothing itself.
+        guard !container.children[0].widget.emitsPercentageWidth else {
             return nil
         }
         return container
@@ -1435,7 +1417,14 @@ public struct HTMLEmitter {
                 || (container.declaredMaxHeight == .infinity && container.declaredHeight == nil)
         let stretchesUndeclaredAxis = stretchesUndeclaredAxis || declaresInfiniteStretch
 
-        guard let stack = container.stackLayout else {
+        // A context-passing container's stack description is incidental: it
+        // forwards to a single-child body, and that is the only reason the
+        // layout system described an arrangement at all. Writing the flex
+        // declarations for it is what makes an otherwise inert element change
+        // its child's sizing, so this container arranges nothing and takes the
+        // undescribed path below like any other plain wrapper.
+        let inheritsContext = container.inheritsContext && container.children.count == 1
+        guard let stack = inheritsContext ? nil : container.stackLayout else {
             // A single child inset from every edge is padding, which flow
             // expresses directly. The insets are exactly recoverable: the
             // child's offset gives the leading and top ones, and whatever of
@@ -1535,8 +1524,7 @@ public struct HTMLEmitter {
                         indentLevel: indentLevel,
                         inheritedFrame: inheritedFrame,
                         stretchesUndeclaredAxis: stretchesUndeclaredAxis,
-                        childContentModel: childContentModel,
-                        parentIsFlex: style.value(for: "display") == "flex"
+                        childContentModel: childContentModel
                     )
                 }
             }
@@ -1635,8 +1623,7 @@ public struct HTMLEmitter {
             indentLevel: indentLevel,
             stretchesUndeclaredAxis: stretchesUndeclaredAxis,
             priorityAllocations: allocations,
-            childContentModel: childContentModel,
-            parentIsFlex: true
+            childContentModel: childContentModel
         )
     }
 
@@ -2002,9 +1989,6 @@ public struct HTMLEmitter {
     ///     is most of them): see the call site in
     ///     ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
     ///     An element within the array is `nil` for a child that takes none.
-    ///   - parentIsFlex: Whether the element these children are being emitted
-    ///     inside is a flex container. Forwarded to each child's own ``emit``
-    ///     call, which is where the elision guard reads it.
     private mutating func emitChildren(
         _ children: [(widget: StaticHTMLBackend.Widget, position: SIMD2<Int>)],
         placement: Placement,
@@ -2013,8 +1997,7 @@ public struct HTMLEmitter {
         inheritedFrame: InheritedFrame? = nil,
         stretchesUndeclaredAxis: Bool = false,
         priorityAllocations: [PriorityAllocation?]? = nil,
-        childContentModel: ChildContentModel = .flow,
-        parentIsFlex: Bool = false
+        childContentModel: ChildContentModel = .flow
     ) -> String {
         guard !children.isEmpty else {
             return ""
@@ -2030,8 +2013,7 @@ public struct HTMLEmitter {
                 inheritedFrame: inheritedFrame,
                 stretchesUndeclaredAxis: stretchesUndeclaredAxis,
                 priorityAllocation: priorityAllocations.flatMap { $0[offset] },
-                childContentModel: childContentModel,
-                parentIsFlex: parentIsFlex
+                childContentModel: childContentModel
             )
             output += "\n"
         }
