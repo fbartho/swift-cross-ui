@@ -250,6 +250,51 @@ struct StaticHTMLElisionTests {
     }
 
     @MainActor
+    @Test("A spacer survives elision, keeping the flex shorthand that is its whole effect")
+    func spacerSurvives() {
+        // A Spacer is an empty container: it holds no children to splice into
+        // its place, and its `flex:1 1 0%` is the entirety of what it does —
+        // an element with no content whose only output is a declaration is
+        // the opposite of the inert wrapper elision removes. The shorthand is
+        // asserted exactly, since a spacer surviving without it would occupy
+        // no space at all.
+        let between = StaticHTMLRenderer.render(
+            HStack {
+                Text("Left")
+                Spacer()
+                Text("Right")
+            },
+            context: "Spacer between",
+            size: SIMD2(600, 200)
+        ).html
+
+        let spacer = Self.elementLine(taggedWith: "Spacer", in: between)
+        #expect(spacer != nil)
+        #expect(
+            Self.internedRule(forClassOn: spacer ?? "", in: between)?
+                .contains("flex:1 1 0%") == true
+        )
+
+        // A lone spacer's stack is itself elidable, leaving the spacer as the
+        // only element under the root — it still survives and still carries
+        // the shorthand.
+        let alone = StaticHTMLRenderer.render(
+            VStack {
+                Spacer()
+            },
+            context: "Lone spacer",
+            size: SIMD2(600, 200)
+        ).html
+
+        let loneSpacer = Self.elementLine(taggedWith: "Spacer", in: alone)
+        #expect(loneSpacer != nil)
+        #expect(
+            Self.internedRule(forClassOn: loneSpacer ?? "", in: alone)?
+                .contains("flex:1 1 0%") == true
+        )
+    }
+
+    @MainActor
     @Test("A multi-child stack is never elided, so flex item counts are preserved")
     func multiChildStackSurvives() {
         // Two children make this a real flex container: its items are laid out
@@ -416,6 +461,33 @@ struct StaticHTMLElisionTests {
     /// The first stylesheet rule containing a marker.
     private static func internedRule(containing marker: String, in html: String) -> String? {
         html.split(separator: "\n").first { $0.contains(marker) }.map(String.init)
+    }
+
+    /// The first element line carrying a `data-scui` identity.
+    private static func elementLine(taggedWith tag: String, in html: String) -> String? {
+        html.split(separator: "\n").first { $0.contains("data-scui=\"\(tag)\"") }.map(String.init)
+    }
+
+    /// The interned style rule for the class referenced on an element's own
+    /// line, or `nil` where the element carries no class at all.
+    private static func internedRule(forClassOn elementLine: String, in html: String) -> String? {
+        guard let classRange = elementLine.range(of: "class=\"") else {
+            return nil
+        }
+        let afterClass = elementLine[classRange.upperBound...]
+        guard let closingQuote = afterClass.firstIndex(of: "\"") else {
+            return nil
+        }
+        // An author-added token can ride after the interned one, so only the
+        // first token is the lookup key.
+        guard
+            let className = String(afterClass[..<closingQuote]).split(separator: " ").first
+            .map(String.init)
+        else {
+            return nil
+        }
+        return html.split(separator: "\n").first { $0.contains(".\(className) {") }
+            .map(String.init)
     }
 
     /// How many times a substring occurs in a document.
