@@ -484,6 +484,13 @@ public final class StaticHTMLBackend:
         /// live request against whatever box the pair ends up being). It
         /// stops at any container that declares a width of its own: that
         /// declaration is the author's answer for everything below it.
+        ///
+        /// A percentage-width leaf is the same request in the other spelling.
+        /// `.frame(maxWidth: .infinity)` asks the enclosing stack for all the
+        /// width it has; ``Widget/emitsPercentageWidth`` takes all the width
+        /// its box turns out to have. Both need every wrapper in between to
+        /// be that wide, or the percentage resolves against a shrink-wrapped
+        /// box and the leaf fills nothing.
         var containsRelayableStretch: Bool {
             if declaresInfiniteWidthStretch {
                 return true
@@ -492,12 +499,15 @@ public final class StaticHTMLBackend:
                 return false
             }
             return children.contains { child in
-                (child.widget as? Container)?.containsRelayableStretch ?? false
+                if child.widget.emitsPercentageWidth {
+                    return true
+                }
+                return (child.widget as? Container)?.containsRelayableStretch ?? false
             }
         }
 
-        /// Whether a descendant's `.frame(maxWidth: .infinity)` stretch has to
-        /// be re-declared on this container to reach the enclosing stack.
+        /// Whether a descendant's stretch has to be re-declared on this
+        /// container to reach the enclosing stack.
         ///
         /// `align-self` only ever addresses an element's own parent, so a
         /// stretch declared several levels down stops at the first ancestor
@@ -516,7 +526,10 @@ public final class StaticHTMLBackend:
                 return false
             }
             return children.contains { child in
-                (child.widget as? Container)?.containsRelayableStretch ?? false
+                if child.widget.emitsPercentageWidth {
+                    return true
+                }
+                return (child.widget as? Container)?.containsRelayableStretch ?? false
             }
         }
 
