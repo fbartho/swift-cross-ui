@@ -209,14 +209,15 @@ struct StaticHTMLElisionTests {
     }
 
     @MainActor
-    @Test("A wrapper under a block parent survives, since its child would resize")
-    func flexWrapperUnderBlockParentSurvives() {
-        // A block-level flex item sizes to content on the cross axis while the
-        // same element in block flow fills its container, and an inline child
-        // is blockified as a flex item but not as a block box. Which of those
-        // the child ends up as is decided by whichever ancestor survives, so
-        // the guard is a property of the parent — at the document root there
-        // is no flex parent at all.
+    @Test("A wrapper under a block parent is elided like any other")
+    func inertWrapperUnderBlockParentIsElided() {
+        // What made a wrapper's fate depend on its parent's formatting context
+        // was the flex trio: a flex item sizes to content on the cross axis
+        // where a block box fills, and an inline child is blockified as a flex
+        // item but not as a block box. A wrapper that arranges nothing writes
+        // none of that, and an element with no declarations measures
+        // byte-identical to no element under a block parent as much as under a
+        // flex one.
         let html = StaticHTMLRenderer.render(
             Group {
                 Text("Root child")
@@ -224,7 +225,28 @@ struct StaticHTMLElisionTests {
             context: "Block parent"
         ).html
 
+        #expect(html.contains("Root child"))
+        #expect(!html.contains("data-scui=\"Group\""))
+    }
+
+    @MainActor
+    @Test("A wrapper over a percentage-width child survives, since it is the box")
+    func wrapperOverPercentageWidthChildSurvives() {
+        // A `width:100%` leaf resolves against whichever ancestor survives, so
+        // this wrapper is what its percentage means. Splicing it away
+        // re-resolves the width against a different box — measured at 133px
+        // with the wrapper against 1200px without it.
+        let html = StaticHTMLRenderer.render(
+            VStack(alignment: .leading) {
+                Group {
+                    Slider(Binding<Double>?.none, minimum: 0.0, maximum: 1.0)
+                }
+            },
+            context: "Percentage child"
+        ).html
+
         #expect(html.contains("data-scui=\"Group\""))
+        #expect(html.contains("<input"))
     }
 
     @MainActor

@@ -8,22 +8,29 @@ import SwiftCrossUIComponents
 @Suite("Testing context-inheritance mode for the static HTML backend")
 struct StaticHTMLInheritModeTests {
     @MainActor
-    @Test("A context-passing wrapper is described as arranging nothing")
+    @Test("A context-passing wrapper that survives arranges nothing")
     func contextWrapperWritesNoTrio() {
         // An environment modifier forwards to a single-child body, which the
         // layout system describes as a stack like any other. The flex trio
         // that description would produce is what changes a child's sizing, so
         // an element that only carries a value writes none of it.
+        //
+        // A stretching descendant is what keeps this wrapper in the document
+        // at all — the relay is a declaration, so the wrapper is not elidable
+        // — which is what makes it observable that the trio is absent.
         let html = StaticHTMLRenderer.render(
             VStack(alignment: .leading) {
-                Text("Only").environment(\.font, .body).frame(width: 200, height: 50)
+                Text("Only").frame(maxWidth: .infinity).environment(\.font, .body)
             },
             context: "Context wrapper"
         ).html
 
         let wrapper = Self.elementLine(taggedWith: "EnvironmentModifier", in: html)
         #expect(wrapper != nil)
-        #expect(Self.internedRule(forClassOn: wrapper ?? "", in: html) == nil)
+        let rule = Self.internedRule(forClassOn: wrapper ?? "", in: html)
+        #expect(rule?.contains("display:flex") == false)
+        #expect(rule?.contains("flex-direction") == false)
+        #expect(rule?.contains("align-items") == false)
     }
 
     @MainActor
@@ -31,10 +38,12 @@ struct StaticHTMLInheritModeTests {
     func anyViewWritesNoTrio() {
         // `AnyView`'s container holds the erased child at the origin and takes
         // its size, so the arrangement its stack description implies is
-        // incidental in exactly the way an environment modifier's is.
+        // incidental in exactly the way an environment modifier's is. An
+        // attribute on the child keeps the holder from being elided, so its
+        // own declarations are observable.
         let html = StaticHTMLRenderer.render(
             VStack(alignment: .leading) {
-                AnyView(Text("Erased")).frame(width: 200, height: 50)
+                AnyView(Text("Erased").htmlAttributes(["data-erased": .set("1")]))
             },
             context: "Erased view"
         ).html
@@ -86,11 +95,12 @@ struct StaticHTMLInheritModeTests {
     }
 
     @MainActor
-    @Test("An infinite-stretch frame attached to a context modifier still relays")
-    func attachedInfiniteStretchStillRelays() {
+    @Test("An infinite-stretch frame attached to a context modifier still stretches")
+    func attachedInfiniteStretchStillStretches() {
         // `.environment(…).frame(maxWidth: .infinity)` is the greedy-fill
-        // idiom applied over a context wrapper. The stretch has to reach the
-        // element, since nothing below it declares a width.
+        // idiom applied over a context wrapper. The frame is a separate
+        // element from the one inherit mode describes, and it is the one that
+        // has to carry the stretch.
         let html = StaticHTMLRenderer.render(
             VStack(alignment: .leading) {
                 Text("Only").environment(\.font, .body).frame(maxWidth: .infinity)
@@ -98,9 +108,10 @@ struct StaticHTMLInheritModeTests {
             context: "Attached stretch"
         ).html
 
-        let wrapper = Self.elementLine(taggedWith: "EnvironmentModifier", in: html)
-        let rule = Self.internedRule(forClassOn: wrapper ?? "", in: html)
+        let frame = Self.elementLine(taggedWith: "FlexibleFrameView", in: html)
+        let rule = Self.internedRule(forClassOn: frame ?? "", in: html)
         #expect(rule?.contains("align-self:stretch") == true)
+        #expect(rule?.contains("flex-grow:1") == true)
     }
 
     @MainActor

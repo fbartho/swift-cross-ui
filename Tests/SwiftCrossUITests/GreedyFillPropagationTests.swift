@@ -43,11 +43,10 @@ struct GreedyFillPropagationTests {
         // its natural ~100px width in a browser, not filling the stack, even
         // though SwiftCrossUI's own layout system commits it at full width
         // (1180x10 for a 1200-wide proposal against DummyBackend). The
-        // surviving PaddingModifierView and EnvironmentModifier wrappers
-        // between the stack and the <input> carry only padding/flex-trio
-        // declarations, none of which is a fill declaration, so the leaf's
-        // width:100% resolves against their shrink-wrapped box instead of
-        // the stack's.
+        // wrappers surviving between the root and the <input> carry no fill
+        // declaration of their own, so they shrink-wrap and the leaf's
+        // width:100% resolves against that shrunk box rather than the width
+        // the layout system committed.
         let html = StaticHTMLRenderer.render(
             VStack(alignment: .leading) {
                 Slider(value: Self.box(0.5), in: 0.0...1.0)
@@ -59,20 +58,21 @@ struct GreedyFillPropagationTests {
 
         let lines = html.split(separator: "\n").map(String.init)
         guard
-            let stackIndex = lines.firstIndex(where: { $0.contains(#"data-scui="VStack""#) }),
+            let rootIndex = lines.firstIndex(where: { $0.contains(#"id="root""#) }),
             let inputIndex = lines.firstIndex(where: { $0.contains("<input") }),
-            stackIndex < inputIndex
+            rootIndex < inputIndex
         else {
-            Issue.record("Expected a VStack ancestor line before the input element")
+            Issue.record("Expected the root element before the input element")
             return
         }
 
-        // Every div strictly between the stack and the input is an
-        // intermediate wrapper. The fix (deferred) will make fill propagate
-        // through each of them; its exact declaration is undecided, so any
-        // of these three spellings satisfies it.
+        // Every div strictly between the root and the input is an
+        // intermediate wrapper — whichever of them survive elision are what
+        // the leaf's percentage resolves through. The fix (deferred) will
+        // make fill propagate through each of them; its exact declaration is
+        // undecided, so any of these three spellings satisfies it.
         let fillMarkers = ["align-self:stretch", "width:100%", "flex-grow"]
-        let wrapperLines = lines[(stackIndex + 1)..<inputIndex].filter { $0.contains("<div") }
+        let wrapperLines = lines[(rootIndex + 1)..<inputIndex].filter { $0.contains("<div") }
 
         #expect(!wrapperLines.isEmpty, "Expected at least one intermediate wrapper div")
 
