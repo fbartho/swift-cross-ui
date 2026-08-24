@@ -478,7 +478,11 @@ public struct HTMLEmitter {
                         )
                     }
                 }
-                inner = Self.escape(text.content)
+                if let runs = text.inlineRuns {
+                    inner = emitInlineRuns(runs)
+                } else {
+                    inner = Self.escape(text.content)
+                }
                 // A declared text style is the author saying what this line is
                 // for, so it outranks the generic span — everywhere except
                 // inside a control's label. A label's declared style says how
@@ -1989,6 +1993,79 @@ public struct HTMLEmitter {
     ///     is most of them): see the call site in
     ///     ``HTMLEmitter/emitChildren(of:style:indent:indentLevel:stretchesUndeclaredAxis:)``.
     ///     An element within the array is `nil` for a child that takes none.
+    /// Emits a text group's runs as the inside of its one element.
+    ///
+    /// Every run is written adjacent to its neighbours with no whitespace
+    /// between them: the pretty-printer's newline and indent are a real DOM
+    /// text node, so a run boundary formatted the way container children are
+    /// would put a line break into what the reader copies. That makes this
+    /// the one place markup is assembled inline; the group's own element is
+    /// still indented by the caller like any other.
+    ///
+    /// A run emits bare text where it asks for nothing, and otherwise the
+    /// element its intent names: `<strong>` for emphasized weight, `<em>` for
+    /// italics, `<span>` for a run that only overrides its style. Intent and
+    /// style override are orthogonal, so a run doing both gets its intent
+    /// element carrying the overriding style.
+    ///
+    /// - Parameter runs: The runs, in reading order.
+    /// - Returns: The runs' markup, with no whitespace between them.
+    private mutating func emitInlineRuns(
+        _ runs: [StaticHTMLBackend.TextRun]
+    ) -> String {
+        runs.map { run in
+            var style = Style()
+            if run.declaredFont != nil {
+                // Only a run that restyled itself writes size and line
+                // height; one that didn't inherits the group's, which is
+                // what keeps every run of a heading on the same rung of the
+                // responsive scale.
+                if let textStyle = Self.textStyle(for: run.declaredFont) {
+                    let values = typeScale.values(for: textStyle)
+                    style.set(values.fontSize, for: "font-size")
+                    style.set(values.lineHeight, for: "line-height")
+                    style.set(values.weight, for: "font-weight")
+                } else if let resolved = run.resolvedFont {
+                    style.set("\(Int(resolved.pointSize))px", for: "font-size")
+                    style.set("\(Int(resolved.lineHeight))px", for: "line-height")
+                    style.set(Self.cssWeight(resolved.weight), for: "font-weight")
+                }
+            }
+            if run.isEmphasized {
+                // `bolder` rather than a literal weight so the run steps up
+                // from whatever the group's own weight resolves to at read
+                // time — a custom property the page may redefine, which a
+                // literal would silently disagree with.
+                style.set("bolder", for: "font-weight")
+            }
+            if run.isItalic {
+                style.set("italic", for: "font-style")
+            }
+            if let color = run.color {
+                style.set(palette.value(for: color), for: "color")
+            }
+
+            let escaped = Self.escape(run.text)
+            let element: HTMLElement?
+            if run.isEmphasized {
+                element = .custom("strong")
+            } else if run.isItalic {
+                element = .custom("em")
+            } else if !style.isEmpty {
+                element = .span
+            } else {
+                element = nil
+            }
+            guard let element else {
+                return escaped
+            }
+            let className = interner.className(for: style)
+            let classAttribute = className.map { " class=\"\($0)\"" } ?? ""
+            return "<\(element.name)\(classAttribute)>\(escaped)</\(element.name)>"
+        }
+        .joined()
+    }
+
     private mutating func emitChildren(
         _ children: [(widget: StaticHTMLBackend.Widget, position: SIMD2<Int>)],
         placement: Placement,

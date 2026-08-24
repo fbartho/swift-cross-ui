@@ -286,6 +286,29 @@ public final class StaticHTMLBackend:
         }
     }
 
+    /// One run of a ``SwiftCrossUIComponents/TextGroup``, resolved against the
+    /// group's environment.
+    ///
+    /// The run's fonts are resolved here rather than at emission because
+    /// resolution needs the environment, which only reaches the backend while
+    /// the tree is being updated.
+    public struct TextRun {
+        /// The run's characters.
+        public var text: String
+        /// Whether the run asked for its style's emphasized weight.
+        public var isEmphasized: Bool
+        /// Whether the run asked to be italicized.
+        public var isItalic: Bool
+        /// The un-resolved font the run declared for itself, if it overrode
+        /// the group's.
+        public var declaredFont: Font?
+        /// The run's own font resolved against the group's environment, if it
+        /// declared one.
+        public var resolvedFont: Font.Resolved?
+        /// The color the run declared for itself, if it overrode the group's.
+        public var color: SchemePair?
+    }
+
     /// A text widget.
     public class TextView: Widget {
         public var content = ""
@@ -309,6 +332,13 @@ public final class StaticHTMLBackend:
         /// Whether the text should be selectable, from
         /// ``SwiftCrossUI/View/textSelectionEnabled(_:)``.
         public var isTextSelectionEnabled = false
+        /// The inline runs this text emits as, from
+        /// ``SwiftCrossUIComponents/TextGroup``.
+        ///
+        /// ``content`` holds the same characters flattened, which is what the
+        /// layout system measures and what every other backend displays;
+        /// these only decide how the characters divide into elements.
+        public var inlineRuns: [TextRun]?
     }
 
     /// A button whose label is a plain string, used by ``SwiftCrossUI/Toggle``
@@ -958,6 +988,24 @@ public final class StaticHTMLBackend:
         textView.textAlignment = environment.multilineTextAlignment
         textView.lineLimit = environment.lineLimitSettings
         textView.isTextSelectionEnabled = environment.isTextSelectionEnabled
+        textView.inlineRuns = environment.inlineTextRunRequest.map { request in
+            request.runs.map { run in
+                TextRun(
+                    text: run.text,
+                    isEmphasized: run.isEmphasized,
+                    isItalic: run.isItalic,
+                    declaredFont: run.font,
+                    resolvedFont: run.font.map { font in
+                        var overridden = environment
+                        overridden.font = font
+                        return overridden.resolvedFont
+                    },
+                    color: run.color.map { color in
+                        pair(forResolved: color.resolve(in: environment), existing: nil)
+                    }
+                )
+            }
+        }
         textView.captureIntent(from: environment)
     }
 
